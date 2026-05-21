@@ -11,8 +11,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "Argos Intelligence",
-  description:
-    "Institutional Predictive Intelligence Platform",
+  description: "Institutional Predictive Intelligence Platform",
 };
 
 export default function RootLayout({
@@ -22,9 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR">
-      <body
-        className={`${inter.variable} antialiased`}
-      >
+      <body className={`${inter.variable} font-sans antialiased`}>
         {children}
       </body>
     </html>
