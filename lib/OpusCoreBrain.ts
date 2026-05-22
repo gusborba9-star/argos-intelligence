@@ -505,12 +505,12 @@ export class OpusCoreBrain {
           );
 
         const edgeQualityScore =
-          this.calculateEdgeQualityScore(
-            edge,
-            expectedValue,
-            confidence
-          );
-
+  this.calculateEdgeQualityScore(
+    edge,
+    expectedValue,
+    confidence,
+    market.impliedOdds
+  );
         const allocation =
           this.calculateAllocation(
             edgeQualityScore
