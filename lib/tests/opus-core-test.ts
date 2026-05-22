@@ -30,58 +30,165 @@ const scenarios: MatchContextInput[] = [
     },
 
     goalsMatrix: {
-      over25: {
-        label: "OVER_25",
-        probability: 0.41,
-        impliedOdds: 1.85
-      },
+  over05: {
+    label: "OVER_05",
+    probability: 0.91,
+    impliedOdds: 1.12
+  },
 
-      under25: {
-        label: "UNDER_25",
-        probability: 0.59,
-        impliedOdds: 2.15
-      },
+  over15: {
+    label: "OVER_15",
+    probability: 0.72,
+    impliedOdds: 1.42
+  },
 
-      bttsYes: {
-        label: "BTTS_YES",
-        probability: 0.42,
-        impliedOdds: 1.80
-      },
+  over25: {
+    label: "OVER_25",
+    probability: 0.41,
+    impliedOdds: 2.60
+  },
 
-      bttsNo: {
-        label: "BTTS_NO",
-        probability: 0.58,
-        impliedOdds: 2.05
-      }
-    },
+  over35: {
+    label: "OVER_35",
+    probability: 0.24,
+    impliedOdds: 4.10
+  },
+
+  under15: {
+    label: "UNDER_15",
+    probability: 0.28,
+    impliedOdds: 3.30
+  },
+
+  under25: {
+    label: "UNDER_25",
+    probability: 0.59,
+    impliedOdds: 2.05
+  },
+
+  under35: {
+    label: "UNDER_35",
+    probability: 0.78,
+    impliedOdds: 1.48
+  },
+
+  under45: {
+    label: "UNDER_45",
+    probability: 0.89,
+    impliedOdds: 1.18
+  },
+
+  bttsYes: {
+    label: "BTTS_YES",
+    probability: 0.44,
+    impliedOdds: 2.25
+  },
+
+  bttsNo: {
+    label: "BTTS_NO",
+    probability: 0.56,
+    impliedOdds: 1.92
+  }
+},
 
     cardsMatrix: {
-      over45: {
-        label: "OVER_45",
-        probability: 0.72,
-        impliedOdds: 2.05
-      },
+  over25: {
+    label: "CARDS_OVER_25",
+    probability: 0.71,
+    impliedOdds: 1.45
+  },
 
-      under45: {
-        label: "UNDER_45",
-        probability: 0.28,
-        impliedOdds: 1.75
-      }
-    },
+  over35: {
+    label: "CARDS_OVER_35",
+    probability: 0.58,
+    impliedOdds: 1.78
+  },
 
+  over45: {
+    label: "CARDS_OVER_45",
+    probability: 0.44,
+    impliedOdds: 2.25
+  },
+
+  over55: {
+    label: "CARDS_OVER_55",
+    probability: 0.31,
+    impliedOdds: 3.40
+  },
+
+  under35: {
+    label: "CARDS_UNDER_35",
+    probability: 0.42,
+    impliedOdds: 2.35
+  },
+
+  under45: {
+    label: "CARDS_UNDER_45",
+    probability: 0.56,
+    impliedOdds: 1.95
+  },
+
+  under55: {
+    label: "CARDS_UNDER_55",
+    probability: 0.72,
+    impliedOdds: 1.44
+  },
+
+  under65: {
+    label: "CARDS_UNDER_65",
+    probability: 0.83,
+    impliedOdds: 1.21
+  }
+},
     cornersMatrix: {
-      over95: {
-        label: "OVER_95",
-        probability: 0.46,
-        impliedOdds: 1.90
-      },
+  over75: {
+    label: "CORNERS_OVER_75",
+    probability: 0.73,
+    impliedOdds: 1.42
+  },
 
-      under95: {
-        label: "UNDER_95",
-        probability: 0.54,
-        impliedOdds: 1.95
-      }
-    },
+  over85: {
+    label: "CORNERS_OVER_85",
+    probability: 0.61,
+    impliedOdds: 1.72
+  },
+
+  over95: {
+    label: "CORNERS_OVER_95",
+    probability: 0.48,
+    impliedOdds: 2.05
+  },
+
+  over105: {
+    label: "CORNERS_OVER_105",
+    probability: 0.34,
+    impliedOdds: 3.10
+  },
+
+  under85: {
+    label: "CORNERS_UNDER_85",
+    probability: 0.39,
+    impliedOdds: 2.50
+  },
+
+  under95: {
+    label: "CORNERS_UNDER_95",
+    probability: 0.52,
+    impliedOdds: 1.92
+  },
+
+  under105: {
+    label: "CORNERS_UNDER_105",
+    probability: 0.69,
+    impliedOdds: 1.51
+  },
+
+  under115: {
+    label: "CORNERS_UNDER_115",
+    probability: 0.82,
+    impliedOdds: 1.26
+  }
+},
 
     tacticalFrictionScore: 0.86,
     chaosIndex: 0.32,
