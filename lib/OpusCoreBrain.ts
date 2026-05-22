@@ -629,6 +629,7 @@ export class OpusCoreBrain {
       tier: "MICRO" as AllocationTier,
       unit: 0.25
     };
+  }
      private applyCorrelationExposureLimiter(
     markets: ApprovedMarket[]
   ): ApprovedMarket[] {
