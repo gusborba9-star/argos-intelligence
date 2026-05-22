@@ -1,26 +1,27 @@
 import crypto from "crypto";
 
-/* =========================================================
-   ARGOS INTELLIGENCE — OPUS CORE BRAIN v4.0 INSTITUTIONAL
-   Residual Edge Cascading Infrastructure
-   ========================================================= */
-
-export const MIN_EDGE = 0.05;
-export const MAX_MATCH_EXPOSURE = 1.5;
+export const BASE_MIN_EDGE = 0.05;
+export const SUBMARKET_HUNT_DISCOUNT = 0.85;
+export const MAX_CLUSTER_EXPOSURE = 1.5;
 
 export type MatchBehavior =
   | "CAOTICO_EXPLOSIVO"
   | "TRUNCADO_UNDER"
+  | "EQUILIBRADO"
   | "AGRESSIVO"
-  | "LIVE_ORIENTED"
-  | "EQUILIBRADO";
+  | "LIVE_ORIENTED";
 
 export type AllocationTier =
   | "ELITE"
   | "TACTICAL"
   | "MICRO"
-  | "NO_BET"
   | "FULL_VETO";
+
+export type MarketVertical =
+  | "WINNER"
+  | "GOALS"
+  | "CARDS"
+  | "CORNERS";
 
 export interface MarketProbability {
   label: string;
@@ -35,20 +36,42 @@ export interface WinnerMarket {
 }
 
 export interface GoalsMarket {
+  over05: MarketProbability;
+  over15: MarketProbability;
   over25: MarketProbability;
+  over35: MarketProbability;
+
+  under15: MarketProbability;
   under25: MarketProbability;
+  under35: MarketProbability;
+  under45: MarketProbability;
+
   bttsYes: MarketProbability;
   bttsNo: MarketProbability;
 }
 
 export interface CardsMarket {
+  over25: MarketProbability;
+  over35: MarketProbability;
   over45: MarketProbability;
+  over55: MarketProbability;
+
+  under35: MarketProbability;
   under45: MarketProbability;
+  under55: MarketProbability;
+  under65: MarketProbability;
 }
 
 export interface CornersMarket {
+  over75: MarketProbability;
+  over85: MarketProbability;
   over95: MarketProbability;
+  over105: MarketProbability;
+
+  under85: MarketProbability;
   under95: MarketProbability;
+  under105: MarketProbability;
+  under115: MarketProbability;
 }
 
 export interface MatchContextInput {
@@ -67,25 +90,19 @@ export interface MatchContextInput {
 
   marketVolatility?: number;
   integrityScore?: number;
-
-  winnerConfidence?: number;
-  goalsConfidence?: number;
-  cardsConfidence?: number;
-  cornersConfidence?: number;
 }
 
 export interface ApprovedMarket {
+  vertical: MarketVertical;
   market: string;
-  selection: string;
 
   probability: number;
   impliedOdds: number;
-
   impliedProbability: number;
 
   edge: number;
+  edgeQualityScore: number;
   expectedValue: number;
-
   confidence: number;
 
   allocationTier: AllocationTier;
@@ -96,12 +113,11 @@ export interface ReasoningStructured {
   behaviorClassification: MatchBehavior;
 
   approvedMarkets: ApprovedMarket[];
-
   vetoedMarkets: string[];
 
-  noBetMarkets: string[];
-
   cascadeFlow: string[];
+
+  huntModeActivated: boolean;
 
   contextualAnalysis: {
     tacticalFrictionScore: number;
@@ -119,7 +135,6 @@ export interface PredictionAuditOutput {
   match_id: string;
 
   prediction_hash: string;
-
   model_version: string;
 
   probability_matrix: {
@@ -131,13 +146,9 @@ export interface PredictionAuditOutput {
 
   allocation_state: {
     global_tier: AllocationTier;
-
     total_approved_markets: number;
-
     highest_detected_edge: number;
-
-    highest_expected_value: number;
-
+    highest_edge_quality_score: number;
     total_unit_exposure: number;
   };
 
@@ -146,581 +157,333 @@ export interface PredictionAuditOutput {
   created_at: string;
 }
 
+interface EdgeEvaluation {
+  vertical: MarketVertical;
+  market: string;
+
+  probability: number;
+  impliedOdds: number;
+  impliedProbability: number;
+
+  edge: number;
+  edgeQualityScore: number;
+  expectedValue: number;
+  confidence: number;
+
+  allocationTier: AllocationTier;
+  unitSize: number;
+}
+
 export class OpusCoreBrain {
-  private readonly MODEL_VERSION =
-    "ARGOS_CORE_v4.0_INSTITUTIONAL";
+  private readonly MODEL_VERSION = "ARGOS_CORE_v6.0_INSTITUTIONAL";
 
   public analyzeMatch(
     input: MatchContextInput
   ): PredictionAuditOutput {
     const approvedMarkets: ApprovedMarket[] = [];
-
     const vetoedMarkets: string[] = [];
-
-    const noBetMarkets: string[] = [];
-
     const cascadeFlow: string[] = [];
 
-    /* =====================================================
-       STEP 1 — MATCH BEHAVIOR CLASSIFICATION
-       ===================================================== */
-
-    const behavior =
-      this.classifyBehavior(
-        input.tacticalFrictionScore,
-        input.chaosIndex
-      );
-
-    cascadeFlow.push(
-      `MATCH_CLASSIFIED_${behavior}`
+    const behavior = this.classifyBehavior(
+      input.tacticalFrictionScore,
+      input.chaosIndex
     );
 
-    const adjustedGoals =
-      this.applyUnderCompression(
-        input.goalsMatrix,
-        behavior,
-        input.tacticalFrictionScore
-      );
+    cascadeFlow.push(`MATCH_CLASSIFIED_${behavior}`);
 
-    const adjustedCards =
-      this.applyCardsCalibration(
-        input.cardsMatrix,
-        input.tacticalFrictionScore,
-        input.motivationIndexHome,
-        input.motivationIndexAway
-      );
+    const winnerResult = this.evaluateWinnerVertical(
+      input.winnerMatrix,
+      behavior
+    );
 
-    const adjustedCorners =
-      this.applyCornersCalibration(
-        input.cornersMatrix,
-        input.chaosIndex,
-        input.motivationIndexHome,
-        input.motivationIndexAway
-      );
+    let huntModeActivated = false;
 
-    /* =====================================================
-       STEP 2 — WINNER CASCADE
-       ===================================================== */
+    if (winnerResult) {
+      approvedMarkets.push({
+        ...winnerResult
+      });
 
-    let cascadeResolved = false;
-
-    if (behavior !== "CAOTICO_EXPLOSIVO") {
-      cascadeFlow.push("START_WINNER_ANALYSIS");
-
-      const winnerEdge =
-        this.findBestEdge(
-          [
-            input.winnerMatrix.home,
-            input.winnerMatrix.draw,
-            input.winnerMatrix.away,
-          ],
-          input.winnerConfidence ?? 0.65
-        );
-
-      if (winnerEdge) {
-        const allocation =
-          this.calculateAllocation(
-            winnerEdge.edge,
-            winnerEdge.expectedValue
-          );
-
-        approvedMarkets.push({
-          market: "WINNER",
-
-          selection:
-            winnerEdge.market.label,
-
-          probability:
-            winnerEdge.market.probability,
-
-          impliedOdds:
-            winnerEdge.market.impliedOdds,
-
-          impliedProbability:
-            winnerEdge.impliedProbability,
-
-          edge: winnerEdge.edge,
-
-          expectedValue:
-            winnerEdge.expectedValue,
-
-          confidence:
-            winnerEdge.confidence,
-
-          allocationTier:
-            allocation.tier,
-
-          unitSize:
-            allocation.unit,
-        });
-
-        cascadeFlow.push(
-          "WINNER_APPROVED"
-        );
-
-        cascadeResolved = true;
-      } else {
-        vetoedMarkets.push(
-          "VETO_WINNER"
-        );
-
-        cascadeFlow.push(
-          "CASCADE_TO_GOALS"
-        );
-      }
+      cascadeFlow.push("WINNER_APPROVED");
     } else {
-      vetoedMarkets.push(
-        "WINNER_BLOCKED_CHAOS"
-      );
+      vetoedMarkets.push("WINNER_VETOED");
+      cascadeFlow.push("WINNER_VETOED");
 
-      cascadeFlow.push(
-        "WINNER_SKIPPED_DUE_TO_CHAOS"
-      );
+      huntModeActivated = true;
+      cascadeFlow.push("SUBMARKET_HUNT_MODE_ACTIVATED");
     }
 
-    /* =====================================================
-       STEP 3 — GOALS CASCADE
-       ===================================================== */
+    const adjustedMinEdge = huntModeActivated
+      ? BASE_MIN_EDGE * SUBMARKET_HUNT_DISCOUNT
+      : BASE_MIN_EDGE;
 
-    if (!cascadeResolved) {
-      cascadeFlow.push(
-        "START_GOALS_ANALYSIS"
-      );
+    const adjustedGoals = this.applyUnderCompression(
+      input.goalsMatrix,
+      behavior,
+      input.tacticalFrictionScore
+    );
 
-      const goalsEdge =
-        this.findBestEdge(
-          [
-            adjustedGoals.over25,
-            adjustedGoals.under25,
-            adjustedGoals.bttsYes,
-            adjustedGoals.bttsNo,
-          ],
-          input.goalsConfidence ?? 0.67
-        );
+    const adjustedCards = this.applyCardsCalibration(
+      input.cardsMatrix,
+      input.tacticalFrictionScore,
+      input.motivationIndexHome,
+      input.motivationIndexAway
+    );
 
-      if (goalsEdge) {
-        const allocation =
-          this.calculateAllocation(
-            goalsEdge.edge,
-            goalsEdge.expectedValue
-          );
+    const adjustedCorners = this.applyCornersCalibration(
+      input.cornersMatrix,
+      input.chaosIndex,
+      input.motivationIndexHome,
+      input.motivationIndexAway
+    );
 
-        approvedMarkets.push({
-          market: "GOALS",
+    const goalsResult = this.findBestEdge(
+      "GOALS",
+      Object.values(adjustedGoals),
+      adjustedMinEdge
+    );
 
-          selection:
-            goalsEdge.market.label,
+    if (goalsResult) {
+      approvedMarkets.push({
+        ...goalsResult
+      });
 
-          probability:
-            goalsEdge.market.probability,
-
-          impliedOdds:
-            goalsEdge.market.impliedOdds,
-
-          impliedProbability:
-            goalsEdge.impliedProbability,
-
-          edge:
-            goalsEdge.edge,
-
-          expectedValue:
-            goalsEdge.expectedValue,
-
-          confidence:
-            goalsEdge.confidence,
-
-          allocationTier:
-            allocation.tier,
-
-          unitSize:
-            allocation.unit,
-        });
-
-        cascadeFlow.push(
-          "GOALS_APPROVED"
-        );
-
-        cascadeResolved = true;
-      } else {
-        vetoedMarkets.push(
-          "VETO_GOALS"
-        );
-
-        cascadeFlow.push(
-          "CASCADE_TO_REACTIVE_MARKETS"
-        );
-      }
+      cascadeFlow.push("GOALS_APPROVED");
+    } else {
+      vetoedMarkets.push("GOALS_VETOED");
     }
 
-    /* =====================================================
-       STEP 4 — REACTIVE MARKETS
-       Cards + Corners allowed together only
-       under structural correlation
-       ===================================================== */
+    const cardsResult = this.findBestEdge(
+      "CARDS",
+      Object.values(adjustedCards),
+      adjustedMinEdge
+    );
 
-    if (!cascadeResolved) {
-      const correlationScore =
-        this.calculateCorrelationScore(
-          input.tacticalFrictionScore,
-          input.chaosIndex,
-          input.motivationIndexHome,
-          input.motivationIndexAway
-        );
+    if (cardsResult) {
+      approvedMarkets.push({
+        ...cardsResult
+      });
 
-      cascadeFlow.push(
-        `CORRELATION_SCORE_${correlationScore.toFixed(
-          2
-        )}`
-      );
-
-      /* =========================
-         CARDS
-         ========================= */
-
-      const cardsEdge =
-        this.findBestEdge(
-          [
-            adjustedCards.over45,
-            adjustedCards.under45,
-          ],
-          input.cardsConfidence ?? 0.63
-        );
-
-      if (
-        cardsEdge &&
-        correlationScore >= 0.55
-      ) {
-        const allocation =
-          this.calculateAllocation(
-            cardsEdge.edge,
-            cardsEdge.expectedValue
-          );
-
-        approvedMarkets.push({
-          market: "CARDS",
-
-          selection:
-            cardsEdge.market.label,
-
-          probability:
-            cardsEdge.market.probability,
-
-          impliedOdds:
-            cardsEdge.market.impliedOdds,
-
-          impliedProbability:
-            cardsEdge.impliedProbability,
-
-          edge:
-            cardsEdge.edge,
-
-          expectedValue:
-            cardsEdge.expectedValue,
-
-          confidence:
-            cardsEdge.confidence,
-
-          allocationTier:
-            allocation.tier,
-
-          unitSize:
-            allocation.unit,
-        });
-
-        cascadeFlow.push(
-          "CARDS_APPROVED"
-        );
-      } else {
-        noBetMarkets.push(
-          "NO_EDGE_CARDS"
-        );
-}
-  
-      /* =========================
-         CORNERS
-         ========================= */
-
-      const cornersEdge =
-        this.findBestEdge(
-          [
-            adjustedCorners.over95,
-            adjustedCorners.under95,
-          ],
-          input.cornersConfidence ?? 0.62
-        );
-
-      if (
-        cornersEdge &&
-        correlationScore >= 0.55
-      ) {
-        const allocation =
-          this.calculateAllocation(
-            cornersEdge.edge,
-            cornersEdge.expectedValue
-          );
-
-        approvedMarkets.push({
-          market: "CORNERS",
-
-          selection:
-            cornersEdge.market.label,
-
-          probability:
-            cornersEdge.market.probability,
-
-          impliedOdds:
-            cornersEdge.market.impliedOdds,
-
-          impliedProbability:
-            cornersEdge.impliedProbability,
-
-          edge:
-            cornersEdge.edge,
-
-          expectedValue:
-            cornersEdge.expectedValue,
-
-          confidence:
-            cornersEdge.confidence,
-
-          allocationTier:
-            allocation.tier,
-
-          unitSize:
-            allocation.unit,
-        });
-
-        cascadeFlow.push(
-          "CORNERS_APPROVED"
-        );
-      } else {
-        noBetMarkets.push(
-          "NO_EDGE_CORNERS"
-        );
-      }
+      cascadeFlow.push("CARDS_APPROVED");
+    } else {
+      vetoedMarkets.push("CARDS_VETOED");
     }
 
-    /* =====================================================
-       STEP 5 — EXPOSURE PROTECTION
-       ===================================================== */
+    const cornersResult = this.findBestEdge(
+      "CORNERS",
+      Object.values(adjustedCorners),
+      adjustedMinEdge
+    );
 
-    const protectedMarkets =
-      this.applyExposureProtection(
+    if (cornersResult) {
+      approvedMarkets.push({
+        ...cornersResult
+      });
+
+      cascadeFlow.push("CORNERS_APPROVED");
+    } else {
+      vetoedMarkets.push("CORNERS_VETOED");
+    }
+
+    const exposureLimitedMarkets =
+      this.applyCorrelationExposureLimiter(
         approvedMarkets
       );
 
-    if (
-      protectedMarkets.length === 0
-    ) {
-      cascadeFlow.push(
-        "FULL_VETO_TRIGGERED"
+    const globalTier =
+      this.resolveGlobalTier(exposureLimitedMarkets);
+
+    const highestEdge =
+      exposureLimitedMarkets.length > 0
+        ? Math.max(
+            ...exposureLimitedMarkets.map(
+              (m) => m.edge
+            )
+          )
+        : 0;
+
+    const highestEdgeQualityScore =
+      exposureLimitedMarkets.length > 0
+        ? Math.max(
+            ...exposureLimitedMarkets.map(
+              (m) => m.edgeQualityScore
+            )
+          )
+        : 0;
+
+    const totalExposure =
+      exposureLimitedMarkets.reduce(
+        (acc, market) => acc + market.unitSize,
+        0
       );
-    }
 
-    /* =====================================================
-       OUTPUT
-       ===================================================== */
+    const reasoning: ReasoningStructured = {
+      behaviorClassification: behavior,
 
-    return this.compileOutput({
-      input,
-
-      approvedMarkets:
-        protectedMarkets,
-
+      approvedMarkets: exposureLimitedMarkets,
       vetoedMarkets,
-
-      noBetMarkets,
 
       cascadeFlow,
 
-      behavior,
+      huntModeActivated,
 
-      adjustedGoals,
+      contextualAnalysis: {
+        tacticalFrictionScore:
+          input.tacticalFrictionScore,
 
-      adjustedCards,
+        chaosIndex: input.chaosIndex,
 
-      adjustedCorners,
-    });
+        motivationIndexHome:
+          input.motivationIndexHome,
+
+        motivationIndexAway:
+          input.motivationIndexAway,
+
+        marketVolatility:
+          input.marketVolatility ?? 0.5,
+
+        integrityScore:
+          input.integrityScore ?? 0.95
+      }
+    };
+
+    return {
+      match_id: input.matchId,
+
+      prediction_hash:
+        this.generatePredictionHash({
+          matchId: input.matchId,
+          timestamp: Date.now()
+        }),
+
+      model_version: this.MODEL_VERSION,
+
+      probability_matrix: {
+        winner: input.winnerMatrix,
+        goals: adjustedGoals,
+        cards: adjustedCards,
+        corners: adjustedCorners
+      },
+
+      allocation_state: {
+        global_tier: globalTier,
+
+        total_approved_markets:
+          exposureLimitedMarkets.length,
+
+        highest_detected_edge:
+          Number(highestEdge.toFixed(4)),
+
+        highest_edge_quality_score:
+          Number(
+            highestEdgeQualityScore.toFixed(4)
+          ),
+
+        total_unit_exposure:
+          Number(totalExposure.toFixed(2))
+      },
+
+      reasoning_structured: reasoning,
+
+      created_at: new Date().toISOString()
+    };
   }
-
-  /* =====================================================
-     CLASSIFICATION ENGINE
-     ===================================================== */
 
   private classifyBehavior(
     tacticalFrictionScore: number,
     chaosIndex: number
   ): MatchBehavior {
-    if (chaosIndex >= 0.72)
+    if (chaosIndex > 0.7) {
       return "CAOTICO_EXPLOSIVO";
+    }
 
-    if (
-      tacticalFrictionScore >= 0.75
-    )
+    if (tacticalFrictionScore > 0.75) {
       return "TRUNCADO_UNDER";
+    }
 
     if (
-      chaosIndex >= 0.58 &&
-      tacticalFrictionScore <= 0.45
-    )
+      chaosIndex > 0.55 &&
+      tacticalFrictionScore < 0.45
+    ) {
       return "AGRESSIVO";
+    }
 
     if (
-      tacticalFrictionScore >= 0.58 &&
-      chaosIndex <= 0.45
-    )
+      tacticalFrictionScore > 0.55 &&
+      chaosIndex < 0.45
+    ) {
       return "LIVE_ORIENTED";
+    }
 
     return "EQUILIBRADO";
   }
 
-  /* =====================================================
-     UNDER COMPRESSION ENGINE
-     ===================================================== */
-
-  private applyUnderCompression(
-    goals: GoalsMarket,
-    behavior: MatchBehavior,
-    friction: number
-  ): GoalsMarket {
+  private evaluateWinnerVertical(
+    winner: WinnerMarket,
+    behavior: MatchBehavior
+  ): EdgeEvaluation | null {
     if (
-      behavior !== "TRUNCADO_UNDER"
-    )
-      return goals;
+      behavior === "CAOTICO_EXPLOSIVO" ||
+      behavior === "TRUNCADO_UNDER"
+    ) {
+      return null;
+    }
 
-    const shift =
-      Math.min(
-        0.15,
-        friction * 0.12
+    const dnbHome =
+      this.calculateDNB(
+        winner.home,
+        winner.draw,
+        "HOME_DNB"
       );
 
-    const over25 =
-      this.clampProbability(
-        goals.over25.probability -
-          shift
+    const dnbAway =
+      this.calculateDNB(
+        winner.away,
+        winner.draw,
+        "AWAY_DNB"
       );
 
-    const bttsYes =
-      this.clampProbability(
-        goals.bttsYes.probability -
-          shift
-      );
-
-    return {
-      over25: {
-        ...goals.over25,
-        probability: over25,
-      },
-
-      under25: {
-        ...goals.under25,
-        probability:
-          this.normalizeInverse(
-            over25
-          ),
-      },
-
-      bttsYes: {
-        ...goals.bttsYes,
-        probability: bttsYes,
-      },
-
-      bttsNo: {
-        ...goals.bttsNo,
-        probability:
-          this.normalizeInverse(
-            bttsYes
-          ),
-      },
-    };
+    return this.findBestEdge(
+      "WINNER",
+      [
+        winner.home,
+        winner.draw,
+        winner.away,
+        dnbHome,
+        dnbAway
+      ],
+      BASE_MIN_EDGE
+    );
   }
 
-  /* =====================================================
-     CARDS CALIBRATION
-     ===================================================== */
+  private calculateDNB(
+    side: MarketProbability,
+    draw: MarketProbability,
+    label: string
+  ): MarketProbability {
+    const adjustedProbability =
+      side.probability /
+      (1 - draw.probability);
 
-  private applyCardsCalibration(
-    cards: CardsMarket,
-    friction: number,
-    motHome: number,
-    motAway: number
-  ): CardsMarket {
-    const motivation =
-      (motHome + motAway) / 2;
-
-    const boost =
-      friction * 0.07 +
-      motivation * 0.03;
-
-    const over45 =
-      this.clampProbability(
-        cards.over45.probability +
-          boost
-      );
+    const impliedOdds =
+      1 / adjustedProbability;
 
     return {
-      over45: {
-        ...cards.over45,
-        probability: over45,
-      },
+      label,
+      probability:
+        Number(
+          adjustedProbability.toFixed(4)
+        ),
 
-      under45: {
-        ...cards.under45,
-        probability:
-          this.normalizeInverse(
-            over45
-          ),
-      },
+      impliedOdds:
+        Number(impliedOdds.toFixed(4))
     };
   }
-
-  /* =====================================================
-     CORNERS CALIBRATION
-     ===================================================== */
-
-  private applyCornersCalibration(
-    corners: CornersMarket,
-    chaos: number,
-    motHome: number,
-    motAway: number
-  ): CornersMarket {
-    const motivation =
-      (motHome + motAway) / 2;
-
-    const boost =
-      chaos * 0.06 +
-      motivation * 0.04;
-
-    const over95 =
-      this.clampProbability(
-        corners.over95.probability +
-          boost
-      );
-
-    return {
-      over95: {
-        ...corners.over95,
-        probability: over95,
-      },
-
-      under95: {
-        ...corners.under95,
-        probability:
-          this.normalizeInverse(
-            over95
-          ),
-      },
-    };
-  }
-
-  /* =====================================================
-     EDGE ENGINE
-     ===================================================== */
 
   private findBestEdge(
+    vertical: MarketVertical,
     markets: MarketProbability[],
-    confidence: number
-  ) {
+    minEdge: number
+  ): EdgeEvaluation | null {
     const evaluated =
       markets.map((market) => {
         const impliedProbability =
@@ -735,174 +498,318 @@ export class OpusCoreBrain {
             market.impliedOdds -
           1;
 
+        const confidence =
+          this.calculateConfidence(
+            edge,
+            expectedValue
+          );
+
+        const edgeQualityScore =
+          this.calculateEdgeQualityScore(
+            edge,
+            expectedValue,
+            confidence
+          );
+
+        const allocation =
+          this.calculateAllocation(
+            edgeQualityScore
+          );
+
         return {
-          market,
+          vertical,
 
-          impliedProbability,
+          market: market.label,
 
-          edge,
+          probability:
+            Number(
+              market.probability.toFixed(4)
+            ),
 
-          expectedValue,
+          impliedOdds:
+            Number(
+              market.impliedOdds.toFixed(4)
+            ),
 
-          confidence,
+          impliedProbability:
+            Number(
+              impliedProbability.toFixed(4)
+            ),
+
+          edge:
+            Number(edge.toFixed(4)),
+
+          edgeQualityScore:
+            Number(
+              edgeQualityScore.toFixed(4)
+            ),
+
+          expectedValue:
+            Number(
+              expectedValue.toFixed(4)
+            ),
+
+          confidence:
+            Number(
+              confidence.toFixed(4)
+            ),
+
+          allocationTier:
+            allocation.tier,
+
+          unitSize:
+            allocation.unit
         };
       });
 
-    const valid =
+    const approved =
       evaluated.filter(
         (entry) =>
-          entry.edge >= MIN_EDGE &&
-          entry.expectedValue > 0 &&
-          entry.confidence >= 0.60
+          entry.edge >= minEdge &&
+          entry.expectedValue > 0
       );
 
-    if (valid.length === 0)
+    if (approved.length === 0) {
       return null;
+    }
 
-    return valid.sort(
+    approved.sort(
       (a, b) =>
-        b.expectedValue -
-        a.expectedValue
-    )[0];
+        b.edgeQualityScore -
+        a.edgeQualityScore
+    );
+
+    return approved[0];
   }
 
-  /* =====================================================
-     DYNAMIC ALLOCATION ENGINE
-     ===================================================== */
+  private calculateConfidence(
+    edge: number,
+    expectedValue: number
+  ): number {
+    const confidence =
+      edge * 1.5 +
+      expectedValue * 0.75;
+
+    return Math.max(
+      0,
+      Math.min(1, confidence)
+    );
+  }
+
+  private calculateEdgeQualityScore(
+    edge: number,
+    expectedValue: number,
+    confidence: number
+  ): number {
+    return (
+      edge * 0.45 +
+      expectedValue * 0.35 +
+      confidence * 0.20
+    );
+  }
 
   private calculateAllocation(
-    edge: number,
-    ev: number
+    edgeQualityScore: number
   ) {
-    if (
-      edge >= 0.18 &&
-      ev >= 0.22
-    ) {
+    if (edgeQualityScore >= 0.28) {
       return {
-        tier:
-          "ELITE" as AllocationTier,
-        unit: 1.0,
+        tier: "ELITE" as AllocationTier,
+        unit: 1.0
       };
     }
 
-    if (
-      edge >= 0.10 &&
-      ev >= 0.12
-    ) {
+    if (edgeQualityScore >= 0.16) {
       return {
-        tier:
-          "TACTICAL" as AllocationTier,
-        unit: 0.5,
+        tier: "TACTICAL" as AllocationTier,
+        unit: 0.5
       };
     }
 
     return {
-      tier:
-        "MICRO" as AllocationTier,
-      unit: 0.25,
+      tier: "MICRO" as AllocationTier,
+      unit: 0.25
     };
-  }
-
-  /* =====================================================
-     CORRELATION ENGINE
-     ===================================================== */
-
-  private calculateCorrelationScore(
-    friction: number,
-    chaos: number,
-    motHome: number,
-    motAway: number
-  ): number {
-    const motivation =
-      (motHome + motAway) / 2;
-
-    const score =
-      chaos * 0.45 +
-      friction * 0.35 +
-      motivation * 0.20;
-
-    return Number(
-      Math.min(
-        1,
-        Math.max(0, score)
-      ).toFixed(4)
-    );
-  }
-
-  /* =====================================================
-     EXPOSURE SHIELD
-     ===================================================== */
-
-  private applyExposureProtection(
+     private applyCorrelationExposureLimiter(
     markets: ApprovedMarket[]
   ): ApprovedMarket[] {
     const sorted =
       [...markets].sort(
         (a, b) =>
-          b.expectedValue -
-          a.expectedValue
+          b.edgeQualityScore -
+          a.edgeQualityScore
       );
 
-    const approved: ApprovedMarket[] =
-      [];
+    const approved: ApprovedMarket[] = [];
 
-    let exposure = 0;
+    let totalExposure = 0;
 
     for (const market of sorted) {
       if (
-        exposure +
-          market.unitSize <=
-        MAX_MATCH_EXPOSURE
+        totalExposure + market.unitSize >
+        MAX_CLUSTER_EXPOSURE
       ) {
-        approved.push(market);
-
-        exposure +=
-          market.unitSize;
+        continue;
       }
+
+      approved.push(market);
+
+      totalExposure += market.unitSize;
     }
 
     return approved;
   }
 
-  /* =====================================================
-     HELPERS
-     ===================================================== */
+  private applyUnderCompression(
+    goals: GoalsMarket,
+    behavior: MatchBehavior,
+    friction: number
+  ): GoalsMarket {
+    if (
+      behavior !== "TRUNCADO_UNDER"
+    ) {
+      return goals;
+    }
 
-  private clampProbability(
-    value: number
-  ): number {
-    return Number(
+    const compression =
       Math.min(
-        0.99,
-        Math.max(0.01, value)
-      ).toFixed(4)
-    );
+        0.18,
+        friction * 0.14
+      );
+
+    const compress = (
+      market: MarketProbability
+    ): MarketProbability => ({
+      ...market,
+
+      probability:
+        Number(
+          Math.max(
+            0.01,
+            market.probability -
+              compression
+          ).toFixed(4)
+        )
+    });
+
+    const expand = (
+      market: MarketProbability
+    ): MarketProbability => ({
+      ...market,
+
+      probability:
+        Number(
+          Math.min(
+            0.99,
+            market.probability +
+              compression
+          ).toFixed(4)
+        )
+    });
+
+    return {
+      over05: goals.over05,
+      over15: compress(goals.over15),
+      over25: compress(goals.over25),
+      over35: compress(goals.over35),
+
+      under15: expand(goals.under15),
+      under25: expand(goals.under25),
+      under35: expand(goals.under35),
+      under45: expand(goals.under45),
+
+      bttsYes: compress(goals.bttsYes),
+      bttsNo: expand(goals.bttsNo)
+    };
   }
 
-  private normalizeInverse(
-    value: number
-  ): number {
-    return Number(
-      (1 - value).toFixed(4)
-    );
+  private applyCardsCalibration(
+    cards: CardsMarket,
+    friction: number,
+    motivationHome: number,
+    motivationAway: number
+  ): CardsMarket {
+    const boost =
+      friction * 0.06 +
+      ((motivationHome +
+        motivationAway) /
+        2) *
+        0.04;
+
+    const adjust = (
+      market: MarketProbability
+    ): MarketProbability => ({
+      ...market,
+
+      probability:
+        Number(
+          Math.min(
+            0.99,
+            market.probability +
+              boost
+          ).toFixed(4)
+        )
+    });
+
+    return {
+      over25: adjust(cards.over25),
+      over35: adjust(cards.over35),
+      over45: adjust(cards.over45),
+      over55: adjust(cards.over55),
+
+      under35: cards.under35,
+      under45: cards.under45,
+      under55: cards.under55,
+      under65: cards.under65
+    };
   }
 
-  private generatePredictionHash(
-    payload: unknown
-  ): string {
-    return crypto
-      .createHash("sha256")
-      .update(
-        JSON.stringify(payload)
-      )
-      .digest("hex");
+  private applyCornersCalibration(
+    corners: CornersMarket,
+    chaosIndex: number,
+    motivationHome: number,
+    motivationAway: number
+  ): CornersMarket {
+    const boost =
+      chaosIndex * 0.07 +
+      ((motivationHome +
+        motivationAway) /
+        2) *
+        0.03;
+
+    const adjust = (
+      market: MarketProbability
+    ): MarketProbability => ({
+      ...market,
+
+      probability:
+        Number(
+          Math.min(
+            0.99,
+            market.probability +
+              boost
+          ).toFixed(4)
+        )
+    });
+
+    return {
+      over75: adjust(corners.over75),
+      over85: adjust(corners.over85),
+      over95: adjust(corners.over95),
+      over105: adjust(corners.over105),
+
+      under85: corners.under85,
+      under95: corners.under95,
+      under105: corners.under105,
+      under115: corners.under115
+    };
   }
 
   private resolveGlobalTier(
     markets: ApprovedMarket[]
   ): AllocationTier {
-    if (markets.length === 0)
+    if (markets.length === 0) {
       return "FULL_VETO";
+    }
 
     if (
       markets.some(
@@ -927,166 +834,15 @@ export class OpusCoreBrain {
     return "MICRO";
   }
 
-  /* =====================================================
-     OUTPUT COMPILER
-     ===================================================== */
-
-  private compileOutput({
-    input,
-
-    approvedMarkets,
-
-    vetoedMarkets,
-
-    noBetMarkets,
-
-    cascadeFlow,
-
-    behavior,
-
-    adjustedGoals,
-
-    adjustedCards,
-
-    adjustedCorners,
-  }: {
-    input: MatchContextInput;
-
-    approvedMarkets: ApprovedMarket[];
-
-    vetoedMarkets: string[];
-
-    noBetMarkets: string[];
-
-    cascadeFlow: string[];
-
-    behavior: MatchBehavior;
-
-    adjustedGoals: GoalsMarket;
-
-    adjustedCards: CardsMarket;
-
-    adjustedCorners: CornersMarket;
-  }): PredictionAuditOutput {
-    const highestEdge =
-      approvedMarkets.length > 0
-        ? Math.max(
-            ...approvedMarkets.map(
-              (m) => m.edge
-            )
-          )
-        : 0;
-
-    const highestEV =
-      approvedMarkets.length > 0
-        ? Math.max(
-            ...approvedMarkets.map(
-              (m) =>
-                m.expectedValue
-            )
-          )
-        : 0;
-
-    const totalExposure =
-      approvedMarkets.reduce(
-        (acc, market) =>
-          acc + market.unitSize,
-        0
-      );
-
-    return {
-      match_id: input.matchId,
-
-      prediction_hash:
-        this.generatePredictionHash({
-          matchId:
-            input.matchId,
-
-          timestamp:
-            Date.now(),
-
-          behavior,
-        }),
-
-      model_version:
-        this.MODEL_VERSION,
-
-      probability_matrix: {
-        winner:
-          input.winnerMatrix,
-
-        goals:
-          adjustedGoals,
-
-        cards:
-          adjustedCards,
-
-        corners:
-          adjustedCorners,
-      },
-
-      allocation_state: {
-        global_tier:
-          this.resolveGlobalTier(
-            approvedMarkets
-          ),
-
-        total_approved_markets:
-          approvedMarkets.length,
-
-        highest_detected_edge:
-          Number(
-            highestEdge.toFixed(4)
-          ),
-
-        highest_expected_value:
-          Number(
-            highestEV.toFixed(4)
-          ),
-
-        total_unit_exposure:
-          Number(
-            totalExposure.toFixed(2)
-          ),
-      },
-
-      reasoning_structured: {
-        behaviorClassification:
-          behavior,
-
-        approvedMarkets,
-
-        vetoedMarkets,
-
-        noBetMarkets,
-
-        cascadeFlow,
-
-        contextualAnalysis: {
-          tacticalFrictionScore:
-            input.tacticalFrictionScore,
-
-          chaosIndex:
-            input.chaosIndex,
-
-          motivationIndexHome:
-            input.motivationIndexHome,
-
-          motivationIndexAway:
-            input.motivationIndexAway,
-
-          marketVolatility:
-            input.marketVolatility ??
-            0.5,
-
-          integrityScore:
-            input.integrityScore ??
-            0.95,
-        },
-      },
-
-      created_at:
-        new Date().toISOString(),
-    };
+  private generatePredictionHash(
+    payload: unknown
+  ): string {
+    return crypto
+      .createHash("sha256")
+      .update(
+        JSON.stringify(payload)
+      )
+      .digest("hex");
   }
-    }
+     }
+}
