@@ -626,20 +626,20 @@ export class OpusCoreBrain {
     }
 
     return {
-      tier: "MICRO" as AllocationTier,
-      unit: 0.25
-    };
-  }
-     private applyCorrelationExposureLimiter(
-    markets: ApprovedMarket[]
-  ): ApprovedMarket[] {
-    const sorted =
-      [...markets].sort(
-        (a, b) =>
-          b.edgeQualityScore -
-          a.edgeQualityScore
-      );
+  tier: "MICRO" as AllocationTier,
+  unit: 0.25
+};
+}
 
+private applyCorrelationExposureLimiter(
+  markets: ApprovedMarket[]
+): ApprovedMarket[] {
+  const sorted =
+    [...markets].sort(
+      (a, b) =>
+        b.edgeQualityScore -
+        a.edgeQualityScore
+    );
     const approved: ApprovedMarket[] = [];
 
     let totalExposure = 0;
