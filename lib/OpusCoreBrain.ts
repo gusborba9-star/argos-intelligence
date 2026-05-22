@@ -596,69 +596,139 @@ export class OpusCoreBrain {
     );
   }
 
-  private calculateEdgeQualityScore(
-    edge: number,
-    expectedValue: number,
-    confidence: number
-  ): number {
-    return (
-      edge * 0.45 +
-      expectedValue * 0.35 +
-      confidence * 0.20
+  private normalizeProbability(
+  probability: number
+): number {
+
+  return Math.min(
+    0.93,
+    Math.max(
+      0.07,
+      probability
+    )
+  );
+}
+
+private calculateEdgeQualityScore(
+  edge: number,
+  expectedValue: number,
+  confidence: number,
+  impliedOdds: number
+): number {
+
+  const normalizedConfidence =
+    Math.sqrt(
+      Math.max(confidence, 0)
     );
+
+  const asymmetryBonus =
+    Math.log(
+      Math.max(impliedOdds, 1.01)
+    );
+
+  return Number(
+    (
+      edge * 0.35 +
+      expectedValue * 0.35 +
+      normalizedConfidence * 0.15 +
+      asymmetryBonus * 0.15
+    ).toFixed(4)
+  );
+}
+
+private calculateAllocation(
+  edgeQualityScore: number
+) {
+
+  if (edgeQualityScore >= 0.28) {
+    return {
+      tier: "ELITE" as AllocationTier,
+      unit: 1.0
+    };
   }
 
-  private calculateAllocation(
-    edgeQualityScore: number
-  ) {
-    if (edgeQualityScore >= 0.28) {
-      return {
-        tier: "ELITE" as AllocationTier,
-        unit: 1.0
-      };
-    }
-
-    if (edgeQualityScore >= 0.16) {
-      return {
-        tier: "TACTICAL" as AllocationTier,
-        unit: 0.5
-      };
-    }
-
+  if (edgeQualityScore >= 0.16) {
     return {
-  tier: "MICRO" as AllocationTier,
-  unit: 0.25
-};
+      tier: "TACTICAL" as AllocationTier,
+      unit: 0.5
+    };
+  }
+
+  return {
+    tier: "MICRO" as AllocationTier,
+    unit: 0.25
+  };
 }
 
 private applyCorrelationExposureLimiter(
   markets: ApprovedMarket[]
 ): ApprovedMarket[] {
-  const sorted =
-    [...markets].sort(
+
+  const sorted = [...markets]
+    .map((market) => {
+
+      const asymmetryBonus =
+        Math.log(
+          Math.max(
+            market.impliedOdds,
+            1.01
+          )
+        );
+
+      const exposurePriorityScore =
+        (
+          market.edgeQualityScore * 0.5 +
+          market.expectedValue * 0.3 +
+          asymmetryBonus * 0.2
+        );
+
+      return {
+        ...market,
+        exposurePriorityScore
+      };
+    })
+    .sort(
       (a, b) =>
-        b.edgeQualityScore -
-        a.edgeQualityScore
+        b.exposurePriorityScore -
+        a.exposurePriorityScore
     );
-    const approved: ApprovedMarket[] = [];
 
-    let totalExposure = 0;
+  const approved: ApprovedMarket[] = [];
 
-    for (const market of sorted) {
-      if (
-        totalExposure + market.unitSize >
-        MAX_CLUSTER_EXPOSURE
-      ) {
-        continue;
-      }
+  const verticals =
+    new Set<string>();
 
-      approved.push(market);
+  let totalExposure = 0;
 
-      totalExposure += market.unitSize;
+  for (const market of sorted) {
+
+    if (
+      totalExposure + market.unitSize >
+      MAX_CLUSTER_EXPOSURE
+    ) {
+      continue;
     }
 
-    return approved;
+    if (
+      verticals.has(
+        market.vertical
+      )
+    ) {
+      continue;
+    }
+
+    approved.push(market);
+
+    verticals.add(
+      market.vertical
+    );
+
+    totalExposure +=
+      market.unitSize;
   }
+
+  return approved;
+            }
 
   private applyUnderCompression(
     goals: GoalsMarket,
