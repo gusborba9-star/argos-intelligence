@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { OpusCoreBrain, MatchContextInput } from "@/lib/core/opus-core";
+import { OpusCoreBrain, MatchContextInput } from "@/lib/OpusCoreBrain";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,10 +18,6 @@ interface ScenarioAudit {
   error?: string;
 }
 
-// ============================================================
-// MOCKS (compatível com core v11)
-// ============================================================
-
 function generateMockScenarios(): MatchContextInput[] {
   return [
     {
@@ -29,11 +25,11 @@ function generateMockScenarios(): MatchContextInput[] {
       leagueId: "EPL",
       winnerMatrix: {
         home: { label: "HOME_WIN", probability: 0.58, impliedOdds: 1.65 },
-        away: { label: "AWAY_WIN", probability: 0.22, impliedOdds: 4.20 }
+        away: { label: "AWAY_WIN", probability: 0.22, impliedOdds: 4.2 }
       },
       goalsMatrix: {
-        over: { label: "OVER_25", probability: 0.65, impliedOdds: 1.50 },
-        under: { label: "UNDER_25", probability: 0.35, impliedOdds: 2.30 }
+        over: { label: "OVER_25", probability: 0.65, impliedOdds: 1.5 },
+        under: { label: "UNDER_25", probability: 0.35, impliedOdds: 2.3 }
       },
       cardsMatrix: {
         over: { label: "CARDS_OVER_45", probability: 0.55, impliedOdds: 1.72 }
@@ -46,21 +42,17 @@ function generateMockScenarios(): MatchContextInput[] {
       matchId: "SCENARIO_TACTICAL_2",
       leagueId: "UCL",
       winnerMatrix: {
-        home: { label: "HOME_WIN", probability: 0.33, impliedOdds: 2.90 },
-        away: { label: "AWAY_WIN", probability: 0.34, impliedOdds: 2.80 }
+        home: { label: "HOME_WIN", probability: 0.33, impliedOdds: 2.9 },
+        away: { label: "AWAY_WIN", probability: 0.34, impliedOdds: 2.8 }
       },
       goalsMatrix: {
-        over: { label: "OVER_15", probability: 0.81, impliedOdds: 1.20 }
+        over: { label: "OVER_15", probability: 0.81, impliedOdds: 1.2 }
       },
       cardsMatrix: {},
       cornersMatrix: {}
     }
   ];
 }
-
-// ============================================================
-// ROUTE
-// ============================================================
 
 export async function GET() {
   const startedAt = Date.now();
@@ -83,8 +75,7 @@ export async function GET() {
 
       try {
         const output = brain.analyzeMatch(input);
-
-        const approved = output.approvedMarkets;
+        const approved = output.approvedMarkets ?? [];
 
         const totalMarkets =
           Object.keys(input.winnerMatrix).length +
@@ -149,8 +140,6 @@ export async function GET() {
       }
     });
 
-    const totalTime = Date.now() - startedAt;
-
     const total = metrics.approvedMarkets + metrics.vetoedMarkets;
 
     return NextResponse.json({
@@ -158,7 +147,7 @@ export async function GET() {
       environment: "vercel-nodejs",
 
       execution: {
-        totalExecutionTimeMs: totalTime,
+        totalExecutionTimeMs: Date.now() - startedAt,
         scenariosProcessed: results.length,
         auditFailures: audits.filter(a => a.status === "FAILED").length
       },
@@ -178,13 +167,13 @@ export async function GET() {
       internalAudit: audits
     });
   } catch (fatal) {
-    const msg =
+    const message =
       fatal instanceof Error ? fatal.message : "UNKNOWN_FATAL_ERROR";
 
     return NextResponse.json(
       {
         status: "degraded",
-        error: msg,
+        error: message,
         executionTimeMs: Date.now() - startedAt
       },
       { status: 200 }
