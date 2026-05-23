@@ -393,12 +393,19 @@ export class OpusCoreBrain {
   }
 
   private classifyBehavior(
-    tacticalFrictionScore: number,
-    chaosIndex: number
-  ): MatchBehavior {
-    if (chaosIndex > 0.7) {
-      return "CAOTICO_EXPLOSIVO";
-    }
+  tacticalFrictionScore: number,
+  chaosIndex: number
+): MatchBehavior {
+  if (chaosIndex > 0.7) {
+    return "CAOTICO_EXPLOSIVO";
+  }
+
+  if (tacticalFrictionScore > 0.7) {
+    return "TRUNCADO_UNDER";
+  }
+
+  return "BALANCEADO";
+  }
 
     if (tacticalFrictionScore > 0.75) {
       return "TRUNCADO_UNDER";
