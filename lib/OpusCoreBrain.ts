@@ -8,7 +8,7 @@ export const BASE_MIN_EDGE = 0.035;
 export const SUBMARKET_HUNT_DISCOUNT = 0.72;
 export const MAX_CLUSTER_EXPOSURE = 1.5;
 export const TOP_K_PER_VERTICAL = 3;
-export const GLOBAL_QUANT_SCALE = 0.35;
+export const GLOBAL_QUANT_SCALE = 0.15;
 export const KELLY_FRACTION = 0.25;
 
 // Hard institutional cap
@@ -795,10 +795,10 @@ function computeKelly(
 // ============================================================
 
 export const MIN_EDGE_SCORE: Record<MarketVertical, number> = {
-  WINNER: 0.12,
-  GOALS: 0.05,
-  CARDS: 0.04,
-  CORNERS: 0.03
+  WINNER: 0.06,
+  GOALS: 0.025,
+  CARDS: 0.02,
+  CORNERS: 0.015
 };
 
 function rankSignals(
