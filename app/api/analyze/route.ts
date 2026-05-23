@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { OpusCoreBrain } from "@lib/OpusCoreBrain";
+
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 interface ScenarioMetrics {
@@ -156,7 +158,6 @@ export async function GET() {
         totalVetoedMarkets: metrics.vetoedMarkets,
         profitableOpportunitiesFound: metrics.profitableOpportunities,
         redistributedSubmarketEdges: metrics.submarketOpportunities,
-
         approvalRate: total ? metrics.approvedMarkets / total : 0,
         vetoRate: total ? metrics.vetoedMarkets / total : 0
       },
@@ -165,16 +166,13 @@ export async function GET() {
       internalAudit: audits
     });
   } catch (fatal) {
-    const message =
-      fatal instanceof Error ? fatal.message : "UNKNOWN_FATAL_ERROR";
-
     return NextResponse.json(
       {
         status: "degraded",
-        error: message,
+        error: fatal instanceof Error ? fatal.message : "UNKNOWN_FATAL_ERROR",
         executionTimeMs: Date.now() - startedAt
       },
       { status: 200 }
     );
   }
-          }
+}
