@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { performance } from "perf_hooks";
 import { OpusCoreBrain, MatchContextInput } from "@/lib/core/opus-core";
 
 export const runtime = "nodejs";
@@ -16,11 +15,13 @@ interface ScenarioAudit {
   scenarioId: string;
   status: "SUCCESS" | "FAILED";
   executionTimeMs: number;
-  data?: unknown;
   error?: string;
 }
 
-// MOCK DE CENÁRIOS OPERACIONAIS PARA VALIDAÇÃO DA ROTA DA API
+// ============================================================
+// MOCKS (compatível com core v11)
+// ============================================================
+
 function generateMockScenarios(): MatchContextInput[] {
   return [
     {
@@ -57,161 +58,136 @@ function generateMockScenarios(): MatchContextInput[] {
   ];
 }
 
-export async function GET(_request: Request) {
-  const startedAt = performance.now();
+// ============================================================
+// ROUTE
+// ============================================================
+
+export async function GET() {
+  const startedAt = Date.now();
+
   const audits: ScenarioAudit[] = [];
 
-  const aggregatedMetrics: ScenarioMetrics = {
+  const metrics: ScenarioMetrics = {
     approvedMarkets: 0,
     vetoedMarkets: 0,
     profitableOpportunities: 0,
-    submarketOpportunities: 0,
+    submarketOpportunities: 0
   };
 
   try {
-    // Inicializa o cérebro do Argos v13 diretamente na rota
     const brain = new OpusCoreBrain();
-    const mockScenarios = generateMockScenarios();
+    const scenarios = generateMockScenarios();
 
-    const processedResults = mockScenarios.map((input, index) => {
-      const scenarioStart = performance.now();
+    const results = scenarios.map((input, index) => {
+      const t0 = Date.now();
 
       try {
-        // Executa a análise real pelo Core do Argos
-        const analysisResult = brain.analyzeMatch(input);
+        const output = brain.analyzeMatch(input);
 
-        const approvedMarkets = analysisResult.approvedMarkets || [];
-        
-        // No Argos v13 todos os mercados que não passam do corte (> 0.2) são filtrados,
-        // gerando uma taxa de veto baseada na diferença de canônicos analisados vs aprovados.
-        const totalInputMarkets = 
+        const approved = output.approvedMarkets;
+
+        const totalMarkets =
           Object.keys(input.winnerMatrix).length +
           Object.keys(input.goalsMatrix).length +
           Object.keys(input.cardsMatrix).length +
           Object.keys(input.cornersMatrix).length;
 
-        const vetoedCount = Math.max(0, totalInputMarkets - approvedMarkets.length);
+        const vetoed = Math.max(0, totalMarkets - approved.length);
 
-        const winnerApproved = approvedMarkets.some(
-          (market: any) => market && market.vertical === "WINNER"
+        const winnerApproved = approved.some(m => m.vertical === "WINNER");
+
+        const submarkets = approved.filter(
+          m =>
+            m.vertical === "CARDS" ||
+            m.vertical === "GOALS" ||
+            m.vertical === "CORNERS"
         );
 
-        const highPrioritySubmarkets = approvedMarkets.filter(
-          (market: any) =>
-            market &&
-            (market.vertical === "CARDS" ||
-              market.vertical === "CORNERS" ||
-              market.vertical === "GOALS")
-        );
+        metrics.approvedMarkets += approved.length;
+        metrics.vetoedMarkets += vetoed;
+        metrics.profitableOpportunities += approved.length;
 
-        aggregatedMetrics.approvedMarkets += approvedMarkets.length;
-        aggregatedMetrics.vetoedMarkets += vetoedCount;
-        aggregatedMetrics.profitableOpportunities += approvedMarkets.length;
-
-        if (!winnerApproved && highPrioritySubmarkets.length > 0) {
-          aggregatedMetrics.submarketOpportunities += highPrioritySubmarkets.length;
+        if (!winnerApproved) {
+          metrics.submarketOpportunities += submarkets.length;
         }
 
         audits.push({
           scenarioId: input.matchId,
           status: "SUCCESS",
-          executionTimeMs: Number(
-            (performance.now() - scenarioStart).toFixed(2)
-          ),
+          executionTimeMs: Date.now() - t0
         });
 
         return {
-          ...analysisResult,
+          ...output,
           operationalAnalysis: {
             winnerMarketApproved: winnerApproved,
-            operationalDensity: totalInputMarkets > 0
-                ? Number((approvedMarkets.length / totalInputMarkets).toFixed(4))
-                : 0,
-            highPrioritySubmarkets: !winnerApproved ? highPrioritySubmarkets : [],
-            antiSterilitySignal: !winnerApproved && highPrioritySubmarkets.length > 0
+            operationalDensity:
+              totalMarkets > 0 ? approved.length / totalMarkets : 0,
+            highPrioritySubmarkets: !winnerApproved ? submarkets : [],
+            antiSterilitySignal:
+              !winnerApproved && submarkets.length > 0
                 ? "SUBMARKET_EDGE_REDISTRIBUTED"
-                : "STANDARD_OPERATIONAL_FLOW",
-          },
+                : "STANDARD_OPERATIONAL_FLOW"
+          }
         };
-      } catch (scenarioError) {
-        const parsedError =
-          scenarioError instanceof Error
-            ? scenarioError.message
-            : "UNKNOWN_SCENARIO_FAILURE";
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "UNKNOWN_SCENARIO_ERROR";
 
         audits.push({
-          scenarioId: input.matchId || `SCENARIO_${index + 1}`,
+          scenarioId: input.matchId || `SCENARIO_${index}`,
           status: "FAILED",
-          executionTimeMs: Number(
-            (performance.now() - scenarioStart).toFixed(2)
-          ),
-          error: parsedError,
+          executionTimeMs: Date.now() - t0,
+          error: message
         });
 
         return {
-          scenarioId: input.matchId || `SCENARIO_${index + 1}`,
+          scenarioId: input.matchId,
           status: "FAILED",
-          error: parsedError,
+          error: message
         };
       }
     });
 
-    const completedAt = performance.now();
+    const totalTime = Date.now() - startedAt;
 
-    return NextResponse.json(
-      {
-        status: "success",
-        environment: "Vercel Serverless (sa-east-1)",
-        execution: {
-          totalExecutionTimeMs: Number((completedAt - startedAt).toFixed(2)),
-          scenariosProcessed: processedResults.length,
-          auditFailures: audits.filter((audit) => audit.status === "FAILED").length,
-        },
-        metrics: {
-          totalMarketsAnalyzed: aggregatedMetrics.approvedMarkets + aggregatedMetrics.vetoedMarkets,
-          totalApprovedMarkets: aggregatedMetrics.approvedMarkets,
-          totalVetoedMarkets: aggregatedMetrics.vetoedMetrics,
-          profitableOpportunitiesFound: aggregatedMetrics.profitableOpportunities,
-          redistributedSubmarketEdges: aggregatedMetrics.submarketOpportunities,
-          approvalRate: (aggregatedMetrics.approvedMarkets + aggregatedMetrics.vetoedMarkets) > 0
-              ? Number((aggregatedMetrics.approvedMarkets / (aggregatedMetrics.approvedMarkets + aggregatedMetrics.vetoedMarkets)).toFixed(4))
-              : 0,
-          vetoRate: (aggregatedMetrics.approvedMarkets + aggregatedMetrics.vetoedMetrics) > 0
-              ? Number((aggregatedMetrics.vetoedMarkets / (aggregatedMetrics.approvedMarkets + aggregatedMetrics.vetoedMetrics)).toFixed(4))
-              : 0,
-        },
-        results: processedResults,
-        internalAudit: audits,
+    const total = metrics.approvedMarkets + metrics.vetoedMarkets;
+
+    return NextResponse.json({
+      status: "success",
+      environment: "vercel-nodejs",
+
+      execution: {
+        totalExecutionTimeMs: totalTime,
+        scenariosProcessed: results.length,
+        auditFailures: audits.filter(a => a.status === "FAILED").length
       },
-      { status: 200 }
-    );
-  } catch (fatalError) {
-    const parsedError = fatalError instanceof Error ? fatalError.message : "UNKNOWN_FATAL_ERROR";
+
+      metrics: {
+        totalMarketsAnalyzed: total,
+        totalApprovedMarkets: metrics.approvedMarkets,
+        totalVetoedMarkets: metrics.vetoedMarkets,
+        profitableOpportunitiesFound: metrics.profitableOpportunities,
+        redistributedSubmarketEdges: metrics.submarketOpportunities,
+
+        approvalRate: total ? metrics.approvedMarkets / total : 0,
+        vetoRate: total ? metrics.vetoedMarkets / total : 0
+      },
+
+      results,
+      internalAudit: audits
+    });
+  } catch (fatal) {
+    const msg =
+      fatal instanceof Error ? fatal.message : "UNKNOWN_FATAL_ERROR";
 
     return NextResponse.json(
       {
         status: "degraded",
-        environment: "Vercel Serverless (sa-east-1)",
-        fatalError: parsedError,
-        metrics: {
-          totalMarketsAnalyzed: 0,
-          totalApprovedMarkets: 0,
-          totalVetoedMarkets: 0,
-          profitableOpportunitiesFound: 0,
-          redistributedSubmarketEdges: 0,
-        },
-        results: [],
-        internalAudit: [
-          {
-            scenarioId: "GLOBAL_ENGINE",
-            status: "FAILED",
-            executionTimeMs: Number((performance.now() - startedAt).toFixed(2)),
-            error: parsedError,
-          },
-        ],
+        error: msg,
+        executionTimeMs: Date.now() - startedAt
       },
       { status: 200 }
     );
   }
-      }
-          
+          }
