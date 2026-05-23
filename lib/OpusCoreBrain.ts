@@ -1052,11 +1052,10 @@ function selectMarkets(
     (a, b) => b.edgeQualityScore - a.edgeQualityScore
   );
           }
-                // ============================================================
-// ORCHESTRATOR & PIPELINE EXECUTION
+                        // ============================================================
+// ORCHESTRATOR
 // ============================================================
-
-export class OpusCoreBrain {
+{
   private readonly MODEL_VERSION =
     "ARGOS_CORE_v19_FULLY_INSTITUTIONAL_ENGINE";
 
@@ -1211,4 +1210,4 @@ export class OpusCoreBrain {
       vertical
     );
   }
-}
+    }
