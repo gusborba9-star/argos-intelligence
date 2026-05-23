@@ -386,6 +386,7 @@ export interface PredictionAuditOutput {
 
   approvedMarkets: ApprovedMarket[];
   created_at: string;
+}
   // ============================================================
 // L1 — CANONICALIZATION
 // ============================================================
@@ -940,7 +941,7 @@ function selectMarkets(
             s.vertical === market.vertical
         )
       ) {
-      
+      continue;
       }
 
       let maxCorrelationRisk = 0;
@@ -1049,13 +1050,14 @@ function selectMarkets(
   }
 
   return selected.sort(
-    (a, b) => b.edgeQualityScore - a.edgeQualityScore
-  );
-          }
-                        // ============================================================
+  (a, b) => b.edgeQualityScore - a.edgeQualityScore
+);
+}
+// ============================================================
 // ORCHESTRATOR
 // ============================================================
-{
+
+  export class OpusCoreBrain {
   private readonly MODEL_VERSION =
     "ARGOS_CORE_v19_FULLY_INSTITUTIONAL_ENGINE";
 
