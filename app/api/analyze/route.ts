@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { OpusCoreBrain } from "@lib/OpusCoreBrain";
+import { OpusCoreBrain } from "@/lib/core/OpusCoreBrain";
+import type { MatchContextInput } from "@/lib/core/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
