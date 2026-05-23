@@ -693,7 +693,7 @@ function computeInstitutionalEdge(
 
   normalizedEdgeScore *= (1 - efficiencyPenalty);
 
-  const calibratedEV = economicEV * liquidityScore;
+  const calibratedEV = economicEV;
 
   return {
     adjustedProb,
