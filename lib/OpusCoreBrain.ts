@@ -940,7 +940,7 @@ function selectMarkets(
             s.vertical === market.vertical
         )
       ) {
-        continue;
+      
       }
 
       let maxCorrelationRisk = 0;
