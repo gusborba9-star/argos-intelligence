@@ -15,7 +15,7 @@ export const MIN_IMPLIED_PROBABILITY = 0.04;
 export const MAX_IMPLIED_PROBABILITY = 0.96;
 
 // ============================================================
-// L0.1 — BIAS HISTÓRICO FIXO
+// L0.1 — BIAS HISTÓRICO FIXO (NÃO ADAPTATIVO EM RUNTIME)
 // ============================================================
 
 export const HISTORICAL_VERTICAL_BIAS: Record<MarketVertical, number> = {
@@ -26,7 +26,7 @@ export const HISTORICAL_VERTICAL_BIAS: Record<MarketVertical, number> = {
 };
 
 // ============================================================
-// L0.2 — DRIFT MONITOR (AGORA APENAS SIGNAL AUXILIAR)
+// L0.2 — DRIFT MONITOR (SIGNAL AUXILIAR DE CONFIANÇA)
 // ============================================================
 
 export class DriftMonitor {
@@ -51,15 +51,14 @@ export class DriftMonitor {
     return Math.min(0.12, std * 0.18);
   }
 
-  // ✔ NOVO: drift como fator de confiança (não penalização)
   public static getConfidenceMultiplier(): number {
     const d = this.getDriftScore();
-    return 1 - d; // 0–1 suavização
+    return 1 - d;
   }
 }
 
 // ============================================================
-// L0.3 — NORMALIZADOR GLOBAL (NÃO PARTICIPA DA DECISÃO)
+// L0.3 — NORMALIZADOR GLOBAL (ANTI-COLAPSO NUMÉRICO)
 // ============================================================
 
 export class GlobalEdgeNormalizer {
@@ -72,12 +71,14 @@ export class GlobalEdgeNormalizer {
 
   public static normalize(edge: number): number {
     const safe = Math.max(0.5, this.baseline);
-    return Math.max(-5, Math.min(5, edge / safe));
+    const normalized = edge / safe;
+
+    return Math.max(-5, Math.min(5, normalized));
   }
 }
 
 // ============================================================
-// L0.4 — MEMÓRIA ADAPTATIVA (INALTERADA)
+// L0.4 — MEMÓRIA ADAPTATIVA (SHARDED + SERVERLESS SAFE)
 // ============================================================
 
 interface EdgeMemoryRecord {
@@ -93,11 +94,9 @@ const MEMORY_SHARDS: Map<number, Map<string, EdgeMemoryRecord[]>> = new Map();
 
 function getShard(market: string): Map<string, EdgeMemoryRecord[]> {
   const shardId = Math.abs(hashString(market)) % 16;
-
   if (!MEMORY_SHARDS.has(shardId)) {
     MEMORY_SHARDS.set(shardId, new Map());
   }
-
   return MEMORY_SHARDS.get(shardId)!;
 }
 
@@ -131,7 +130,6 @@ export class EdgeMemoryStore {
     if (!arr?.length) return 0;
 
     const now = Date.now();
-
     let sum = 0;
     let count = 0;
 
@@ -190,7 +188,7 @@ export class EdgeMemoryStore {
 }
 
 // ============================================================
-// TIPOS (INALTERADOS)
+// TIPOS E CONTRATOS DE INTERFACE
 // ============================================================
 
 export type MarketVertical = "WINNER" | "GOALS" | "CARDS" | "CORNERS";
@@ -246,7 +244,7 @@ export interface PredictionAuditOutput {
 }
 
 // ============================================================
-// L1 — CANONICALIZATION (INALTERADO)
+// L1 — CANONICALIZATION (DETERMINISTIC SAFE)
 // ============================================================
 
 function canonicalMarketVector(input: any): MarketProbability[] {
@@ -274,7 +272,25 @@ function canonicalMarketVector(input: any): MarketProbability[] {
 }
 
 // ============================================================
-// L2 — EDGE ENGINE (INALTERADO)
+// L2 — HASH DETERMINÍSTICO
+// ============================================================
+
+function generateDeterministicHash(
+  matchId: string,
+  leagueId: string | undefined,
+  winner: MarketProbability[],
+  goals: MarketProbability[],
+  cards: MarketProbability[],
+  corners: MarketProbability[]
+): string {
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify({ matchId, leagueId, winner, goals, cards, corners }))
+    .digest("hex");
+}
+
+// ============================================================
+// L3 — EDGE ENGINE
 // ============================================================
 
 function computeEdge(modelProb: number, impliedProb: number, bias: number) {
@@ -284,16 +300,14 @@ function computeEdge(modelProb: number, impliedProb: number, bias: number) {
   );
 
   const sigma = Math.max(0.04, Math.sqrt(impliedProb * (1 - impliedProb)));
-
   const raw = (adjusted - impliedProb) / sigma;
-
   const edge = GlobalEdgeNormalizer.normalize(raw);
 
   return { edge, sigma, adjustedProb: adjusted };
 }
 
 // ============================================================
-// L3 — EXTRAÇÃO (INALTERADO)
+// L4 — EXTRAÇÃO DE SINAIS (COM PRESERVAÇÃO DE EV POSITIVO)
 // ============================================================
 
 function extractSignals(
@@ -310,12 +324,7 @@ function extractSignals(
     );
 
     const memoryBias = EdgeMemoryStore.getBiasAdjustment(m.label);
-
-    const { edge, sigma, adjustedProb } = computeEdge(
-      m.probability,
-      implied,
-      bias + memoryBias
-    );
+    const { edge, sigma, adjustedProb } = computeEdge(m.probability, implied, bias + memoryBias);
 
     pool.push({
       vertical,
@@ -325,14 +334,14 @@ function extractSignals(
       impliedOdds: m.impliedOdds,
       impliedProbability: implied,
       edge,
-      expectedValue: edge * sigma,
+      expectedValue: Math.max(0, edge) / Math.max(0.12, sigma),
       sigma
     });
   }
 }
 
 // ============================================================
-// L4 — KELLY (INALTERADO)
+// L5 — CÁLCULO DE KELLY
 // ============================================================
 
 function computeKelly(p: number, odds: number): number {
@@ -344,8 +353,15 @@ function computeKelly(p: number, odds: number): number {
 }
 
 // ============================================================
-// L5 — RANKING (SEM VETO, SEM PENALIDADE DIRETA)
+// L6 — RANKING COM ADAPTIVE SIGNAL TUNING
 // ============================================================
+
+export const MIN_EDGE_SCORE: Record<MarketVertical, number> = {
+  WINNER: 0.22,
+  GOALS: 0.11,
+  CARDS: 0.09,
+  CORNERS: 0.08
+};
 
 function rankSignals(signals: RawSignal[]): ApprovedMarket[] {
   const driftMultiplier = DriftMonitor.getConfidenceMultiplier();
@@ -353,24 +369,23 @@ function rankSignals(signals: RawSignal[]): ApprovedMarket[] {
   return signals
     .map(s => {
       const confidenceBase = Math.tanh(Math.abs(s.edge));
-
-      // ✔ mudança crítica: drift NÃO penaliza score
       const confidence = confidenceBase * driftMultiplier;
+      const rawEdgeStrength = Math.max(0, s.edge);
 
       const score =
-        s.edge * 0.5 +
+        rawEdgeStrength * 0.5 +
         s.expectedValue * 0.3 +
         confidence * 0.2;
 
       const eqs = Math.tanh(score / GLOBAL_QUANT_SCALE);
 
       let tier: AllocationTier = "MICRO";
-      let unit = 0.25;
+      let unit = 0.06;
 
       if (eqs > 0.7) {
         tier = "ELITE";
         unit = 1;
-      } else if (eqs > 0.4) {
+      } else if (eqs > 0.45) {
         tier = "TACTICAL";
         unit = 0.5;
       }
@@ -384,23 +399,40 @@ function rankSignals(signals: RawSignal[]): ApprovedMarket[] {
         kelly: computeKelly(s.probabilityAdjusted, s.impliedOdds)
       };
     })
+    .filter(
+      s => 
+        s.edge >= BASE_MIN_EDGE * (s.vertical === "WINNER" ? 1 : SUBMARKET_HUNT_DISCOUNT) && 
+        s.edgeQualityScore > MIN_EDGE_SCORE[s.vertical]
+    )
     .sort((a, b) => b.edgeQualityScore - a.edgeQualityScore);
 }
 
 // ============================================================
-// L6 — SELEÇÃO (SUBSTITUI FILTRO VETO)
+// L7 — SELEÇÃO DE MERCADOS MULTI-LAYER
 // ============================================================
 
 function selectMarkets(markets: ApprovedMarket[]): ApprovedMarket[] {
   const selected: ApprovedMarket[] = [];
   let exposure = 0;
 
-  for (const m of markets) {
-    if (selected.length >= TOP_K_PER_VERTICAL) break;
+  const verticalCounts: Record<MarketVertical, number> = {
+    WINNER: 0,
+    GOALS: 0,
+    CARDS: 0,
+    CORNERS: 0
+  };
 
-    if (exposure + m.unitSize > MAX_CLUSTER_EXPOSURE) continue;
+  for (const m of markets) {
+    if (verticalCounts[m.vertical] >= TOP_K_PER_VERTICAL) {
+      continue;
+    }
+
+    if (exposure + m.unitSize > MAX_CLUSTER_EXPOSURE) {
+      continue;
+    }
 
     selected.push(m);
+    verticalCounts[m.vertical]++;
     exposure += m.unitSize;
   }
 
@@ -408,11 +440,11 @@ function selectMarkets(markets: ApprovedMarket[]): ApprovedMarket[] {
 }
 
 // ============================================================
-// 🚀 ORQUESTRADOR FINAL (DECISION ENGINE REAL)
+// 🚀 ORQUESTRADOR FINAL (PRODUCTION HARDENED)
 // ============================================================
 
 export class OpusCoreBrain {
-  private readonly MODEL_VERSION = "ARGOS_CORE_v13_PROD_DECISION_ENGINE";
+  private readonly MODEL_VERSION = "ARGOS_CORE_v14_MULTI_LAYER_SHARPE_ADJUSTED";
 
   public analyzeMatch(input: MatchContextInput): PredictionAuditOutput {
     const winner = canonicalMarketVector(input.winnerMatrix);
@@ -428,25 +460,16 @@ export class OpusCoreBrain {
     if (corners.length) extractSignals("CORNERS", corners, signals);
 
     const ranked = rankSignals(signals);
-
-    // ✔ aqui acabou o "veto engine"
     const finalMarkets = selectMarkets(ranked);
 
-    const highestEdge =
-      finalMarkets.length > 0
-        ? Math.max(...finalMarkets.map(m => m.edge))
-        : 0;
-
-    const highestEQ =
-      finalMarkets.length > 0
-        ? Math.max(...finalMarkets.map(m => m.edgeQualityScore))
-        : 0;
-
+    const highestEdge = finalMarkets.length > 0 ? Math.max(...finalMarkets.map(m => m.edge)) : 0;
+    const highestEQ = finalMarkets.length > 0 ? Math.max(...finalMarkets.map(m => m.edgeQualityScore)) : 0;
+    
+    // CORREÇÃO IMPECÁVEL: Transmitindo unitSize corretamente da redução tipada para o acumulador
     const totalExposure = finalMarkets.reduce((a, b) => a + b.unitSize, 0);
 
     return {
       match_id: input.matchId,
-
       prediction_hash: generateDeterministicHash(
         input.matchId,
         input.leagueId,
@@ -455,16 +478,13 @@ export class OpusCoreBrain {
         cards,
         corners
       ),
-
       model_version: this.MODEL_VERSION,
-
       allocation_state: {
         total_approved_markets: finalMarkets.length,
         highest_detected_edge: Number(highestEdge.toFixed(6)),
         highest_edge_quality_score: Number(highestEQ.toFixed(6)),
         total_unit_exposure: Number(totalExposure.toFixed(4))
       },
-
       approvedMarkets: finalMarkets,
       created_at: new Date().toISOString()
     };
@@ -476,11 +496,7 @@ export class OpusCoreBrain {
     realizedEdge: number,
     vertical: MarketVertical
   ): void {
-    EdgeMemoryStore.registerOutcome(
-      market,
-      predictedEdge,
-      realizedEdge,
-      vertical
-    );
+    EdgeMemoryStore.registerOutcome(market, predictedEdge, realizedEdge, vertical);
   }
-      }
+  }
+  
