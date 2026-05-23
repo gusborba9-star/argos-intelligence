@@ -279,10 +279,14 @@ export class OpusCoreBrain {
         ...cornersResult
       });
 
-      cascadeFlow.push("CORNERS_APPROVED");
-    } else {
-      vetoedMarkets.push("CORNERS_VETOED");
-    }
+      if (bestCornersMarket) {
+  decisionFlow.push("CORNERS_EDGE_ACCEPTED");
+
+  executionFlow.push("CORNERS_APPROVED");
+} else {
+  vetoedMarkets.push("CORNERS_VETOED");
+  decisionFlow.push("CORNERS_REJECTED");
+      }
 
     const exposureLimitedMarkets =
       this.applyCorrelationExposureLimiter(
@@ -456,27 +460,46 @@ export class OpusCoreBrain {
   }
 
   private calculateDNB(
-    side: MarketProbability,
-    draw: MarketProbability,
-    label: string
-  ): MarketProbability {
-    const adjustedProbability =
-      side.probability /
-      (1 - draw.probability);
+  side: MarketProbability,
+  draw: MarketProbability,
+  label: string
+): MarketProbability {
+  const drawFactor =
+    Math.max(
+      0.05,
+      Math.min(draw.probability, 0.85)
+    );
 
-    const impliedOdds =
-      1 / adjustedProbability;
+  const sideFactor =
+    Math.max(
+      0.001,
+      side.probability
+    );
 
-    return {
-      label,
-      probability:
-        Number(
-          adjustedProbability.toFixed(4)
-        ),
+  const adjustedProbability =
+    sideFactor / (1 - drawFactor);
 
-      impliedOdds:
-        Number(impliedOdds.toFixed(4))
-    };
+  const normalizedProbability =
+    Math.min(
+      0.99,
+      Math.max(
+        0.001,
+        adjustedProbability
+      )
+    );
+
+  const impliedOdds =
+    1 / normalizedProbability;
+
+  return {
+    label,
+    probability: Number(
+      normalizedProbability.toFixed(4)
+    ),
+    impliedOdds: Number(
+      impliedOdds.toFixed(4)
+    )
+  };
   }
 
   private findBestEdge(
@@ -627,27 +650,27 @@ private calculateEdgeQualityScore(
     );
 
   return Number(
-    (
-      edge * 0.35 +
-      expectedValue * 0.35 +
-      normalizedConfidence * 0.15 +
-      asymmetryBonus * 0.15
-    ).toFixed(4)
-  );
+  (
+    edge * 0.40 +
+    expectedValue * 0.25 +
+    normalizedConfidence * 0.15 +
+    asymmetryBonus * 0.20
+  ).toFixed(4)
+);
 }
 
 private calculateAllocation(
   edgeQualityScore: number
 ) {
 
-  if (edgeQualityScore >= 0.28) {
+  if (edgeQualityScore >= 0.30) {
     return {
       tier: "ELITE" as AllocationTier,
       unit: 1.0
     };
   }
 
-  if (edgeQualityScore >= 0.16) {
+  if (edgeQualityScore >= 0.18) {
     return {
       tier: "TACTICAL" as AllocationTier,
       unit: 0.5
