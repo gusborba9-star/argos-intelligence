@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { OpusCoreBrain } from "../../lib/OpusCoreBrain";
-export const runtime = "nodejs";
+import { OpusCoreBrain } from "@lib/OpusCoreBrain";
 export const dynamic = "force-dynamic";
 
 interface ScenarioMetrics {
