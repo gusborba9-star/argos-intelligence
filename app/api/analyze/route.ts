@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { OpusCoreBrain } from "@/lib/core/OpusCoreBrain";
-import type { MatchContextInput } from "@/lib/core/types";
+import { OpusCoreBrain } from "@lib/OpusCoreBrain";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +18,16 @@ interface ScenarioAudit {
   error?: string;
 }
 
+interface MatchContextInput {
+  matchId: string;
+  leagueId?: string;
+  winnerMatrix: any;
+  goalsMatrix: any;
+  cardsMatrix: any;
+  cornersMatrix: any;
+}
+
+// MOCK
 function generateMockScenarios(): MatchContextInput[] {
   return [
     {
@@ -89,10 +98,7 @@ export async function GET() {
         const winnerApproved = approved.some(m => m.vertical === "WINNER");
 
         const submarkets = approved.filter(
-          m =>
-            m.vertical === "CARDS" ||
-            m.vertical === "GOALS" ||
-            m.vertical === "CORNERS"
+          m => m.vertical === "CARDS" || m.vertical === "GOALS" || m.vertical === "CORNERS"
         );
 
         metrics.approvedMarkets += approved.length;
@@ -113,8 +119,7 @@ export async function GET() {
           ...output,
           operationalAnalysis: {
             winnerMarketApproved: winnerApproved,
-            operationalDensity:
-              totalMarkets > 0 ? approved.length / totalMarkets : 0,
+            operationalDensity: totalMarkets > 0 ? approved.length / totalMarkets : 0,
             highPrioritySubmarkets: !winnerApproved ? submarkets : [],
             antiSterilitySignal:
               !winnerApproved && submarkets.length > 0
@@ -145,14 +150,11 @@ export async function GET() {
 
     return NextResponse.json({
       status: "success",
-      environment: "vercel-nodejs",
-
       execution: {
         totalExecutionTimeMs: Date.now() - startedAt,
         scenariosProcessed: results.length,
         auditFailures: audits.filter(a => a.status === "FAILED").length
       },
-
       metrics: {
         totalMarketsAnalyzed: total,
         totalApprovedMarkets: metrics.approvedMarkets,
@@ -162,7 +164,6 @@ export async function GET() {
         approvalRate: total ? metrics.approvedMarkets / total : 0,
         vetoRate: total ? metrics.vetoedMarkets / total : 0
       },
-
       results,
       internalAudit: audits
     });
@@ -176,4 +177,4 @@ export async function GET() {
       { status: 200 }
     );
   }
-}
+          }
