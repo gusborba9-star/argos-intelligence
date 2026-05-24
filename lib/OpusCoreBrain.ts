@@ -632,10 +632,10 @@ function computeDecomposedSigma(
 ): number {
   const marketVariance = impliedProb * (1 - impliedProb);
 
-  let modelVariance = 0.02;
+  let modelVariance = 0.01;
 
-  if (vertical === "CORNERS") modelVariance = 0.06;
-  if (vertical === "CARDS") modelVariance = 0.08;
+if (vertical === "CORNERS") modelVariance = 0.04;
+if (vertical === "CARDS") modelVariance = 0.05;
 
   const regimeVariance = 0.04 * regimeIntensity;
 
@@ -874,7 +874,7 @@ function rankSignals(
 
     .filter(signal =>
   signal.economicEV > 0 &&
-  signal.edgeQualityScore > MIN_EDGE_SCORE[signal.vertical] * 0.65
+  signal.edgeQualityScore > MIN_EDGE_SCORE[signal.vertical] * 0.4
 )
 
     .sort((a, b) =>
@@ -960,7 +960,7 @@ function selectMarkets(
       const effectiveEdge =
         market.economicEV * (1 - maxCorrelationRisk);
 
-      const adaptiveMinEdge = BASE_MIN_EDGE * 0.85;
+      const adaptiveMinEdge = BASE_MIN_EDGE * 0.55;
 
       const shrinkedProbability =
         market.impliedProbability +
@@ -1015,8 +1015,8 @@ function selectMarkets(
       else {
         if (
           exposure < 0.4 &&
-          market.economicEV > 0.01 &&
-          market.confidence > 0.15
+          market.economicEV > 0.00 &&
+          market.confidence > 0.05
         ) {
           if (
             effectiveEdge > 0 &&
