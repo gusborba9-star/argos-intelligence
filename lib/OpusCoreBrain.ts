@@ -958,12 +958,11 @@ function rankSignals(
         kelly
       };
     })
-    .filter(signal =>
-      .filter(signal =>
+.filter(signal =>
   signal.economicEV > -0.003 &&
   signal.edgeQualityScore > MIN_EDGE_SCORE[signal.vertical] * 0.18
 )
-    .sort((a, b) => b.edgeQualityScore - a.edgeQualityScore);
+.sort((a, b) => b.edgeQualityScore - a.edgeQualityScore);
 }
 
 // ============================================================
