@@ -74,7 +74,7 @@ export class DriftMonitor {
 
   public static getConfidenceMultiplier(): number {
     const drift = this.getDriftScore();
-    return Math.max(0.60, 1 - drift);
+    return Math.max(0.75, 1 - drift * 0.5);
   }
 }
 
@@ -873,9 +873,9 @@ function rankSignals(
     })
 
     .filter(signal =>
-      signal.economicEV > 0 &&
-      signal.edgeQualityScore > MIN_EDGE_SCORE[signal.vertical]
-    )
+  signal.economicEV > 0 &&
+  signal.edgeQualityScore > MIN_EDGE_SCORE[signal.vertical] * 0.65
+)
 
     .sort((a, b) =>
       b.edgeQualityScore - a.edgeQualityScore
