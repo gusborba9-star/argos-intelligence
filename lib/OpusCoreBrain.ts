@@ -4,11 +4,11 @@ import crypto from "crypto";
 // L0 — CONSTANTES E PARÂMETROS INSTITUCIONAIS
 // ============================================================
 
-export const BASE_MIN_EDGE = 0.035;
+export const BASE_MIN_EDGE = 0.018;
 export const SUBMARKET_HUNT_DISCOUNT = 0.72;
 export const MAX_CLUSTER_EXPOSURE = 1.5;
 export const TOP_K_PER_VERTICAL = 3;
-export const GLOBAL_QUANT_SCALE = 0.15;
+export const GLOBAL_QUANT_SCALE = 0.07;
 export const KELLY_FRACTION = 0.25;
 
 export const MAX_EFFECTIVE_KELLY_POSITION = 0.08;
@@ -902,10 +902,10 @@ function computeKelly(probability: number, odds: number): number {
 // ============================================================
 
 export const MIN_EDGE_SCORE: Record<MarketVertical, number> = {
-  WINNER: 0.06,
-  GOALS: 0.025,
-  CARDS: 0.02,
-  CORNERS: 0.015
+  WINNER: 0.028,
+  GOALS: 0.012,
+  CARDS: 0.010,
+  CORNERS: 0.008
 };
 
 function rankSignals(
@@ -923,9 +923,14 @@ function rankSignals(
         regimeMultiplier = 1 + regimeInfo.intensity * 0.35;
       }
 
-      const rawConf = Math.max(0, signal.normalizedEdgeScore) * 0.6 +
-                      Math.max(0, signal.economicEV) * 0.4;
-      const confidence = clamp(0.15, 1 / (1 + Math.exp(-rawConf * 4 + 1.2)), 0.95);
+      const rawConf =
+  signal.normalizedEdgeScore * 0.55 +
+  signal.economicEV * 0.45;
+      const confidence = clamp(
+  0.10,
+  1 / (1 + Math.exp(-rawConf * 2.4 + 0.2)),
+  0.98
+);
 
       const score = (
         Math.max(0, signal.normalizedEdgeScore) * 0.40 +
@@ -954,9 +959,10 @@ function rankSignals(
       };
     })
     .filter(signal =>
-      signal.economicEV > 0 &&
-      signal.edgeQualityScore > MIN_EDGE_SCORE[signal.vertical] * 0.4
-    )
+      .filter(signal =>
+  signal.economicEV > -0.003 &&
+  signal.edgeQualityScore > MIN_EDGE_SCORE[signal.vertical] * 0.18
+)
     .sort((a, b) => b.edgeQualityScore - a.edgeQualityScore);
 }
 
@@ -1004,8 +1010,10 @@ function selectMarkets(markets: ApprovedMarket[]): ApprovedMarket[] {
       }
 
       const effectiveEdge = market.economicEV * (1 - maxCorrelationRisk);
-      const adaptiveMinEdge = BASE_MIN_EDGE * 0.55;
-
+      const adaptiveMinEdge =
+  market.vertical === "WINNER"
+    ? BASE_MIN_EDGE * 0.9
+    : BASE_MIN_EDGE * 0.28;
       const shrinkedProbability =
         market.impliedProbability +
         (market.probabilityAdjusted - market.impliedProbability) * driftMultiplier;
