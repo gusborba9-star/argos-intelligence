@@ -905,7 +905,7 @@ function getVectorialCorrelationPenalty(
     (fA.tempoFactor * fB.tempoFactor) +
     (fA.aggressionFactor * fB.aggressionFactor);
 
-  if (dotProduct > 0.15) {
+  if (dotProduct > 0.28) {
     return Math.min(0.45, dotProduct * 0.38);
   }
 
@@ -960,13 +960,7 @@ function selectMarkets(
       const effectiveEdge =
         market.economicEV * (1 - maxCorrelationRisk);
 
-      const adaptiveMinEdge =
-        BASE_MIN_EDGE *
-        (
-          market.vertical === "WINNER"
-            ? 1
-            : SUBMARKET_HUNT_DISCOUNT
-        );
+      const adaptiveMinEdge = BASE_MIN_EDGE * 0.85;
 
       const shrinkedProbability =
         market.impliedProbability +
@@ -987,9 +981,7 @@ function selectMarkets(
 
       robustKelly *= (1 - maxCorrelationRisk);
 
-      let effectiveKellyDamping = Math.sqrt(
-        Math.max(0, robustKelly)
-      );
+      let effectiveKellyDamping = robustKelly;
 
       effectiveKellyDamping = Math.min(
         effectiveKellyDamping,
