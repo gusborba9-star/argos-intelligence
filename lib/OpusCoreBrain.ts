@@ -933,11 +933,11 @@ function rankSignals(
 );
 
       const score = (
-        Math.max(0, signal.normalizedEdgeScore) * 0.40 +
-        Math.max(0, signal.economicEV) * 0.28 +
-        confidence * 0.32
-      ) * regimeMultiplier;
-
+  Math.max(0, signal.normalizedEdgeScore) * 0.46 +
+  Math.max(0, signal.economicEV) * 0.30 +
+  confidence * 0.24
+) * regimeMultiplier;
+     
       let eqs = softsign(score / GLOBAL_QUANT_SCALE);
       eqs *= MARKET_STRUCTURAL_RELIABILITY[signal.vertical];
       eqs *= driftMultiplier;
