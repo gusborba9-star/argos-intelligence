@@ -19,8 +19,8 @@ export const MAX_IMPLIED_PROBABILITY = 0.96;
 export const MARKET_STRUCTURAL_RELIABILITY: Record<MarketVertical, number> = {
   WINNER: 1.0,
   GOALS: 0.92,
-  CARDS: 0.78,
-  CORNERS: 0.70
+  CARDS: 0.86,
+CORNERS: 0.82
 };
 
 export const HISTORICAL_VERTICAL_BIAS: Record<MarketVertical, number> = {
@@ -696,8 +696,8 @@ function computeDecomposedSigma(
 ): number {
   const marketVariance = impliedProb * (1 - impliedProb);
   let modelVariance = 0.01;
-  if (vertical === "CORNERS") modelVariance = 0.04;
-  if (vertical === "CARDS") modelVariance = 0.05;
+  if (vertical === "CORNERS") modelVariance = 0.028;
+if (vertical === "CARDS") modelVariance = 0.032;
   const regimeVariance = 0.04 * regimeIntensity;
   const totalVariance = marketVariance + modelVariance + regimeVariance;
   return Math.max(0.04, Math.sqrt(totalVariance));
@@ -934,8 +934,8 @@ function rankSignals(
 
       const score = (
         Math.max(0, signal.normalizedEdgeScore) * 0.40 +
-        Math.max(0, signal.economicEV) * 0.40 +
-        confidence * 0.20
+        Math.max(0, signal.economicEV) * 0.28 +
+        confidence * 0.32
       ) * regimeMultiplier;
 
       let eqs = softsign(score / GLOBAL_QUANT_SCALE);
