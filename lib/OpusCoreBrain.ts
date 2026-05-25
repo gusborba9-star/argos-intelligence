@@ -726,7 +726,7 @@ function computeInstitutionalEdge(
   let normalizedEdgeScore = softsign(statisticalEdge * 0.45);
   const liquidityScore = getLiquidityScore(vertical, impliedOdds);
   const efficiencyPenalty = calculateMarketEfficiencyPenalty(impliedOdds);
-  normalizedEdgeScore *= (1 - efficiencyPenalty);
+  normalizedEdgeScore *= (1 - efficiencyPenalty * 0.55);
   return { adjustedProb, sigma, liquidityScore, economicEV, statisticalEdge, normalizedEdgeScore };
 }
 
@@ -1011,8 +1011,8 @@ function selectMarkets(markets: ApprovedMarket[]): ApprovedMarket[] {
       const effectiveEdge = market.economicEV * (1 - maxCorrelationRisk);
       const adaptiveMinEdge =
   market.vertical === "WINNER"
-    ? BASE_MIN_EDGE * 0.9
-    : BASE_MIN_EDGE * 0.28;
+    ? BASE_MIN_EDGE * 0.55
+    : BASE_MIN_EDGE * 0.12;
       const shrinkedProbability =
         market.impliedProbability +
         (market.probabilityAdjusted - market.impliedProbability) * driftMultiplier;
@@ -1034,7 +1034,13 @@ function selectMarkets(markets: ApprovedMarket[]): ApprovedMarket[] {
 
       if (layer === 1) {
         if (
-          effectiveEdge >= adaptiveMinEdge &&
+          (
+  effectiveEdge >= adaptiveMinEdge ||
+  (
+    market.edgeQualityScore > 0.42 &&
+    market.confidence > 0.32
+  )
+) &&
           verticalCounts[market.vertical] < TOP_K_PER_VERTICAL &&
           exposure + adjustedUnitSize <= MAX_CLUSTER_EXPOSURE
         ) {
