@@ -946,8 +946,20 @@ function rankSignals(
 
       let tier: AllocationTier = "MICRO";
       let unit = 0.25;
-      if (eqs > 0.60) { tier = "ELITE"; unit = 1.0; }
-      else if (eqs > 0.32) { tier = "TACTICAL"; unit = 0.5; }
+      if (
+  eqs > 0.72 &&
+  signal.economicEV > 0.008
+) {
+  tier = "ELITE";
+  unit = 1.0;
+}
+else if (
+  eqs > 0.42 &&
+  signal.economicEV > 0.002
+) {
+  tier = "TACTICAL";
+  unit = 0.5;
+}
 
       return {
         ...signal,
@@ -1034,11 +1046,12 @@ function selectMarkets(markets: ApprovedMarket[]): ApprovedMarket[] {
 
       if (layer === 1) {
         if (
-          (
+(
   effectiveEdge >= adaptiveMinEdge ||
   (
-    market.edgeQualityScore > 0.42 &&
-    market.confidence > 0.32
+    market.economicEV > -0.0005 &&
+    market.edgeQualityScore > 0.46 &&
+    market.confidence > 0.38
   )
 ) &&
           verticalCounts[market.vertical] < TOP_K_PER_VERTICAL &&
