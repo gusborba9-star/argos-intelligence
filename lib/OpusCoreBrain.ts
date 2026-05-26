@@ -126,12 +126,21 @@ export class DriftMonitor {
   private static m2Error = 0;
   private static directionalMisalignments = 0;
   private static n = 0;
+  private static lastDecay = Date.now();
 
   public static update(
     error: number,
     predictedEdge: number,
     realizedEdge: number
   ): void {
+    const now = Date.now();
+
+if (now - this.lastDecay > 86400000) {
+  this.meanError *= 0.985;
+  this.m2Error *= 0.985;
+  this.directionalMisalignments *= 0.992;
+  this.lastDecay = now;
+}
     this.n++;
     const delta = error - this.meanError;
     this.meanError += delta / this.n;
@@ -201,6 +210,11 @@ export class EdgeMemoryStore {
       shard.set(record.market, []);
     }
     shard.get(record.market)!.push(record);
+    const bucket = shard.get(record.market)!;
+
+if (bucket.length > 120) {
+  bucket.shift();
+}
     this.total++;
     if (this.total > this.MAX) {
       this.prune();
@@ -332,9 +346,15 @@ export class ContextualMemoryStore {
     won: boolean
   ): void {
     const k = this.key(league, vertical, regime);
-    const realizedEdge = won ? Math.abs(predictedEdge) : -Math.abs(predictedEdge);
-    const error = realizedEdge - predictedEdge;
+    const realizedEdge =
+  won
+    ? (1 / Math.max(1.01, 1 - predictedEdge)) - 1
+    : -1;
 
+const calibratedPredicted =
+  clamp(-1, predictedEdge * 8, 1);
+
+const error = realizedEdge - calibratedPredicted;
     const existing = CONTEXTUAL_MEMORY.get(k);
     if (existing) {
       existing.n++;
@@ -666,8 +686,8 @@ function detectGameRegime(
 
 function calculateMarketEfficiencyPenalty(impliedOdds: number): number {
   const k = 0.8;
-  const x0 = 4.5;
-  const maxPenalty = 0.24;
+  const x0 = 3.6;
+  const maxPenalty = 0.38;
   const sigmoid = 1 / (1 + Math.exp(-k * (impliedOdds - x0)));
   return sigmoid * maxPenalty;
 }
@@ -928,7 +948,7 @@ function rankSignals(
   signal.economicEV * 0.45;
       const confidence = clamp(
   0.10,
-  1 / (1 + Math.exp(-rawConf * 2.4 + 0.2)),
+  1 / (1 + Math.exp(-rawConf * 1.85 + 0.38))
   0.98
 );
 
