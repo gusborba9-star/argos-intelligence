@@ -946,9 +946,10 @@ function rankSignals(
       const rawConf =
   signal.normalizedEdgeScore * 0.55 +
   signal.economicEV * 0.45;
-      const confidence = clamp(
+
+const confidence = clamp(
   0.10,
-  1 / (1 + Math.exp(-rawConf * 1.85 + 0.38))
+  1 / (1 + Math.exp(-rawConf * 1.85 + 0.38)),
   0.98
 );
 
