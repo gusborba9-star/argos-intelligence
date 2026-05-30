@@ -106,6 +106,29 @@ export interface PortfolioMarket {
   latentFactors: LatentFactors;
 }
 
+export interface LeagueDeltaProfile {
+  deltas: Partial<Record<MarketVertical, number>>;
+}
+
+// ============================================================
+// LEAGUE DELTA REGISTRY
+// ============================================================
+const LEAGUE_DELTAS: Record<string, LeagueDeltaProfile> = {
+  BRASILEIRAO: {
+    deltas: {
+      [MarketVertical.GOALS]: -0.018
+    }
+  },
+  LIBERTADORES: {
+    deltas: {
+      [MarketVertical.CARDS]: 0.025
+    }
+  },
+  DEFAULT: {
+    deltas: {}
+  }
+};
+
 // ============================================================
 // ENGINE
 // ============================================================
