@@ -25,12 +25,7 @@ export const MAX_ODDS = 12.0;
 
 export const MARKET_SUSPICION_THRESHOLD = 0.85;
 export const CORRELATION_THRESHOLD = 0.45;
-// ============================================================
-// ROADMAP 2.5 — LEAGUE DELTA DICTIONARY (Universal & Neutro)
-// ============================================================
-export const LEAGUE_DELTAS: Record<string, number> = {
-  "DEFAULT": 0.00 // Neutralidade absoluta: E[Δ] ≈ 0 para qualquer liga do planeta
-};
+
 
 // ============================================================
 // MARKET VERTICALS
@@ -110,29 +105,6 @@ export interface PortfolioMarket {
   kelly: number;
   latentFactors: LatentFactors;
 }
-
-export interface LeagueDeltaProfile {
-  deltas: Partial<Record<MarketVertical, number>>;
-}
-
-// ============================================================
-// LEAGUE DELTA REGISTRY
-// ============================================================
-const LEAGUE_DELTAS: Record<string, LeagueDeltaProfile> = {
-  BRASILEIRAO: {
-    deltas: {
-      [MarketVertical.GOALS]: -0.018
-    }
-  },
-  LIBERTADORES: {
-    deltas: {
-      [MarketVertical.CARDS]: 0.025
-    }
-  },
-  DEFAULT: {
-    deltas: {}
-  }
-};
 
 // ============================================================
 // ENGINE
