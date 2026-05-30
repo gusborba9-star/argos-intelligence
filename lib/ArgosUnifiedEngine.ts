@@ -111,23 +111,14 @@ export interface LeagueDeltaProfile {
 }
 
 // ============================================================
-// LEAGUE DELTA REGISTRY
+// UNIVERSAL LEAGUE DELTA MATRIX (Porteira Aberta - v3.2)
 // ============================================================
 const LEAGUE_DELTAS: Record<string, LeagueDeltaProfile> = {
-  BRASILEIRAO: {
-    deltas: {
-      [MarketVertical.GOALS]: -0.018
-    }
-  },
-  LIBERTADORES: {
-    deltas: {
-      [MarketVertical.CARDS]: 0.025
-    }
-  },
   DEFAULT: {
     deltas: {}
   }
 };
+
 
 // ============================================================
 // ENGINE
