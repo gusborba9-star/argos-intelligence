@@ -25,6 +25,12 @@ export const MAX_ODDS = 12.0;
 
 export const MARKET_SUSPICION_THRESHOLD = 0.85;
 export const CORRELATION_THRESHOLD = 0.45;
+// ============================================================
+// ROADMAP 2.5 — LEAGUE DELTA DICTIONARY (Universal & Neutro)
+// ============================================================
+export const LEAGUE_DELTAS: Record<string, number> = {
+  "DEFAULT": 0.00 // Neutralidade absoluta: E[Δ] ≈ 0 para qualquer liga do planeta
+};
 
 // ============================================================
 // MARKET VERTICALS
