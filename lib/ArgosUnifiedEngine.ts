@@ -9,9 +9,9 @@ import crypto from "crypto";
 // ============================================================
 // GLOBAL PARAMETERS
 // ============================================================
-export const BASE_MIN_EDGE = 0.015;
-export const MAX_CLUSTER_EXPOSURE = 1.35;
-export const TOP_K_PER_VERTICAL = 2;
+export const BASE_MIN_EDGE = 0.005;
+export const MAX_CLUSTER_EXPOSURE = 2.50;
+export const TOP_K_PER_VERTICAL = 4;
 
 export const KELLY_FRACTION = 0.12;
 export const MAX_EFFECTIVE_KELLY_POSITION = 0.05;
