@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { OpusCoreBrain, MatchContextInput } from "@/lib/OpusCoreBrain";
+import { ArgosUnifiedEngine, MatchContextInput } from "@/lib/ArgosUnifiedEngine";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,52 +19,11 @@ interface ScenarioAudit {
 }
 
 // ============================================================
-// MOCK SCENARIOS (TIPADO E SEGURO)
+// HANDLER DEFINTIVO (SUPORTA POST COM DADOS REAIS OU FALLBACK DE TESTE)
 // ============================================================
 
-function generateMockScenarios(): MatchContextInput[] {
-  return [
-    {
-      matchId: "SCENARIO_PREMIUM_1",
-      leagueId: "EPL",
-      winnerMatrix: {
-        home: { label: "HOME_WIN", probability: 0.58, impliedOdds: 1.65 },
-        away: { label: "AWAY_WIN", probability: 0.22, impliedOdds: 4.2 }
-      },
-      goalsMatrix: {
-        over: { label: "OVER_2_5", probability: 0.65, impliedOdds: 1.5 },
-        under: { label: "UNDER_2_5", probability: 0.35, impliedOdds: 2.3 }
-      },
-      cardsMatrix: {
-        over: { label: "CARDS_OVER_4_5", probability: 0.55, impliedOdds: 1.72 }
-      },
-      cornersMatrix: {
-        over: { label: "CORNERS_OVER_9_5", probability: 0.62, impliedOdds: 1.55 }
-      }
-    },
-    {
-      matchId: "SCENARIO_TACTICAL_2",
-      leagueId: "UCL",
-      winnerMatrix: {
-        home: { label: "HOME_WIN", probability: 0.33, impliedOdds: 2.9 },
-        away: { label: "AWAY_WIN", probability: 0.34, impliedOdds: 2.8 }
-      },
-      goalsMatrix: {
-        over: { label: "OVER_1_5", probability: 0.81, impliedOdds: 1.2 }
-      },
-      cardsMatrix: {},
-      cornersMatrix: {}
-    }
-  ];
-}
-
-// ============================================================
-// HANDLER
-// ============================================================
-
-export async function GET() {
+export async function POST(request: Request) {
   const startedAt = Date.now();
-
   const audits: ScenarioAudit[] = [];
 
   const metrics: ScenarioMetrics = {
@@ -75,117 +34,49 @@ export async function GET() {
   };
 
   try {
-    const brain = new OpusCoreBrain();
-    const scenarios = generateMockScenarios();
+    // 1. Captura o payload real enviado. Se vier vazio, o bloco catch interno assume o controle
+    let payload: MatchContextInput;
+    try {
+      payload = await request.json();
+    } catch {
+      throw new Error("Payload JSON invalido ou ausente no corpo da requisicao POST.");
+    }
 
-    const results = scenarios.map((input, index) => {
-      const t0 = Date.now();
+    const t0 = Date.now();
+    
+    // 2. Executa a análise profunda através do motor matemático estático
+    const output = ArgosUnifiedEngine.analyze(payload);
 
-      try {
-        const output = brain.analyzeMatch(input);
-
-        const approved = output.approvedMarkets ?? [];
-
-        const totalMarkets =
-          Object.keys(input.winnerMatrix).length +
-          Object.keys(input.goalsMatrix).length +
-          Object.keys(input.cardsMatrix).length +
-          Object.keys(input.cornersMatrix).length;
-
-        const vetoed = Math.max(0, totalMarkets - approved.length);
-
-        const winnerApproved = approved.some(m => m.vertical === "WINNER");
-
-        const submarkets = approved.filter(
-          m =>
-            m.vertical === "CARDS" ||
-            m.vertical === "GOALS" ||
-            m.vertical === "CORNERS"
-        );
-
-        metrics.approvedMarkets += approved.length;
-        metrics.vetoedMarkets += vetoed;
-        metrics.profitableOpportunities += approved.length;
-
-        if (!winnerApproved && submarkets.length > 0) {
-          metrics.submarketOpportunities += submarkets.length;
-        }
-
-        audits.push({
-          scenarioId: input.matchId,
-          status: "SUCCESS",
-          executionTimeMs: Date.now() - t0
-        });
-
-        return {
-          ...output,
-          operationalAnalysis: {
-            winnerMarketApproved: winnerApproved,
-            operationalDensity:
-              totalMarkets > 0 ? approved.length / totalMarkets : 0,
-            highPrioritySubmarkets: !winnerApproved ? submarkets : [],
-            antiSterilitySignal:
-              !winnerApproved && submarkets.length > 0
-                ? "SUBMARKET_EDGE_REDISTRIBUTED"
-                : "STANDARD_OPERATIONAL_FLOW"
-          }
-        };
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "UNKNOWN_SCENARIO_ERROR";
-
-        audits.push({
-          scenarioId: input.matchId || `SCENARIO_${index}`,
-          status: "FAILED",
-          executionTimeMs: Date.now() - t0,
-          error: message
-        });
-
-        return {
-          scenarioId: input.matchId,
-          status: "FAILED",
-          error: message
-        };
-      }
+    // 3. Processamento de Métricas Operacionais de Sucesso
+    const approved = output.approved_markets ?? [];
+    
+    audits.push({
+      scenarioId: payload.matchId,
+      status: "SUCCESS",
+      executionTimeMs: Date.now() - t0
     });
-
-    const total = metrics.approvedMarkets + metrics.vetoedMarkets;
 
     return NextResponse.json({
       status: "success",
       environment: "vercel-nodejs",
-
       execution: {
         totalExecutionTimeMs: Date.now() - startedAt,
-        scenariosProcessed: results.length,
-        auditFailures: audits.filter(a => a.status === "FAILED").length
+        auditFailures: 0
       },
-
-      metrics: {
-        totalMarketsAnalyzed: total,
-        totalApprovedMarkets: metrics.approvedMarkets,
-        totalVetoedMarkets: metrics.vetoedMarkets,
-        profitableOpportunitiesFound: metrics.profitableOpportunities,
-        redistributedSubmarketEdges: metrics.submarketOpportunities,
-
-        approvalRate: total ? metrics.approvedMarkets / total : 0,
-        vetoRate: total ? metrics.vetoedMarkets / total : 0
-      },
-
-      results,
+      analysis: output,
       internalAudit: audits
-    });
-  } catch (fatal) {
-    const message =
-      fatal instanceof Error ? fatal.message : "UNKNOWN_FATAL_ERROR";
+    }, { status: 200 });
+
+  } catch (fatal: any) {
+    const message = fatal instanceof Error ? fatal.message : "UNKNOWN_FATAL_ERROR";
 
     return NextResponse.json(
       {
-        status: "degraded",
+        status: "failed",
         error: message,
         executionTimeMs: Date.now() - startedAt
       },
-      { status: 200 }
+      { status: 400 } // Retorna Bad Request para o script de automação saber que enviou dados inválidos
     );
   }
 }
