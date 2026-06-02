@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { ArgosUnifiedEngine, MatchContextInput } from "@/lib/ArgosUnifiedEngine";
 
 export const runtime = "nodejs";
@@ -19,7 +20,7 @@ interface ScenarioAudit {
 }
 
 // ============================================================
-// HANDLER DEFINTIVO (SUPORTA POST COM DADOS REAIS OU FALLBACK DE TESTE)
+// HANDLER DEFINTIVO (SUPORTA POST COM DADOS REAIS OU FALLBACK)
 // ============================================================
 
 export async function POST(request: Request) {
@@ -34,8 +35,9 @@ export async function POST(request: Request) {
   };
 
   try {
-    // 1. Captura o payload real enviado. Se vier vazio, o bloco catch interno assume o controle
+    // 1. Payload
     let payload: MatchContextInput;
+
     try {
       payload = await request.json();
     } catch {
@@ -43,40 +45,74 @@ export async function POST(request: Request) {
     }
 
     const t0 = Date.now();
-    
-    // 2. Executa a análise profunda através do motor matemático estático
+
+    // 2. Engine
     const output = ArgosUnifiedEngine.analyze(payload);
 
-    // 3. Processamento de Métricas Operacionais de Sucesso
     const approved = output.approved_markets ?? [];
-    
+
+    // ============================================================
+    // 3. Persistência (argos_processed_signals)
+    // ============================================================
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error("Variáveis de ambiente do Supabase ausentes.");
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    await supabase
+      .from("argos_processed_signals")
+      .upsert(
+        {
+          match_id: payload.matchId,
+          league_id: payload.leagueId,
+          engine_version: "v1",
+          fingerprint: output.fingerprint ?? `${payload.matchId}-v1`,
+          signals_found: approved.length,
+          total_exposure: output.total_exposure ?? 0,
+          approved_markets: approved,
+          analyzed_at: new Date().toISOString(),
+          market_surface: output.market_surface ?? null
+        },
+        {
+          onConflict: "match_id,fingerprint"
+        }
+      );
+
+    // 4. Audit
     audits.push({
       scenarioId: payload.matchId,
       status: "SUCCESS",
       executionTimeMs: Date.now() - t0
     });
 
-    return NextResponse.json({
-      status: "success",
-      environment: "vercel-nodejs",
-      execution: {
-        totalExecutionTimeMs: Date.now() - startedAt,
-        auditFailures: 0
+    // 5. Response
+    return NextResponse.json(
+      {
+        status: "success",
+        environment: "vercel-nodejs",
+        execution: {
+          totalExecutionTimeMs: Date.now() - startedAt,
+          auditFailures: 0
+        },
+        analysis: output,
+        internalAudit: audits
       },
-      analysis: output,
-      internalAudit: audits
-    }, { status: 200 });
+      { status: 200 }
+    );
 
   } catch (fatal: any) {
-    const message = fatal instanceof Error ? fatal.message : "UNKNOWN_FATAL_ERROR";
-
     return NextResponse.json(
       {
         status: "failed",
-        error: message,
+        error: fatal instanceof Error ? fatal.message : "UNKNOWN_FATAL_ERROR",
         executionTimeMs: Date.now() - startedAt
       },
-      { status: 400 } // Retorna Bad Request para o script de automação saber que enviou dados inválidos
+      { status: 400 }
     );
   }
-}
+            }
