@@ -65,23 +65,23 @@ export async function POST(request: Request) {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     await supabase
-      .from("argos_processed_signals")
-      .upsert(
-        {
-          match_id: payload.matchId,
-          league_id: payload.leagueId,
-          engine_version: "v1",
-          fingerprint: output.fingerprint ?? `${payload.matchId}-v1`,
-          signals_found: approved.length,
-          total_exposure: output.total_exposure ?? 0,
-          approved_markets: approved,
-          analyzed_at: new Date().toISOString(),
-          market_surface: output.market_surface ?? null
-        },
-        {
-          onConflict: "match_id,fingerprint"
-        }
-      );
+    await supabase
+  .from("argos_processed_signals")
+  .upsert(
+    {
+      match_id: payload.matchId,
+      league_id: payload.leagueId,
+      engine_version: "v1",
+      fingerprint: output.fingerprint ?? `${payload.matchId}-v1`,
+      signals_found: approved.length,
+      total_exposure: output.total_exposure ?? 0,
+      approved_markets: approved,
+      analyzed_at: new Date().toISOString()
+    },
+    {
+      onConflict: "match_id,fingerprint"
+    }
+  );
 
     // 4. Audit
     audits.push({
