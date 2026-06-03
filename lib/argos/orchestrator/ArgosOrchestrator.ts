@@ -197,7 +197,7 @@ export class ArgosOrchestrator {
       confidence_score: confidence,
       analyzed_at: new Date().toISOString()
     });
-    await this.supabase
+    const { data, error } = await this.supabase
   .from("argos_prediction_ledger")
   .insert(
     portfolio.map((signal: any) => ({
@@ -226,7 +226,14 @@ export class ArgosOrchestrator {
 
       fingerprint: coreOutput.fingerprint
     }))
-  );
+  )
+  .select();
+
+if (error) {
+  throw new Error(`LEDGER_ERROR: ${error.message}`);
+}
+
+console.log("LEDGER_INSERT_OK", data?.length);
 
     // 7. OUTPUT FINAL
     return {
