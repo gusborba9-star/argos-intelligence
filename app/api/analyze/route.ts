@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { ArgosOrchestrator } from "../../../lib/argos/orchestrator/ArgosOrchestrator";
-
+import type { MatchContextInput } from "../../../lib/core/ArgosUnifiedEngine";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
 interface ScenarioMetrics {
   approvedMarkets: number;
   vetoedMarkets: number;
