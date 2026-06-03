@@ -533,15 +533,15 @@ export class ArgosUnifiedEngine {
       }
 
       selected.push({
-        vertical: signal.vertical,
-        market: signal.market,
-        impliedOdds: signal.impliedOdds,
-        adjustedProbability: Number(signal.adjustedProbability.toFixed(4)),
-        economicEV: Number(signal.economicEV.toFixed(4)),
-        unitSize: Number(adjustedUnits.toFixed(4)),
-        kelly: Number(finalKelly.toFixed(4)),
-        latentFactors: signal.latentFactors
-      });
+  vertical: signal.vertical,
+  market: signal.market,
+  impliedOdds: signal.impliedOdds,
+  adjustedProbability: Number(signal.adjustedProbability.toFixed(4)),
+  economicEV: Number(signal.economicEV.toFixed(4)),
+  unitSize: Number(adjustedUnits.toFixed(4)),
+  kelly: Number(finalKelly.toFixed(4)),
+  latentFactors: signal.latentFactors
+});
 
       verticalCount[signal.vertical]++;
       totalExposure += adjustedUnits;
