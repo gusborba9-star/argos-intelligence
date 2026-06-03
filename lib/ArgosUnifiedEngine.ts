@@ -1,9 +1,9 @@
 import crypto from "crypto";
 
 // ============================================================
-// ARGOS UNIFIED ENGINE
-// ROADMAP v3.1 FULLY ALIGNED
-// Stateless • Logit Space • Single Gate • Lean Architecture
+// ARGOS UNIFIED ENGINE v3.2
+// MULTI-MODEL CONSENSUS • LOGIT FUSION • SINGLE PASS
+// Stateless • Lean • No cross-model veto
 // ============================================================
 
 // ============================================================
@@ -26,7 +26,6 @@ export const MAX_ODDS = 12.0;
 export const MARKET_SUSPICION_THRESHOLD = 0.85;
 export const CORRELATION_THRESHOLD = 0.45;
 
-
 // ============================================================
 // MARKET VERTICALS
 // ============================================================
@@ -43,7 +42,22 @@ export enum MarketVertical {
 }
 
 // ============================================================
-// CORE TYPES
+// MULTI-MODEL SPACE
+// ============================================================
+export enum ArgosModel {
+  BASE = "BASE",
+  CONSERVATIVE = "CONSERVATIVE",
+  AGGRESSIVE = "AGGRESSIVE"
+}
+
+const MODEL_WEIGHTS: Record<ArgosModel, number> = {
+  BASE: 0.5,
+  CONSERVATIVE: 0.3,
+  AGGRESSIVE: 0.2
+};
+
+// ============================================================
+// TYPES
 // ============================================================
 export interface MarketProbability {
   label: string;
@@ -95,213 +109,373 @@ export interface SignalCandidate {
   latentFactors: LatentFactors;
 }
 
-export interface PortfolioMarket {
-  vertical: MarketVertical;
-  market: string;
-  impliedOdds: number;
-  adjustedProbability: number;
-  economicEV: number;
-  unitSize: number;
-  kelly: number;
-  latentFactors: LatentFactors;
-}
-
-export interface LeagueDeltaProfile {
-  deltas: Partial<Record<MarketVertical, number>>;
+// internal multi-model signal
+interface ModelSignal extends SignalCandidate {
+  model: ArgosModel;
+  delta: number;
 }
 
 // ============================================================
-// UNIVERSAL LEAGUE DELTA MATRIX (Porteira Aberta - v3.2)
+// LEAGUE DELTAS
 // ============================================================
-const LEAGUE_DELTAS: Record<string, LeagueDeltaProfile> = {
-  DEFAULT: {
-    deltas: {}
-  }
+const LEAGUE_DELTAS: Record<string, { deltas: Partial<Record<MarketVertical, number>> }> = {
+  DEFAULT: { deltas: {} }
 };
-
 
 // ============================================================
 // ENGINE
 // ============================================================
 export class ArgosUnifiedEngine {
-  private static readonly VERSION = "ARGOS_UNIFIED_v3.1";
+  private static readonly VERSION = "ARGOS_v3.2_CONSENSUS";
 
   public static analyze(input: MatchContextInput) {
-    if (!input?.matchId) {
-      throw new Error("ArgosUnifiedEngine: invalid matchId");
-    }
+    if (!input?.matchId) throw new Error("invalid matchId");
 
-    // ========================================================
-    // ROADMAP 1.6 - FINGERPRINT
-    // ========================================================
     const fingerprint = this.generateFingerprint(input);
 
-    // ========================================================
-    // ROADMAP 2.2 - SINGLE GATE CIRCUIT BREAKER
-    // ========================================================
+    // SINGLE GATE ONLY
     const suspicion = input.extraField?.marketSuspicion ?? 0;
     if (suspicion > MARKET_SUSPICION_THRESHOLD) {
-      return this.generateAbortedResponse(
-        input.matchId,
-        fingerprint,
-        "CRITICAL_MARKET_SUSPICION"
-      );
+      return this.abort(input.matchId, fingerprint, "CRITICAL_SUSPICION");
     }
 
-    // ========================================================
-    // INPUT NORMALIZATION
-    // ========================================================
-    const verticals: Record<MarketVertical, MarketProbability[]> = {
-      [MarketVertical.WINNER]: this.canonicalVector(input.winnerMatrix),
-      [MarketVertical.GOALS]: this.canonicalVector(input.goalsMatrix),
-      [MarketVertical.CARDS]: this.canonicalVector(input.cardsMatrix),
-      [MarketVertical.CORNERS]: this.canonicalVector(input.cornersMatrix),
-      [MarketVertical.SHOTS]: this.canonicalVector(input.shotsMatrix),
-      [MarketVertical.SHOTS_ON_TARGET]: this.canonicalVector(input.shotsOnTargetMatrix),
-      [MarketVertical.FOULS]: this.canonicalVector(input.foulsMatrix),
-      [MarketVertical.BTTS]: this.canonicalVector(input.bttsMatrix),
-      [MarketVertical.TACKLES]: this.canonicalVector(input.tacklesMatrix)
-    };
+    const verticals = this.normalize(input);
+    const globalConfidence = this.globalConfidence(input.extraField);
 
-    const globalConfidence = this.calculateGlobalConfidence(input.extraField);
-    const approvedSignals: SignalCandidate[] = [];
+    const raw: SignalCandidate[] = [];
 
     // ========================================================
-    // ROADMAP 2.3 - CONTINUOUS LOGIT SCORING
+    // PHASE 1 — RAW GENERATION (NO FILTER / NO VETO)
     // ========================================================
-    for (const [vertical, markets] of Object.entries(verticals) as [MarketVertical, MarketProbability[]][]) {
-      for (const market of markets) {
-        if (market.impliedOdds < MIN_ODDS || market.impliedOdds > MAX_ODDS) {
-          continue;
-        }
+    for (const [v, markets] of Object.entries(verticals) as [MarketVertical, MarketProbability[]][]) {
+      for (const m of markets) {
+        if (m.impliedOdds < MIN_ODDS || m.impliedOdds > MAX_ODDS) continue;
 
-        const leagueDelta = this.getLeagueDelta(input.leagueId, vertical, market.label);
-        const contextDelta = this.getContextDelta(input.extraField, vertical, market.label);
+        const delta =
+          (this.leagueDelta(input.leagueId, v, m.label) +
+            this.contextDelta(input.extraField, v, m.label)) *
+          globalConfidence;
 
-        const totalDelta = (leagueDelta + contextDelta) * globalConfidence;
-        const adjustedProbability = this.applyLogitDelta(market.probability, totalDelta);
-        const economicEV = (adjustedProbability * market.impliedOdds) - 1;
+        const adj = this.logitShift(m.probability, delta);
+        const ev = adj * m.impliedOdds - 1;
 
-        if (economicEV < BASE_MIN_EDGE) {
-          continue;
-        }
-
-        approvedSignals.push({
-          vertical,
-          market: market.label,
-          impliedOdds: market.impliedOdds,
-          probability: market.probability,
-          adjustedProbability,
-          economicEV,
-          latentFactors: this.deriveLatentFactors(market.label, vertical)
+        raw.push({
+          vertical: v,
+          market: m.label,
+          impliedOdds: m.impliedOdds,
+          probability: m.probability,
+          adjustedProbability: adj,
+          economicEV: ev,
+          latentFactors: this.latent(m.label, v)
         });
       }
     }
 
-    const portfolio = this.buildPortfolio(approvedSignals);
+    // ========================================================
+    // PHASE 2 — MULTI-MODEL EXPANSION
+    // ========================================================
+    const expanded: ModelSignal[] = [];
+
+    for (const s of raw) {
+      expanded.push(
+        ...this.expandModels(s)
+      );
+    }
+
+    // ========================================================
+    // PHASE 3 — CONSENSUS FUSION (NO DUPLICATION LOGIC)
+    // ========================================================
+    const fused = this.fuse(expanded);
+
+    // ========================================================
+    // PHASE 4 — SURVIVAL LAYER (SOFT RANKING ONLY)
+    // ========================================================
+    const survived = this.survival(fused);
+
+    // ========================================================
+    // PHASE 5 — PORTFOLIO
+    // ========================================================
+    const portfolio = this.portfolio(survived);
 
     return {
       match_id: input.matchId,
       engine_version: this.VERSION,
       fingerprint,
-      signals_found: approvedSignals.length,
+      signals_found: survived.length,
       approved_markets: portfolio,
-      total_exposure: Number(
-        portfolio.reduce((acc, item) => acc + item.unitSize, 0).toFixed(4)
-      ),
+      total_exposure: Number(portfolio.reduce((a, b) => a + b.unitSize, 0).toFixed(4)),
       analyzed_at: new Date().toISOString()
     };
   }
 
   // ==========================================================
-  // ROADMAP 2.4 - GLOBAL CONFIDENCE
+  // MULTI-MODEL EXPANSION (NO RECOMPUTE OF BASE SIGNAL)
   // ==========================================================
-  private static calculateGlobalConfidence(extra?: ExtraFieldContext): number {
+  private static expandModels(s: SignalCandidate): ModelSignal[] {
+    return [
+      { ...s, model: ArgosModel.BASE, delta: 0 },
+      { ...s, model: ArgosModel.CONSERVATIVE, delta: -0.015 },
+      { ...s, model: ArgosModel.AGGRESSIVE, delta: 0.02 }
+    ];
+  }
+
+  // ==========================================================
+  // FUSION ENGINE (LOGIT CONSENSUS)
+  // ==========================================================
+  private static fuse(signals: ModelSignal[]): SignalCandidate[] {
+    const grouped: Record<string, ModelSignal[]> = {};
+
+    for (const s of signals) {
+      const key = `${s.vertical}:${s.market}`;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(s);
+    }
+
+    const out: SignalCandidate[] = [];
+
+    for (const key in grouped) {
+      const list = grouped[key];
+
+      let sum = 0;
+      let wsum = 0;
+
+      for (const s of list) {
+        const w = MODEL_WEIGHTS[s.model];
+        const p = Math.min(0.97, Math.max(0.03, s.probability + s.delta));
+
+        sum += w * this.logit(p);
+        wsum += w;
+      }
+
+      const finalLogit = sum / wsum;
+      const finalProb = this.sigmoid(finalLogit);
+
+      const base = list[0];
+
+      const ev = finalProb * base.impliedOdds - 1;
+
+      out.push({
+        vertical: base.vertical,
+        market: base.market,
+        impliedOdds: base.impliedOdds,
+        probability: base.probability,
+        adjustedProbability: finalProb,
+        economicEV: ev,
+        latentFactors: base.latentFactors
+      });
+    }
+
+    return out;
+  }
+
+  // ==========================================================
+  // SURVIVAL (SOFT FILTER ONLY)
+  // ==========================================================
+  private static survival(signals: SignalCandidate[]) {
+    const grouped: Record<string, SignalCandidate[]> = {};
+
+    for (const s of signals) {
+      if (!grouped[s.vertical]) grouped[s.vertical] = [];
+      grouped[s.vertical].push(s);
+    }
+
+    const out: SignalCandidate[] = [];
+
+    for (const k in grouped) {
+      const sorted = grouped[k].sort((a, b) => b.economicEV - a.economicEV);
+      const cutoff = Math.max(1, Math.floor(sorted.length * 0.6));
+      out.push(...sorted.slice(0, cutoff));
+    }
+
+    return out;
+  }
+
+  // ==========================================================
+  // PORTFOLIO (NO VETO, ONLY CONSTRAINTS)
+  // ==========================================================
+  private static portfolio(signals: SignalCandidate[]) {
+    const sorted = [...signals].sort((a, b) => b.economicEV - a.economicEV);
+
+    const selected: any[] = [];
+    const count: Record<string, number> = {
+      WINNER: 0, GOALS: 0, CARDS: 0, CORNERS: 0,
+      SHOTS: 0, SHOTS_ON_TARGET: 0, FOULS: 0, BTTS: 0, TACKLES: 0
+    };
+
+    let exposure = 0;
+
+    for (const s of sorted) {
+      if (count[s.vertical] >= TOP_K_PER_VERTICAL) continue;
+
+      const base = s.economicEV > 0.07 ? 1 : s.economicEV > 0.03 ? 0.5 : 0.25;
+
+      const units = base * KELLY_FRACTION;
+
+      if (exposure + units > MAX_CLUSTER_EXPOSURE) continue;
+
+      selected.push({
+        ...s,
+        unitSize: Number(units.toFixed(4)),
+        kelly: KELLY_FRACTION
+      });
+
+      count[s.vertical]++;
+      exposure += units;
+    }
+
+    return selected;
+  }
+
+  // ==========================================================
+  // MATH
+  // ==========================================================
+  private static logit(p: number) {
+    return Math.log(p / (1 - p));
+  }
+
+  private static sigmoid(x: number) {
+    return 1 / (1 + Math.exp(-x));
+  }
+
+  private static logitShift(p: number, d: number) {
+    const lp = this.logit(Math.max(0.03, Math.min(0.97, p)));
+    return this.sigmoid(lp + d);
+  }
+
+  // ==========================================================
+  // INPUT NORMALIZATION
+  // ==========================================================
+  private static normalize(input: MatchContextInput) {
+    return {
+      WINNER: Object.values(input.winnerMatrix ?? {}),
+      GOALS: Object.values(input.goalsMatrix ?? {}),
+      CARDS: Object.values(input.cardsMatrix ?? {}),
+      CORNERS: Object.values(input.cornersMatrix ?? {}),
+      SHOTS: Object.values(input.shotsMatrix ?? {}),
+      SHOTS_ON_TARGET: Object.values(input.shotsOnTargetMatrix ?? {}),
+      FOULS: Object.values(input.foulsMatrix ?? {}),
+      BTTS: Object.values(input.bttsMatrix ?? {}),
+      TACKLES: Object.values(input.tacklesMatrix ?? {})
+    } as any;
+  }
+
+  // ==========================================================
+  // CONTEXT
+  // ==========================================================
+  private static globalConfidence(extra?: ExtraFieldContext) {
     if (!extra) return 1;
+    let c = 1;
+    if ((extra.weatherSeverity ?? 0) > 0.6) c *= 0.8;
+    if ((extra.travelFatigue ?? 0) > 0.5) c *= 0.9;
+    return c;
+  }
 
-    let confidence = 1;
-    if ((extra.weatherSeverity ?? 0) > 0.60) {
-      confidence *= 0.80;
+  private static leagueDelta(_: any, __: any, ___: any) {
+    return 0;
+  }
+
+  private static contextDelta(_: any, __: any, ___: any) {
+    return 0;
+  }
+
+  private static latent(label: string, v: MarketVertical) {
+    const u = label.toUpperCase();
+    const under = u.includes("UNDER") || u.includes("MENOS");
+
+    return {
+      goal: v === MarketVertical.GOALS ? (under ? -1 : 1) : 0,
+      tempo: v === MarketVertical.CORNERS ? (under ? -1 : 1) : 0,
+      aggression: v === MarketVertical.CARDS ? (under ? -1 : 1) : 0,
+      pressure: (v === MarketVertical.SHOTS || v === MarketVertical.SHOTS_ON_TARGET) ? (under ? -1 : 1) : 0,
+      possession: (v === MarketVertical.FOULS || v === MarketVertical.TACKLES) ? (under ? -1 : 1) : 0
+    };
+  }
+
+  private static generateFingerprint(input: MatchContextInput) {
+    return crypto.createHash("sha256").update(JSON.stringify(input)).digest("hex");
+  }
+
+  private static abort(matchId: string, fingerprint: string, reason: string) {
+    return {
+      match_id: matchId,
+      engine_version: this.VERSION,
+      fingerprint,
+      approved_markets: [],
+      signals_found: 0,
+      total_exposure: 0,
+      vetoed: true,
+      veto_reason: reason,
+      analyzed_at: new Date().toISOString()
+    };
+  }
+      }e: Number(units.toFixed(4)),
+        kelly: kelly,
+        latentFactors: s.latentFactors
+      });
+
+      verticalCount[s.vertical]++;
+      exposure += units;
     }
-    if ((extra.travelFatigue ?? 0) > 0.50) {
-      confidence *= 0.90;
-    }
-    return confidence;
+
+    return selected;
   }
 
   // ==========================================================
-  // ROADMAP 2.5 - LEAGUE DELTAS
+  // CANONICALIZATION
   // ==========================================================
-  private static getLeagueDelta(
-    leagueId: string | undefined,
-    vertical: MarketVertical,
-    label: string
-  ): number {
-    const leagueKey = (leagueId ?? "DEFAULT").toUpperCase();
-    const profile = LEAGUE_DELTAS[leagueKey] ?? LEAGUE_DELTAS.DEFAULT;
-    const baseDelta = profile.deltas[vertical];
+  private static canonicalVector(input?: Record<string, any>): MarketProbability[] {
+    if (!input) return [];
 
-    if (baseDelta === undefined) {
-      return 0;
-    }
-
-    const normalizedLabel = label.toUpperCase();
-    const isOver = normalizedLabel.includes("OVER") || normalizedLabel.includes("MAIS");
-
-    return isOver ? baseDelta : -baseDelta;
+    return Object.values(input).map((m: any) => ({
+      label: String(m?.label ?? "UNKNOWN"),
+      probability: Math.max(MIN_PROBABILITY, Math.min(MAX_PROBABILITY, m?.probability ?? 0.5)),
+      impliedOdds: Math.max(MIN_ODDS, Math.min(MAX_ODDS, m?.impliedOdds ?? 2))
+    }));
   }
 
   // ==========================================================
-  // ROADMAP 2.4 - CONTEXT DELTAS
+  // LATENT FACTORS
   // ==========================================================
-  private static getContextDelta(
-    extra: ExtraFieldContext | undefined,
-    vertical: MarketVertical,
-    label: string
-  ): number {
-    if (!extra) return 0;
+  private static deriveLatentFactors(label: string, vertical: MarketVertical): LatentFactors {
+    const n = label.toUpperCase();
+    const under = n.includes("UNDER") || n.includes("MENOS");
 
-    const normalizedLabel = label.toUpperCase();
-    const isOver = normalizedLabel.includes("OVER") || normalizedLabel.includes("MAIS");
-
-    let delta = 0;
-
-    if ((extra.isClassico || extra.isDerby) && vertical === MarketVertical.CARDS) {
-      delta += isOver ? 0.030 : -0.030;
-    }
-
-    if ((extra.altitudeFactor ?? 0) > 0.70 && vertical === MarketVertical.GOALS) {
-      delta += isOver ? -0.022 : 0.022;
-    }
-
-    return delta;
+    return {
+      goal: vertical === MarketVertical.GOALS ? (under ? -1 : 1) : 0,
+      tempo: vertical === MarketVertical.CORNERS ? (under ? -1 : 1) : 0,
+      aggression: vertical === MarketVertical.CARDS ? (under ? -1 : 1) : 0,
+      pressure: (vertical === MarketVertical.SHOTS || vertical === MarketVertical.SHOTS_ON_TARGET) ? (under ? -1 : 1) : 0,
+      possession: (vertical === MarketVertical.FOULS || vertical === MarketVertical.TACKLES) ? (under ? -1 : 1) : 0
+    };
   }
 
   // ==========================================================
-  // ROADMAP 2.3 - APPLY LOGIT DELTA
+  // FINGERPRINT
   // ==========================================================
-  private static applyLogitDelta(probability: number, delta: number): number {
-    const p = Math.max(MIN_PROBABILITY, Math.min(MAX_PROBABILITY, probability));
-    const logit = Math.log(p / (1 - p));
-    const shiftedLogit = logit + delta;
-    const adjusted = 1 / (1 + Math.exp(-shiftedLogit));
-
-    return Math.max(MIN_PROBABILITY, Math.min(MAX_PROBABILITY, adjusted));
+  private static generateFingerprint(input: MatchContextInput): string {
+    return crypto
+      .createHash("sha256")
+      .update(JSON.stringify(input))
+      .digest("hex");
   }
 
   // ==========================================================
-  // ROADMAP 2.7 + 2.8 - PORTFOLIO ENGINE
+  // ABORT
   // ==========================================================
-  private static buildPortfolio(signals: SignalCandidate[]): PortfolioMarket[] {
-    const sortedSignals = [...signals].sort((a, b) => b.economicEV - a.economicEV);
-    const selected: PortfolioMarket[] = [];
-
-    const verticalCount: Record<MarketVertical, number> = {
-      [MarketVertical.WINNER]: 0,
-      [MarketVertical.GOALS]: 0,
-      [MarketVertical.CARDS]: 0,
-      [MarketVertical.CORNERS]: 0,
-      [MarketVertical.SHOTS]: 0,
+  private static generateAbortedResponse(matchId: string, fingerprint: string, reason: string) {
+    return {
+      match_id: matchId,
+      engine_version: this.VERSION,
+      fingerprint,
+      approved_markets: [],
+      signals_found: 0,
+      total_exposure: 0,
+      vetoed: true,
+      veto_reason: reason,
+      analyzed_at: new Date().toISOString()
+    };
+  }
+         }HOTS]: 0,
       [MarketVertical.SHOTS_ON_TARGET]: 0,
       [MarketVertical.FOULS]: 0,
       [MarketVertical.BTTS]: 0,
