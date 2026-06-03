@@ -1,6 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { ArgosUnifiedEngine, MatchContextInput, MarketVertical } from "../../../lib/ArgosUnifiedEngine";
-
+import { ArgosUnifiedEngine, MatchContextInput, MarketVertical } from "../core/ArgosUnifiedEngine";
 
 // ============================================================
 // ARGOS ORCHESTRATOR v4.0
@@ -107,30 +106,27 @@ function fuseEnsemble(signals: any[]): any[] {
 // FINAL PORTFOLIO SELECTION
 // ============================================================
 function buildPortfolio(signals: any[]) {
+  // Ordena por EV, mas NÃO descarta nada
   const sorted = [...signals].sort((a, b) => b.economicEV - a.economicEV);
 
   const selected: any[] = [];
   const exposureByVertical: Record<string, number> = {};
-
   let totalExposure = 0;
 
   for (const s of sorted) {
     const v = s.vertical;
-
     if (!exposureByVertical[v]) exposureByVertical[v] = 0;
-    if (exposureByVertical[v] >= 4) continue;
+    
+    // NUNCA VETA: Sinais fracos entram com 0.05 units, fortes com 0.5
+    const unit = s.economicEV > 0.05 ? 0.5 : 0.05; 
 
-    const baseSize =
-      s.economicEV > 0.07 ? 1.0 :
-      s.economicEV > 0.03 ? 0.5 : 0.25;
-
-    const unit = baseSize * 0.12;
-
-    if (totalExposure + unit > 2.5) continue;
+    // Limite de segurança (não é veto, é controle de risco)
+    if (totalExposure + unit > 5.0) break; 
 
     selected.push({
       ...s,
-      unitSize: Number(unit.toFixed(4))
+      unitSize: Number(unit.toFixed(4)),
+      status: s.economicEV > 0 ? "OPTIMIZED" : "HEDGED"
     });
 
     exposureByVertical[v]++;
@@ -211,3 +207,4 @@ export class ArgosOrchestrator {
     };
   }
 }
+  
