@@ -1,7 +1,5 @@
-// app/api/orchestrate/route.ts
-
 import { NextResponse } from "next/server";
-import { ArgosUnifiedEngine } from "@/lib/argos/orchestrator/ArgosUnifiedEngine";
+import { ArgosUnifiedEngine } from "@/lib/ArgosUnifiedEngine";
 
 export async function GET() {
   return NextResponse.json({ status: "ok" });
