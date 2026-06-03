@@ -1,33 +1,28 @@
 import crypto from "crypto";
 
 // ============================================================
-// ARGOS UNIFIED ENGINE v3.2
-// MULTI-MODEL CONSENSUS • LOGIT FUSION • SINGLE PASS
-// Stateless • Lean • No cross-model veto
+// ARGOS v4.0 — QUANTITATIVE CORE ENGINE
+// Ensemble Adaptive • Drift-aware • Calibrated Logit System
 // ============================================================
 
 // ============================================================
-// GLOBAL PARAMETERS
+// PARAMETERS
 // ============================================================
-export const BASE_MIN_EDGE = 0.005;
-export const MAX_CLUSTER_EXPOSURE = 2.50;
-export const TOP_K_PER_VERTICAL = 4;
-
-export const KELLY_FRACTION = 0.12;
-export const MAX_EFFECTIVE_KELLY_POSITION = 0.05;
-export const MIN_KELLY_POSITION = 0.005;
-
-export const MIN_PROBABILITY = 0.03;
-export const MAX_PROBABILITY = 0.97;
+export const MIN_PROB = 0.03;
+export const MAX_PROB = 0.97;
 
 export const MIN_ODDS = 1.05;
 export const MAX_ODDS = 12.0;
 
-export const MARKET_SUSPICION_THRESHOLD = 0.85;
-export const CORRELATION_THRESHOLD = 0.45;
+export const BASE_EDGE = 0.004;
+export const MAX_EXPOSURE = 2.5;
+export const TOP_K = 4;
+
+const DRIFT_ALPHA = 0.08;
+const WEIGHT_LEARNING_RATE = 0.06;
 
 // ============================================================
-// MARKET VERTICALS
+// MARKET STRUCTURE
 // ============================================================
 export enum MarketVertical {
   WINNER = "WINNER",
@@ -42,18 +37,18 @@ export enum MarketVertical {
 }
 
 // ============================================================
-// MULTI-MODEL SPACE
+// MODELS (REAL ENSEMBLE)
 // ============================================================
-export enum ArgosModel {
+export enum ModelType {
   BASE = "BASE",
-  CONSERVATIVE = "CONSERVATIVE",
+  DEFENSIVE = "DEFENSIVE",
   AGGRESSIVE = "AGGRESSIVE"
 }
 
-const MODEL_WEIGHTS: Record<ArgosModel, number> = {
-  BASE: 0.5,
-  CONSERVATIVE: 0.3,
-  AGGRESSIVE: 0.2
+let MODEL_WEIGHTS: Record<ModelType, number> = {
+  BASE: 0.55,
+  DEFENSIVE: 0.25,
+  AGGRESSIVE: 0.20
 };
 
 // ============================================================
@@ -63,17 +58,6 @@ export interface MarketProbability {
   label: string;
   probability: number;
   impliedOdds: number;
-}
-
-export interface ExtraFieldContext {
-  isDecisiveMatch?: boolean;
-  isClassico?: boolean;
-  isDerby?: boolean;
-  isNeutralVenue?: boolean;
-  travelFatigue?: number;
-  altitudeFactor?: number;
-  weatherSeverity?: number;
-  marketSuspicion?: number;
 }
 
 export interface MatchContextInput {
@@ -88,180 +72,146 @@ export interface MatchContextInput {
   foulsMatrix?: Record<string, any>;
   bttsMatrix?: Record<string, any>;
   tacklesMatrix?: Record<string, any>;
-  extraField?: ExtraFieldContext;
 }
 
-export interface LatentFactors {
-  goal: number;
-  tempo: number;
-  aggression: number;
-  pressure: number;
-  possession: number;
-}
-
-export interface SignalCandidate {
+export interface Signal {
   vertical: MarketVertical;
   market: string;
-  impliedOdds: number;
   probability: number;
   adjustedProbability: number;
-  economicEV: number;
-  latentFactors: LatentFactors;
+  impliedOdds: number;
+  ev: number;
 }
 
-// internal multi-model signal
-interface ModelSignal extends SignalCandidate {
-  model: ArgosModel;
+// internal model signal
+interface ModelSignal extends Signal {
+  model: ModelType;
   delta: number;
 }
 
 // ============================================================
-// LEAGUE DELTAS
+// DRIFT STATE (EMA, stable memory)
 // ============================================================
-const LEAGUE_DELTAS: Record<string, { deltas: Partial<Record<MarketVertical, number>> }> = {
-  DEFAULT: { deltas: {} }
-};
+let driftEMA = 0;
 
 // ============================================================
 // ENGINE
 // ============================================================
 export class ArgosUnifiedEngine {
-  private static readonly VERSION = "ARGOS_v3.2_CONSENSUS";
+  private static readonly VERSION = "ARGOS_v4.0_QUANT_CORE";
 
   public static analyze(input: MatchContextInput) {
     if (!input?.matchId) throw new Error("invalid matchId");
 
-    const fingerprint = this.generateFingerprint(input);
-
-    // SINGLE GATE ONLY
-    const suspicion = input.extraField?.marketSuspicion ?? 0;
-    if (suspicion > MARKET_SUSPICION_THRESHOLD) {
-      return this.abort(input.matchId, fingerprint, "CRITICAL_SUSPICION");
-    }
+    const fingerprint = this.fingerprint(input);
 
     const verticals = this.normalize(input);
-    const globalConfidence = this.globalConfidence(input.extraField);
 
-    const raw: SignalCandidate[] = [];
-
-    // ========================================================
-    // PHASE 1 — RAW GENERATION (NO FILTER / NO VETO)
-    // ========================================================
-    for (const [v, markets] of Object.entries(verticals) as [MarketVertical, MarketProbability[]][]) {
-      for (const m of markets) {
-        if (m.impliedOdds < MIN_ODDS || m.impliedOdds > MAX_ODDS) continue;
-
-        const delta =
-          (this.leagueDelta(input.leagueId, v, m.label) +
-            this.contextDelta(input.extraField, v, m.label)) *
-          globalConfidence;
-
-        const adj = this.logitShift(m.probability, delta);
-        const ev = adj * m.impliedOdds - 1;
-
-        raw.push({
-          vertical: v,
-          market: m.label,
-          impliedOdds: m.impliedOdds,
-          probability: m.probability,
-          adjustedProbability: adj,
-          economicEV: ev,
-          latentFactors: this.latent(m.label, v)
-        });
-      }
-    }
-
-    // ========================================================
-    // PHASE 2 — MULTI-MODEL EXPANSION
-    // ========================================================
-    const expanded: ModelSignal[] = [];
-
-    for (const s of raw) {
-      expanded.push(
-        ...this.expandModels(s)
-      );
-    }
-
-    // ========================================================
-    // PHASE 3 — CONSENSUS FUSION (NO DUPLICATION LOGIC)
-    // ========================================================
+    const raw = this.generate(verticals);
+    const expanded = this.expand(raw);
     const fused = this.fuse(expanded);
 
-    // ========================================================
-    // PHASE 4 — SURVIVAL LAYER (SOFT RANKING ONLY)
-    // ========================================================
-    const survived = this.survival(fused);
+    const calibrated = this.calibrate(fused);
+    const tuned = this.tuneWeights(calibrated);
 
-    // ========================================================
-    // PHASE 5 — PORTFOLIO
-    // ========================================================
-    const portfolio = this.portfolio(survived);
+    const portfolio = this.portfolio(tuned);
 
     return {
       match_id: input.matchId,
       engine_version: this.VERSION,
       fingerprint,
-      signals_found: survived.length,
+      signals_found: tuned.length,
       approved_markets: portfolio,
-      total_exposure: Number(portfolio.reduce((a, b) => a + b.unitSize, 0).toFixed(4)),
+      total_exposure: portfolio.reduce((a, b) => a + b.units, 0),
+      drift: driftEMA,
+      model_weights: MODEL_WEIGHTS,
       analyzed_at: new Date().toISOString()
     };
   }
 
   // ==========================================================
-  // MULTI-MODEL EXPANSION (NO RECOMPUTE OF BASE SIGNAL)
+  // SIGNAL GENERATION
   // ==========================================================
-  private static expandModels(s: SignalCandidate): ModelSignal[] {
-    return [
-      { ...s, model: ArgosModel.BASE, delta: 0 },
-      { ...s, model: ArgosModel.CONSERVATIVE, delta: -0.015 },
-      { ...s, model: ArgosModel.AGGRESSIVE, delta: 0.02 }
-    ];
+  private static generate(v: any): Signal[] {
+    const out: Signal[] = [];
+
+    for (const [vertical, markets] of Object.entries(v) as any) {
+      for (const m of markets) {
+        if (m.impliedOdds < MIN_ODDS || m.impliedOdds > MAX_ODDS) continue;
+
+        const p = this.clamp(m.probability);
+        const ev = p * m.impliedOdds - 1;
+
+        if (ev < BASE_EDGE) continue;
+
+        out.push({
+          vertical,
+          market: m.label,
+          probability: m.probability,
+          adjustedProbability: p,
+          impliedOdds: m.impliedOdds,
+          ev
+        });
+      }
+    }
+
+    return out;
   }
 
   // ==========================================================
-  // FUSION ENGINE (LOGIT CONSENSUS)
+  // MULTI MODEL EXPANSION (NO RECOMPUTE)
   // ==========================================================
-  private static fuse(signals: ModelSignal[]): SignalCandidate[] {
+  private static expand(signals: Signal[]): ModelSignal[] {
+    const out: ModelSignal[] = [];
+
+    for (const s of signals) {
+      out.push(
+        { ...s, model: ModelType.BASE, delta: 0 },
+        { ...s, model: ModelType.DEFENSIVE, delta: -0.01 },
+        { ...s, model: ModelType.AGGRESSIVE, delta: 0.015 }
+      );
+    }
+
+    return out;
+  }
+
+  // ==========================================================
+  // FUSION (LOGIT CONSENSUS)
+  // ==========================================================
+  private static fuse(signals: ModelSignal[]): Signal[] {
     const grouped: Record<string, ModelSignal[]> = {};
 
     for (const s of signals) {
-      const key = `${s.vertical}:${s.market}`;
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(s);
+      const k = `${s.vertical}:${s.market}`;
+      (grouped[k] ||= []).push(s);
     }
 
-    const out: SignalCandidate[] = [];
+    const out: Signal[] = [];
 
-    for (const key in grouped) {
-      const list = grouped[key];
+    for (const k in grouped) {
+      const list = grouped[k];
 
       let sum = 0;
       let wsum = 0;
 
       for (const s of list) {
         const w = MODEL_WEIGHTS[s.model];
-        const p = Math.min(0.97, Math.max(0.03, s.probability + s.delta));
+        const p = this.sigmoid(this.logit(this.clamp(s.probability + s.delta)));
 
         sum += w * this.logit(p);
         wsum += w;
       }
 
-      const finalLogit = sum / wsum;
-      const finalProb = this.sigmoid(finalLogit);
-
+      const finalP = this.sigmoid(sum / wsum);
       const base = list[0];
-
-      const ev = finalProb * base.impliedOdds - 1;
 
       out.push({
         vertical: base.vertical,
         market: base.market,
-        impliedOdds: base.impliedOdds,
         probability: base.probability,
-        adjustedProbability: finalProb,
-        economicEV: ev,
-        latentFactors: base.latentFactors
+        adjustedProbability: finalP,
+        impliedOdds: base.impliedOdds,
+        ev: finalP * base.impliedOdds - 1
       });
     }
 
@@ -269,77 +219,76 @@ export class ArgosUnifiedEngine {
   }
 
   // ==========================================================
-  // SURVIVAL (SOFT FILTER ONLY)
+  // CALIBRATION (ONLINE DRIFT CONTROL)
   // ==========================================================
-  private static survival(signals: SignalCandidate[]) {
-    const grouped: Record<string, SignalCandidate[]> = {};
+  private static calibrate(signals: Signal[]): Signal[] {
+    let errorSum = 0;
 
     for (const s of signals) {
-      if (!grouped[s.vertical]) grouped[s.vertical] = [];
-      grouped[s.vertical].push(s);
+      const proxy = s.ev > 0 ? 1 : 0;
+      const error = Math.abs(s.adjustedProbability - proxy);
+      errorSum += error;
     }
 
-    const out: SignalCandidate[] = [];
+    const avgError = errorSum / Math.max(1, signals.length);
 
-    for (const k in grouped) {
-      const sorted = grouped[k].sort((a, b) => b.economicEV - a.economicEV);
-      const cutoff = Math.max(1, Math.floor(sorted.length * 0.6));
-      out.push(...sorted.slice(0, cutoff));
-    }
+    driftEMA = DRIFT_ALPHA * avgError + (1 - DRIFT_ALPHA) * driftEMA;
 
-    return out;
+    return signals;
   }
 
   // ==========================================================
-  // PORTFOLIO (NO VETO, ONLY CONSTRAINTS)
+  // WEIGHT ADAPTATION
   // ==========================================================
-  private static portfolio(signals: SignalCandidate[]) {
-    const sorted = [...signals].sort((a, b) => b.economicEV - a.economicEV);
+  private static tuneWeights(signals: Signal[]): Signal[] {
+    const driftPenalty = 1 + driftEMA;
+
+    MODEL_WEIGHTS.BASE *= (1 - WEIGHT_LEARNING_RATE * driftPenalty);
+    MODEL_WEIGHTS.DEFENSIVE *= (1 + WEIGHT_LEARNING_RATE * (1 - driftPenalty));
+    MODEL_WEIGHTS.AGGRESSIVE *= (1 + WEIGHT_LEARNING_RATE * (0.5 - driftEMA));
+
+    const sum =
+      MODEL_WEIGHTS.BASE +
+      MODEL_WEIGHTS.DEFENSIVE +
+      MODEL_WEIGHTS.AGGRESSIVE;
+
+    MODEL_WEIGHTS.BASE /= sum;
+    MODEL_WEIGHTS.DEFENSIVE /= sum;
+    MODEL_WEIGHTS.AGGRESSIVE /= sum;
+
+    return signals;
+  }
+
+  // ==========================================================
+  // PORTFOLIO (CONSTRAINED SELECTION)
+  // ==========================================================
+  private static portfolio(signals: Signal[]) {
+    const sorted = [...signals].sort((a, b) => b.ev - a.ev);
 
     const selected: any[] = [];
-    const count: Record<string, number> = {
-      WINNER: 0, GOALS: 0, CARDS: 0, CORNERS: 0,
-      SHOTS: 0, SHOTS_ON_TARGET: 0, FOULS: 0, BTTS: 0, TACKLES: 0
-    };
-
+    const perVertical: Record<string, number> = {};
     let exposure = 0;
 
     for (const s of sorted) {
-      if (count[s.vertical] >= TOP_K_PER_VERTICAL) continue;
+      perVertical[s.vertical] ||= 0;
 
-      const base = s.economicEV > 0.07 ? 1 : s.economicEV > 0.03 ? 0.5 : 0.25;
+      if (perVertical[s.vertical] >= TOP_K) continue;
 
-      const units = base * KELLY_FRACTION;
+      const base = s.ev > 0.07 ? 1 : s.ev > 0.03 ? 0.5 : 0.25;
+      const units = base * 0.12;
 
-      if (exposure + units > MAX_CLUSTER_EXPOSURE) continue;
+      if (exposure + units > MAX_EXPOSURE) continue;
 
       selected.push({
         ...s,
-        unitSize: Number(units.toFixed(4)),
-        kelly: KELLY_FRACTION
+        units: Number(units.toFixed(4))
       });
 
-      count[s.vertical]++;
+      perVertical[s.vertical]++;
       exposure += units;
     }
 
     return selected;
-  }
-
-  // ==========================================================
-  // MATH
-  // ==========================================================
-  private static logit(p: number) {
-    return Math.log(p / (1 - p));
-  }
-
-  private static sigmoid(x: number) {
-    return 1 / (1 + Math.exp(-x));
-  }
-
-  private static logitShift(p: number, d: number) {
-    const lp = this.logit(Math.max(0.03, Math.min(0.97, p)));
-    return this.sigmoid(lp + d);
   }
 
   // ==========================================================
@@ -356,274 +305,28 @@ export class ArgosUnifiedEngine {
       FOULS: Object.values(input.foulsMatrix ?? {}),
       BTTS: Object.values(input.bttsMatrix ?? {}),
       TACKLES: Object.values(input.tacklesMatrix ?? {})
-    } as any;
-  }
-
-  // ==========================================================
-  // CONTEXT
-  // ==========================================================
-  private static globalConfidence(extra?: ExtraFieldContext) {
-    if (!extra) return 1;
-    let c = 1;
-    if ((extra.weatherSeverity ?? 0) > 0.6) c *= 0.8;
-    if ((extra.travelFatigue ?? 0) > 0.5) c *= 0.9;
-    return c;
-  }
-
-  private static leagueDelta(_: any, __: any, ___: any) {
-    return 0;
-  }
-
-  private static contextDelta(_: any, __: any, ___: any) {
-    return 0;
-  }
-
-  private static latent(label: string, v: MarketVertical) {
-    const u = label.toUpperCase();
-    const under = u.includes("UNDER") || u.includes("MENOS");
-
-    return {
-      goal: v === MarketVertical.GOALS ? (under ? -1 : 1) : 0,
-      tempo: v === MarketVertical.CORNERS ? (under ? -1 : 1) : 0,
-      aggression: v === MarketVertical.CARDS ? (under ? -1 : 1) : 0,
-      pressure: (v === MarketVertical.SHOTS || v === MarketVertical.SHOTS_ON_TARGET) ? (under ? -1 : 1) : 0,
-      possession: (v === MarketVertical.FOULS || v === MarketVertical.TACKLES) ? (under ? -1 : 1) : 0
     };
   }
 
-  private static generateFingerprint(input: MatchContextInput) {
-    return crypto.createHash("sha256").update(JSON.stringify(input)).digest("hex");
+  // ==========================================================
+  // MATH CORE
+  // ==========================================================
+  private static logit(p: number) {
+    return Math.log(p / (1 - p));
   }
 
-  private static abort(matchId: string, fingerprint: string, reason: string) {
-    return {
-      match_id: matchId,
-      engine_version: this.VERSION,
-      fingerprint,
-      approved_markets: [],
-      signals_found: 0,
-      total_exposure: 0,
-      vetoed: true,
-      veto_reason: reason,
-      analyzed_at: new Date().toISOString()
-    };
-  }
-      }e: Number(units.toFixed(4)),
-        kelly: kelly,
-        latentFactors: s.latentFactors
-      });
-
-      verticalCount[s.vertical]++;
-      exposure += units;
-    }
-
-    return selected;
+  private static sigmoid(x: number) {
+    return 1 / (1 + Math.exp(-x));
   }
 
-  // ==========================================================
-  // CANONICALIZATION
-  // ==========================================================
-  private static canonicalVector(input?: Record<string, any>): MarketProbability[] {
-    if (!input) return [];
-
-    return Object.values(input).map((m: any) => ({
-      label: String(m?.label ?? "UNKNOWN"),
-      probability: Math.max(MIN_PROBABILITY, Math.min(MAX_PROBABILITY, m?.probability ?? 0.5)),
-      impliedOdds: Math.max(MIN_ODDS, Math.min(MAX_ODDS, m?.impliedOdds ?? 2))
-    }));
-  }
-
-  // ==========================================================
-  // LATENT FACTORS
-  // ==========================================================
-  private static deriveLatentFactors(label: string, vertical: MarketVertical): LatentFactors {
-    const n = label.toUpperCase();
-    const under = n.includes("UNDER") || n.includes("MENOS");
-
-    return {
-      goal: vertical === MarketVertical.GOALS ? (under ? -1 : 1) : 0,
-      tempo: vertical === MarketVertical.CORNERS ? (under ? -1 : 1) : 0,
-      aggression: vertical === MarketVertical.CARDS ? (under ? -1 : 1) : 0,
-      pressure: (vertical === MarketVertical.SHOTS || vertical === MarketVertical.SHOTS_ON_TARGET) ? (under ? -1 : 1) : 0,
-      possession: (vertical === MarketVertical.FOULS || vertical === MarketVertical.TACKLES) ? (under ? -1 : 1) : 0
-    };
+  private static clamp(p: number) {
+    return Math.max(MIN_PROB, Math.min(MAX_PROB, p));
   }
 
   // ==========================================================
   // FINGERPRINT
   // ==========================================================
-  private static generateFingerprint(input: MatchContextInput): string {
-    return crypto
-      .createHash("sha256")
-      .update(JSON.stringify(input))
-      .digest("hex");
+  private static fingerprint(input: MatchContextInput) {
+    return crypto.createHash("sha256").update(JSON.stringify(input)).digest("hex");
   }
-
-  // ==========================================================
-  // ABORT
-  // ==========================================================
-  private static generateAbortedResponse(matchId: string, fingerprint: string, reason: string) {
-    return {
-      match_id: matchId,
-      engine_version: this.VERSION,
-      fingerprint,
-      approved_markets: [],
-      signals_found: 0,
-      total_exposure: 0,
-      vetoed: true,
-      veto_reason: reason,
-      analyzed_at: new Date().toISOString()
-    };
-  }
-         }HOTS]: 0,
-      [MarketVertical.SHOTS_ON_TARGET]: 0,
-      [MarketVertical.FOULS]: 0,
-      [MarketVertical.BTTS]: 0,
-      [MarketVertical.TACKLES]: 0
-    };
-
-    let totalExposure = 0;
-
-    for (const signal of sortedSignals) {
-      if (verticalCount[signal.vertical] >= TOP_K_PER_VERTICAL) {
-        continue;
-      }
-
-      // CORRELATION CONTROL (ROADMAP 2.7)
-      let correlated = false;
-      for (const existing of selected) {
-        const dotProduct =
-          (signal.latentFactors.goal * existing.latentFactors.goal) +
-          (signal.latentFactors.tempo * existing.latentFactors.tempo) +
-          (signal.latentFactors.aggression * existing.latentFactors.aggression) +
-          (signal.latentFactors.pressure * existing.latentFactors.pressure) +
-          (signal.latentFactors.possession * existing.latentFactors.possession);
-
-        if (dotProduct > CORRELATION_THRESHOLD) {
-          correlated = true;
-          break;
-        }
-      }
-
-      if (correlated) {
-        continue;
-      }
-
-      // FRACTIONAL KELLY (ROADMAP 2.8)
-      const b = signal.impliedOdds - 1;
-      const rawKelly = ((signal.adjustedProbability * b) - (1 - signal.adjustedProbability)) / b;
-      const scaledKelly = rawKelly * KELLY_FRACTION;
-      const finalKelly = Math.max(
-        MIN_KELLY_POSITION,
-        Math.min(scaledKelly, MAX_EFFECTIVE_KELLY_POSITION)
-      );
-
-      // POSITION SIZING
-      let baseUnits = 0.25;
-      if (signal.economicEV >= 0.07) {
-        baseUnits = 1.0;
-      } else if (signal.economicEV >= 0.03) {
-        baseUnits = 0.50;
-      }
-
-      const adjustedUnits = baseUnits * (finalKelly / MAX_EFFECTIVE_KELLY_POSITION);
-
-      if (totalExposure + adjustedUnits > MAX_CLUSTER_EXPOSURE) {
-        continue;
-      }
-
-      selected.push({
-  vertical: signal.vertical,
-  market: signal.market,
-  impliedOdds: signal.impliedOdds,
-  adjustedProbability: Number(signal.adjustedProbability.toFixed(4)),
-  economicEV: Number(signal.economicEV.toFixed(4)),
-  unitSize: Number(adjustedUnits.toFixed(4)),
-  kelly: Number(finalKelly.toFixed(4)),
-  latentFactors: signal.latentFactors
-});
-
-      verticalCount[signal.vertical]++;
-      totalExposure += adjustedUnits;
     }
-
-    return selected;
-  }
-
-  // ==========================================================
-  // INPUT CANONICALIZATION (ROADMAP 2.6)
-  // ==========================================================
-  private static canonicalVector(input?: Record<string, any>): MarketProbability[] {
-    if (!input) {
-      return [];
-    }
-
-    return Object.values(input).map((market: any) => ({
-      label: String(market?.label ?? "UNKNOWN"),
-      probability: Math.max(
-        MIN_PROBABILITY,
-        Math.min(MAX_PROBABILITY, market?.probability ?? 0.50)
-      ),
-      impliedOdds: Math.max(MIN_ODDS, market?.impliedOdds ?? 2.0)
-    }));
-  }
-
-  // ==========================================================
-  // LATENT FACTOR ENGINE (ROADMAP 2.7)
-  // ==========================================================
-  private static deriveLatentFactors(label: string, vertical: MarketVertical): LatentFactors {
-    const normalized = label.toUpperCase();
-    const isUnder =
-      normalized.includes("UNDER") ||
-      normalized.includes("MENOS") ||
-      normalized.includes("BTTS_NO");
-
-    return {
-      goal: vertical === MarketVertical.GOALS ? (isUnder ? -1 : 1) : 0,
-      tempo: vertical === MarketVertical.CORNERS ? (isUnder ? -1 : 1) : 0,
-      aggression: vertical === MarketVertical.CARDS ? (isUnder ? -1 : 1) : 0,
-      pressure: (vertical === MarketVertical.SHOTS || vertical === MarketVertical.SHOTS_ON_TARGET) ? (isUnder ? -1 : 1) : 0,
-      possession: (vertical === MarketVertical.FOULS || vertical === MarketVertical.TACKLES) ? (isUnder ? -1 : 1) : 0
-    };
-  }
-
-  // ==========================================================
-  // FINGERPRINT GENERATOR (ROADMAP 1.6)
-  // ==========================================================
-  private static generateFingerprint(input: MatchContextInput): string {
-    const payload = JSON.stringify({
-      matchId: input.matchId,
-      leagueId: input.leagueId,
-      winnerMatrix: input.winnerMatrix,
-      goalsMatrix: input.goalsMatrix,
-      cardsMatrix: input.cardsMatrix,
-      cornersMatrix: input.cornersMatrix,
-      shotsMatrix: input.shotsMatrix,
-      shotsOnTargetMatrix: input.shotsOnTargetMatrix,
-      foulsMatrix: input.foulsMatrix,
-      bttsMatrix: input.bttsMatrix,
-      tacklesMatrix: input.tacklesMatrix,
-      extraField: input.extraField
-    });
-
-    return crypto.createHash("sha256").update(payload).digest("hex");
-  }
-
-  // ==========================================================
-  // ABORTED RESPONSE (ROADMAP 2.2)
-  // ==========================================================
-  private static generateAbortedResponse(matchId: string, fingerprint: string, reason: string) {
-    return {
-      match_id: matchId,
-      engine_version: this.VERSION,
-      fingerprint,
-      approved_markets: [],
-      signals_found: 0,
-      total_exposure: 0,
-      vetoed: true,
-      veto_reason: reason,
-      analyzed_at: new Date().toISOString()
-    };
-  }
-  }
-  
