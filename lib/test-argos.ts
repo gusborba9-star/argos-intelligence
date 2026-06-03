@@ -1,5 +1,7 @@
-import { ArgosUnifiedEngine, MatchContextInput } from "./ArgosUnifiedEngine";
-
+import {
+  ArgosUnifiedEngine,
+  MatchContextInput
+} from "./core/ArgosUnifiedEngine";
 // ============================================================
 // SCRIPT DE SIMULAÇÃO OPERACIONAL (SANDBOX DE TESTE)
 // ============================================================
