@@ -197,6 +197,36 @@ export class ArgosOrchestrator {
       confidence_score: confidence,
       analyzed_at: new Date().toISOString()
     });
+    await this.supabase
+  .from("argos_prediction_ledger")
+  .insert(
+    portfolio.map((signal: any) => ({
+      match_id: input.matchId,
+      league_id: input.leagueId ?? null,
+
+      engine_version: "v4.0_orchestrated",
+
+      vertical: signal.vertical,
+      market: signal.market,
+
+      probability: signal.probability ?? 0,
+      adjusted_probability: signal.adjustedProbability ?? 0,
+
+      implied_odds: signal.impliedOdds ?? 0,
+
+      expected_value:
+        signal.economicEV ??
+        signal.ev ??
+        0,
+
+      units:
+        signal.unitSize ??
+        signal.units ??
+        0,
+
+      fingerprint: coreOutput.fingerprint
+    }))
+  );
 
     // 7. OUTPUT FINAL
     return {
