@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { ArgosUnifiedEngine, MatchContextInput, MarketVertical } from "@/lib/ArgosUnifiedEngine";
+import { ArgosUnifiedEngine, MatchContextInput, MarketVertical } from "../../ArgosUnifiedEngine";
 
 // ============================================================
 // ARGOS ORCHESTRATOR v4.0
