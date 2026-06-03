@@ -34,10 +34,10 @@ export async function POST(request: Request) {
 
     const t0 = Date.now();
 
-    // 1. ENGINE
-    const output = ArgosUnifiedEngine.analyze(payload);
-    const approved = output.approved_markets ?? [];
-
+    // 1. ORCHESTRATOR
+const orchestrator = new ArgosOrchestrator();
+const output = await orchestrator.analyze(payload);
+const approved = output.approved_markets ?? [];
     // 2. SUPABASE INIT (SINGLE SOURCE OF TRUTH)
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
