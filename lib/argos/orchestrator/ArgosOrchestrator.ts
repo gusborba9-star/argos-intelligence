@@ -161,10 +161,7 @@ export class ArgosOrchestrator {
     // 1. CORE ENGINE (single execution only)
     const coreOutput = ArgosUnifiedEngine.analyze(input);
 
-    const baseSignals = (coreOutput.approved_markets ?? []).map((s: any) => ({
-  ...s,
-  economicEV: s.economicEV ?? s.ev ?? 0
-}));
+    
     // 2. ENSEMBLE TAGGING (sem recalcular core)
 
 // NORMALIZAÇÃO GARANTIDA (single source of truth antes do ensemble)
