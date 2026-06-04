@@ -1,3 +1,4 @@
+import { RegimeEngine } from "../../regime/RegimeEngine";
 import { createClient } from "@supabase/supabase-js";
 import {
   ArgosUnifiedEngine,
@@ -160,6 +161,21 @@ export class ArgosOrchestrator {
 
     // 1. CORE ENGINE (single execution only)
     const coreOutput = ArgosUnifiedEngine.analyze(input);
+    
+    // ========================================================
+// 2. REGIME DETECTION LAYER (ANTES DO ENSEMBLE)
+// ========================================================
+const regime = RegimeEngine.analyze({
+  matchId: input.matchId,
+  leagueId: input.leagueId,
+
+  // heurísticas simples iniciais (pode vir do RAG depois)
+  oddsSpread: 0.15,
+  injuryIndex: 0.2,
+  importanceScore: 0.6,
+  volatilityIndex: 0.5,
+  historicalGoalsAvg: 2.5
+});
 
     
     // 2. ENSEMBLE TAGGING (sem recalcular core)
@@ -174,7 +190,6 @@ const baseSignals = (coreOutput.approved_markets ?? []).map((s: any) => ({
 
   impliedOdds: s.impliedOdds ?? 0,
 
-  // EV unificado (compatibilidade core antigo)
   expectedValue: s.economicEV ?? s.ev ?? 0,
 
   units: s.units ?? 0,
@@ -184,9 +199,14 @@ const baseSignals = (coreOutput.approved_markets ?? []).map((s: any) => ({
 
   unitSize: s.unitSize ?? 0,
 
-  status: s.status ?? "OPTIMIZED"
-}));
+  status: s.status ?? "OPTIMIZED",
 
+  // 🔥 REGIME INJECTION
+  regime: regime.regime,
+  model_bias: regime.model_bias,
+  variance_multiplier: regime.variance_multiplier
+}));
+    
 // EXPANSÃO DO ENSEMBLE (inalterado)
 const expanded = baseSignals.flatMap((s: any) => ([
   { ...s, model: "BASE" },
