@@ -1,4 +1,4 @@
-import { RegimeEngine } from "../../regime/RegimeEngine";
+import { RegimeEngine } from "../regime/RegimeEngine";
 import { createClient } from "@supabase/supabase-js";
 import {
   ArgosUnifiedEngine,
