@@ -166,11 +166,36 @@ export class ArgosOrchestrator {
   economicEV: s.economicEV ?? s.ev ?? 0
 }));
     // 2. ENSEMBLE TAGGING (sem recalcular core)
-    const expanded = baseSignals.flatMap((s: any) => ([
-      { ...s, model: "BASE" },
-      { ...s, model: "CONSERVATIVE" },
-      { ...s, model: "AGGRESSIVE" }
-    ]));
+
+// NORMALIZAÇÃO GARANTIDA (single source of truth antes do ensemble)
+const baseSignals = (coreOutput.approved_markets ?? []).map((s: any) => ({
+  vertical: s.vertical,
+  market: s.market,
+
+  probability: s.probability ?? 0,
+  adjustedProbability: s.adjustedProbability ?? 0,
+
+  impliedOdds: s.impliedOdds ?? 0,
+
+  // EV unificado (compatibilidade core antigo)
+  expectedValue: s.economicEV ?? s.ev ?? 0,
+
+  units: s.units ?? 0,
+
+  model: "BASE",
+  modelConsensusSize: 1,
+
+  unitSize: s.unitSize ?? 0,
+
+  status: s.status ?? "OPTIMIZED"
+}));
+
+// EXPANSÃO DO ENSEMBLE (inalterado)
+const expanded = baseSignals.flatMap((s: any) => ([
+  { ...s, model: "BASE" },
+  { ...s, model: "CONSERVATIVE" },
+  { ...s, model: "AGGRESSIVE" }
+]));
 
     // 3. CONSENSUS FUSION
     const fused = fuseEnsemble(expanded);
