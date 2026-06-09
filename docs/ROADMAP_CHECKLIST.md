@@ -1,5 +1,5 @@
-# 🗺️ Argos Intelligence: Roadmap Checklist v4.2 → v5.0
-**Status Atual:** Auditoria Industrial Multi-Vertical v4.2 Consolidada ✅
+# 🗺️ Argos Intelligence: Roadmap Checklist v4.4 → v5.0
+**Status Atual:** Cérebro Adaptativo (Fase 2) Concluído ✅
 **Objetivo:** Auditor de Mercado Auto-Suficiente, Lucrativo e Escalável.
 
 ---
@@ -16,7 +16,7 @@
 
 ---
 
-## 🧠 Fase 2: Cérebro Adaptativo & Feedback Loop (Em Progresso ⚙️)
+## 🧠 Fase 2: Cérebro Adaptativo & Feedback Loop (Concluído ✅)
 *Foco: Fazer o Argos aprender com os próprios resultados e reduzir dependência de IA externa.*
 
 - [x] **Expansão Multi-Vertical (v4.1/v4.2)**: Suporte para Gols, Escanteios, Cartões e Finalizações.
@@ -24,13 +24,13 @@
 - [x] **Feedback Engine**: Implementação do cálculo de precisão (Brier Score) e erro de previsão.
 - [x] **Settle API Route**: Endpoint para liquidação de resultados e fechamento do ciclo de aprendizado.
 - [x] **Schema de Dados v4.2**: Tabelas e RPCs atualizadas no Supabase para suportar o Ledger de Feedback.
-- [ ] **Auto-Tuning de Regimes**: Ajustar o `variance_multiplier` com base no histórico de acertos de cada liga/regime.
-- [ ] **Base de Conhecimento Local**: Migrar gradualmente o conhecimento do Gemini para embeddings locais (RAG) de alta densidade.
-- [ ] **Redução de Custo de IA**: Implementar cache semântico (se um jogo similar já foi analisado, reutilizar o RegimeProfile).
+- [x] **Auto-Tuning de Regimes**: Ajustar o `variance_multiplier` com base no histórico de acertos de cada liga/regime.
+- [x] **Base de Conhecimento Local**: Migrar gradualmente o conhecimento do Gemini para embeddings locais (RAG) de alta densidade.
+- [x] **Redução de Custo de IA**: Implementar cache semântico (se um jogo similar já foi analisado, reutilizar o RegimeProfile).
 
 ---
 
-## 📊 Fase 3: Auditoria de Mercado & Inteligência de Dados
+## 📊 Fase 3: Auditoria de Mercado & Inteligência de Dados (Próximo Passo 🚀)
 *Foco: Transformar o Argos em um Auditor que detecta anomalias de odds em tempo real.*
 
 - [ ] **Market Scanner Batch**: Integração total com API Football (100 jogos/dia no plano free).
@@ -62,7 +62,7 @@
 ---
 
 ### 📝 Notas do CTO:
-> "Com a v4.2, o Argos deixou de ser um script e se tornou uma plataforma de auditoria industrial. O paralelismo e o processamento multi-vertical nos permitem analisar o evento em sua totalidade, enquanto o Feedback Loop garante que nosso diferencial competitivo — o 'Cérebro' — cresça exponencialmente a cada jogo processado."
+> "A Fase 2 representa um marco crucial: o Argos agora tem um cérebro adaptativo. Com a integração do Auto-Tuning e o cache semântico, o motor aprende continuamente com seus erros e acertos, otimizando sua assertividade e reduzindo a dependência de IA externa. Estamos prontos para a Fase 3, onde o Argos se tornará um verdadeiro auditor de mercado em tempo real."
 
 ---
 *Última Atualização: 09/06/2026*
