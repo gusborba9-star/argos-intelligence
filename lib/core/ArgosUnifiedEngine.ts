@@ -33,7 +33,8 @@ export enum MarketVertical {
   SHOTS_ON_TARGET = "SHOTS_ON_TARGET",
   FOULS = "FOULS",
   BTTS = "BTTS",
-  TACKLES = "TACKLES"
+  TACKLES = "TACKLES",
+  HANDICAP = "HANDICAP"
 }
 
 // ============================================================
