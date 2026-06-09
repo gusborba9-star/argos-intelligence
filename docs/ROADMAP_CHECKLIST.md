@@ -1,5 +1,5 @@
-# 🗺️ Argos Intelligence: Roadmap Checklist v4.0 → v5.0
-**Status Atual:** Arquitetura Base v4.0 Consolidada
+# 🗺️ Argos Intelligence: Roadmap Checklist v4.2 → v5.0
+**Status Atual:** Auditoria Industrial Multi-Vertical v4.2 Consolidada ✅
 **Objetivo:** Auditor de Mercado Auto-Suficiente, Lucrativo e Escalável.
 
 ---
@@ -16,11 +16,14 @@
 
 ---
 
-## 🧠 Fase 2: Cérebro Adaptativo & Feedback Loop (Próximo Passo 🚀)
+## 🧠 Fase 2: Cérebro Adaptativo & Feedback Loop (Em Progresso ⚙️)
 *Foco: Fazer o Argos aprender com os próprios resultados e reduzir dependência de IA externa.*
 
-- [ ] **Ledger de Resultados (Ground Truth)**: Implementar worker que busca o resultado real do jogo após 24h.
-- [ ] **Feedback Loop Automatizado**: Script que compara `probabilidade_argos` vs `resultado_real` e armazena o erro no Supabase.
+- [x] **Expansão Multi-Vertical (v4.1/v4.2)**: Suporte para Gols, Escanteios, Cartões e Finalizações.
+- [x] **Orquestrador Industrial (v4.2)**: Processamento paralelo (Promise.all) e persistência em lote (Batch Insert).
+- [x] **Feedback Engine**: Implementação do cálculo de precisão (Brier Score) e erro de previsão.
+- [x] **Settle API Route**: Endpoint para liquidação de resultados e fechamento do ciclo de aprendizado.
+- [x] **Schema de Dados v4.2**: Tabelas e RPCs atualizadas no Supabase para suportar o Ledger de Feedback.
 - [ ] **Auto-Tuning de Regimes**: Ajustar o `variance_multiplier` com base no histórico de acertos de cada liga/regime.
 - [ ] **Base de Conhecimento Local**: Migrar gradualmente o conhecimento do Gemini para embeddings locais (RAG) de alta densidade.
 - [ ] **Redução de Custo de IA**: Implementar cache semântico (se um jogo similar já foi analisado, reutilizar o RegimeProfile).
@@ -59,7 +62,7 @@
 ---
 
 ### 📝 Notas do CTO:
-> "O Argos não é apenas um bot de apostas; é uma infraestrutura de dados. Nosso diferencial é o **Ledger de Feedback**. Quanto mais jogos processamos, mais o motor entende o 'ruído' do mercado e mais precisas se tornam as simulações de Monte Carlo."
+> "Com a v4.2, o Argos deixou de ser um script e se tornou uma plataforma de auditoria industrial. O paralelismo e o processamento multi-vertical nos permitem analisar o evento em sua totalidade, enquanto o Feedback Loop garante que nosso diferencial competitivo — o 'Cérebro' — cresça exponencialmente a cada jogo processado."
 
 ---
-*Atualizado em: 09/06/2026*
+*Última Atualização: 09/06/2026*
