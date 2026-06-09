@@ -1,9 +1,9 @@
-import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 import { ArgosSignal } from "@/lib/core/contracts/SignalContract";
-import { MarketRegime, RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
+import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
 
 // ============================================================
-// SIGNAL CLASSIFIER v4.0
+// SIGNAL CLASSIFIER v4.1 — MULTI-VERTICAL
+// Classifica Gols, Escanteios, Cartões e Finalizações
 // ============================================================
 
 export enum SignalType {
@@ -18,13 +18,19 @@ export interface ClassifiedSignal extends ArgosSignal {
 }
 
 export class SignalClassifierV4 {
+  /**
+   * Classifica uma oportunidade de mercado usando a Tripla Classificação
+   */
   static classify(signals: ArgosSignal[], regime: RegimeProfile): ClassifiedSignal[] {
     return signals.map(s => {
       let type = SignalType.NOISE;
       
+      // 1. VALUE SIGNAL: EV Positivo
       if (s.expectedValue > 0) {
         type = SignalType.VALUE;
-      } else if (regime.confidence >= 0.75 && s.adjustedProbability >= 0.65) {
+      } 
+      // 2. VALIDATION SIGNAL: Alta probabilidade (ajustada ou base) mesmo com EV negativo
+      else if (s.probability >= 0.70 || (s.adjustedProbability && s.adjustedProbability >= 0.65)) {
         type = SignalType.VALIDATION;
       }
 
@@ -32,11 +38,14 @@ export class SignalClassifierV4 {
         ...s,
         signal_type: type,
         confidence_score: regime.confidence,
-        status: (type === SignalType.VALUE ? "OPTIMIZED" : "HEDGED") as "OPTIMIZED" | "HEDGED"
+        status: (type === SignalType.VALUE ? "OPTIMIZED" : "HEDGED") as any
       };
     }).filter(s => s.signal_type !== SignalType.NOISE);
   }
 
+  /**
+   * Prepara os dados para o Ledger do Supabase
+   */
   static prepareLedger(matchId: string, leagueId: string | undefined, signals: ClassifiedSignal[], regime: RegimeProfile) {
     return signals.map(s => ({
       match_id: matchId,
