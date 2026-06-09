@@ -1,32 +1,17 @@
 // ============================================================
-// ARGOS v4.0 — SIGNAL CONTRACT (SINGLE SOURCE OF TRUTH)
+// SIGNAL CONTRACT v4.0
 // ============================================================
 
 export interface ArgosSignal {
   vertical: string;
   market: string;
-
   probability: number;
   adjustedProbability: number;
-
   impliedOdds: number;
-
-  // EV unificado (NUNCA duplicar nomes)
   expectedValue: number;
-
-  // posição no portfólio
   units: number;
-
-  // ensemble metadata
-  model: "BASE" | "CONSERVATIVE" | "AGGRESSIVE" | string;
-
+  model: string;
   modelConsensusSize: number;
-
   unitSize: number;
-
   status: "OPTIMIZED" | "HEDGED";
-
-  // camada futura (RAG / regime)
-  regime?: string;
-  regimeMultiplier?: number;
 }

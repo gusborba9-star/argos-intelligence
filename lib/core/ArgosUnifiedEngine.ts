@@ -81,6 +81,7 @@ export interface Signal {
   adjustedProbability: number;
   impliedOdds: number;
   ev: number;
+  status?: "OPTIMIZED" | "HEDGED"; // Adicionado para compatibilidade com SignalContract e Classifier";
 }
 
 // internal model signal
