@@ -32,10 +32,14 @@ export class ArgosOrchestratorV4 {
   private ingestionService: DataIngestionService;
 
   constructor() {
-    this.supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      console.error("[Argos v4.5.1] ERRO CRÍTICO: Variáveis de ambiente do Supabase ausentes!");
+    }
+
+    this.supabase = createClient(supabaseUrl!, supabaseKey!);
     this.regimeEngine = new RegimeEngineV4(process.env.GOOGLE_API_KEY!);
     this.ragEngine = new RAGContextEngine(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -136,7 +140,15 @@ export class ArgosOrchestratorV4 {
           .from("argos_signal_ledger")
           .insert(ledgerEntries);
 
-        if (persistError) throw persistError;
+        if (persistError) {
+          console.error("[Argos v4.5.1] Erro na Persistência do Ledger:", {
+            message: persistError.message,
+            code: persistError.code,
+            details: persistError.details,
+            hint: persistError.hint
+          });
+          throw new Error(`Supabase Persistence Error [${persistError.code}]: ${persistError.message} (${persistError.details || 'no details'})`);
+        }
       }
 
       return {
