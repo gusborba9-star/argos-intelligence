@@ -1,5 +1,5 @@
-# 🗺️ Argos Intelligence: Roadmap Checklist v4.4 → v5.0
-**Status Atual:** Cérebro Adaptativo (Fase 2) Concluído ✅
+# 🗺️ Argos Intelligence: Roadmap Checklist v4.5 → v5.0
+**Status Atual:** Ecossistema Zero-Touch (Fase 2) Concluído ✅
 **Objetivo:** Auditor de Mercado Auto-Suficiente, Lucrativo e Escalável.
 
 ---
@@ -27,6 +27,10 @@
 - [x] **Auto-Tuning de Regimes**: Ajustar o `variance_multiplier` com base no histórico de acertos de cada liga/regime.
 - [x] **Base de Conhecimento Local**: Migrar gradualmente o conhecimento do Gemini para embeddings locais (RAG) de alta densidade.
 - [x] **Redução de Custo de IA**: Implementar cache semântico (se um jogo similar já foi analisado, reutilizar o RegimeProfile).
+- [x] **DataIngestionService (v4.5)**: Extração automática de dados com decaimento exponencial e médias móveis (xG/xGA).
+- [x] **Orquestrador Zero-Touch (v4.5)**: `runZeroTouchAudit` para automação completa a partir de um `matchId`.
+- [x] **Fila de Processamento em Lote (v4.5)**: `BatchQueueService` e rotas de API para processamento assíncrono e escalável.
+- [x] **Teste de Estresse (v4.5)**: Script para validar consistência do Ledger com 50 requisições simultâneas.
 
 ---
 
@@ -62,7 +66,7 @@
 ---
 
 ### 📝 Notas do CTO:
-> "A Fase 2 representa um marco crucial: o Argos agora tem um cérebro adaptativo. Com a integração do Auto-Tuning e o cache semântico, o motor aprende continuamente com seus erros e acertos, otimizando sua assertividade e reduzindo a dependência de IA externa. Estamos prontos para a Fase 3, onde o Argos se tornará um verdadeiro auditor de mercado em tempo real."
+> "A Fase 2 está completa, e o Argos agora é um **Ecossistema Zero-Touch** (v4.5). Com o `DataIngestionService`, `AutoTuningEngine` integrado e o `BatchQueueService`, o Argos opera de forma autônoma, desde a ingestão de dados com decaimento exponencial até o ajuste de modelos e persistência em lote. Estamos prontos para escalar a auditoria de mercado e entrar na Fase 3, focando na detecção de anomalias em tempo real e na inteligência de dados."
 
 ---
 *Última Atualização: 09/06/2026*
