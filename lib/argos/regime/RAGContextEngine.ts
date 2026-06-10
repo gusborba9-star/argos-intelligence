@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getSanitizedSupabaseUrl } from "@/lib/core/SupabaseClient";
 
 // ============================================================
 // RAG CONTEXT ENGINE v4.0
@@ -19,7 +20,8 @@ export class RAGContextEngine {
   private model;
 
   constructor(supabaseUrl: string, supabaseKey: string, googleApiKey: string) {
-    this.supabase = createClient(supabaseUrl, supabaseKey);
+    const sanitizedUrl = getSanitizedSupabaseUrl(supabaseUrl);
+    this.supabase = createClient(sanitizedUrl, supabaseKey);
     this.genAI = new GoogleGenerativeAI(googleApiKey);
     this.model = this.genAI.getGenerativeModel({ model: "gemini-embedding-001" });
   }

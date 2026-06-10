@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 
 // ============================================================
 // BATCH QUEUE SERVICE v4.5 — INDUSTRIAL ORCHESTRATION
@@ -18,10 +18,7 @@ export class BatchQueueService {
   private supabase;
 
   constructor() {
-    this.supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
+    this.supabase = getSupabaseClient();
   }
 
   /**

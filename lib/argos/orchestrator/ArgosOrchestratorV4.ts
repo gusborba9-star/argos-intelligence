@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 import { RegimeEngineV4, ExternalFactors } from "@/lib/argos/regime/RegimeEngineV4";
 import { RAGContextEngine } from "@/lib/argos/regime/RAGContextEngine";
 import { ModelFactory } from "@/lib/core/ModelFactory";
@@ -32,14 +32,7 @@ export class ArgosOrchestratorV4 {
   private ingestionService: DataIngestionService;
 
   constructor() {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseKey) {
-      console.error("[Argos v4.5.1] ERRO CRÍTICO: Variáveis de ambiente do Supabase ausentes!");
-    }
-
-    this.supabase = createClient(supabaseUrl!, supabaseKey!);
+    this.supabase = getSupabaseClient();
     this.regimeEngine = new RegimeEngineV4(process.env.GOOGLE_API_KEY!);
     this.ragEngine = new RAGContextEngine(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,

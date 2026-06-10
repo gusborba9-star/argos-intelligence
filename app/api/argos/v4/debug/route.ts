@@ -1,35 +1,32 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseClient, getSanitizedSupabaseUrl } from "@/lib/core/SupabaseClient";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  
+  const sanitizedUrl = rawUrl ? getSanitizedSupabaseUrl(rawUrl) : "MISSING";
 
   const diagnostics: any = {
     env: {
-      hasUrl: !!supabaseUrl,
+      hasUrl: !!rawUrl,
       hasServiceKey: !!supabaseKey,
-      hasAnonKey: !!anonKey,
-      url: supabaseUrl ? `${supabaseUrl.substring(0, 15)}...` : "MISSING",
-      keyPrefix: supabaseKey ? `${supabaseKey.substring(0, 10)}...` : "MISSING",
+      rawUrl: rawUrl ? `${rawUrl.substring(0, 20)}...` : "MISSING",
+      sanitizedUrl: `${sanitizedUrl.substring(0, 20)}...`,
+      isDifferent: rawUrl !== sanitizedUrl
     },
     tests: {}
   };
 
   try {
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error("Variáveis de ambiente do Supabase ausentes.");
-    }
+    const supabase = getSupabaseClient();
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Teste 1: Conectividade Simples (Health Check)
+    // Teste 1: Conectividade Simples
     const startTime = Date.now();
-    const { data: health, error: healthError } = await supabase
+    const { error: healthError } = await supabase
       .from("argos_signal_ledger")
       .select("count", { count: "exact", head: true });
 
@@ -39,19 +36,18 @@ export async function GET() {
       error: healthError ? {
         message: healthError.message,
         code: healthError.code,
-        details: healthError.details,
-        hint: healthError.hint
+        details: healthError.details
       } : null
     };
 
-    // Teste 2: Escrita (Dry Run / Rollback se possível, mas aqui apenas tentamos uma inserção de teste)
+    // Teste 2: Escrita de Debug
     const { error: writeError } = await supabase
       .from("argos_signal_ledger")
       .insert({
-        match_id: "debug_test",
+        match_id: "debug_test_v4.5.2",
         signal_type: "NOISE",
         vertical: "WINNER",
-        market: "DEBUG",
+        market: "DEBUG_SANITIZED",
         probability: 0,
         expected_value: 0,
         regime: "DEBUG",
@@ -64,8 +60,7 @@ export async function GET() {
       error: writeError ? {
         message: writeError.message,
         code: writeError.code,
-        details: writeError.details,
-        hint: writeError.hint
+        details: writeError.details
       } : null
     };
 
