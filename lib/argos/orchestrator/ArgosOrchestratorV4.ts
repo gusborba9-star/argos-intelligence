@@ -189,6 +189,7 @@ export class ArgosOrchestratorV4 {
           'GOALS'
         );
         signals.push({
+          matchId: payload.matchId,
           market: "HOME_WIN",
           vertical: MarketVertical.WINNER,
           probability: winnerSim.probabilities.home,
@@ -204,6 +205,7 @@ export class ArgosOrchestratorV4 {
           regime
         );
         signals.push({
+          matchId: payload.matchId,
           market: "OVER_9_5_CORNERS",
           vertical: MarketVertical.CORNERS,
           probability: cornerSim.probabilities.home + cornerSim.probabilities.away,
@@ -220,6 +222,7 @@ export class ArgosOrchestratorV4 {
           regime
         );
         signals.push({
+          matchId: payload.matchId,
           market: "OVER_4_5_CARDS",
           vertical: MarketVertical.CARDS,
           probability: cardSim.probabilities.home + cardSim.probabilities.away,
@@ -234,6 +237,7 @@ export class ArgosOrchestratorV4 {
         const probBTTS = probH * probA;
         
         signals.push({
+          matchId: payload.matchId,
           market: "BTTS_YES",
           vertical: MarketVertical.BTTS,
           probability: probBTTS,
@@ -250,6 +254,7 @@ export class ArgosOrchestratorV4 {
           'SHOTS'
         );
         signals.push({
+          matchId: payload.matchId,
           market: "OVER_22_5_SHOTS",
           vertical: MarketVertical.SHOTS,
           probability: shotSim.probabilities.home + shotSim.probabilities.away,
@@ -266,6 +271,7 @@ export class ArgosOrchestratorV4 {
           'GOALS'
         );
         signals.push({
+          matchId: payload.matchId,
           market: "AH_-0.5_HOME",
           vertical: MarketVertical.HANDICAP,
           probability: handicapSim.probabilities.home,

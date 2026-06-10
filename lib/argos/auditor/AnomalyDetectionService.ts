@@ -1,4 +1,5 @@
-import { MarketVertical, ArgosSignal } from "@/lib/core/contracts/SignalContract";
+import { ArgosSignal } from "@/lib/core/contracts/SignalContract";
+import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 
 interface MarketOdds {
   [key: string]: number; // Ex: { "HOME_WIN": 2.05, "DRAW": 3.40, "AWAY_WIN": 3.75 }

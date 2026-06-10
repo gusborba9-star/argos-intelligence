@@ -3,6 +3,7 @@
 // ============================================================
 
 export interface ArgosSignal {
+  matchId?: string; // Adicionado para AnomalyDetectionService
   vertical: string;
   market: string;
   probability: number;
