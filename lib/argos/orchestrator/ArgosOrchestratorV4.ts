@@ -7,6 +7,7 @@ import { ArgosSignal } from "@/lib/core/contracts/SignalContract";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 import { AutoTuningEngine } from "@/lib/core/AutoTuningEngine";
 import { DataIngestionService } from "@/lib/core/DataIngestionService";
+import { AnomalyDetectionService } from "@/lib/argos/auditor/AnomalyDetectionService";
 
 // ============================================================
 // ARGOS ORCHESTRATOR v4.5 — ZERO-TOUCH EDITION
@@ -22,6 +23,7 @@ export interface AuditPayload {
     home: Record<string, number>;
     away: Record<string, number>;
   };
+  marketOdds?: { [key: string]: number }; // Adicionado para AnomalyDetectionService
 }
 
 export class ArgosOrchestratorV4 {
@@ -30,6 +32,7 @@ export class ArgosOrchestratorV4 {
   private ragEngine: RAGContextEngine;
   private autoTuner: AutoTuningEngine;
   private ingestionService: DataIngestionService;
+  private anomalyDetector: AnomalyDetectionService;
 
   constructor() {
     this.supabase = getSupabaseClient();
@@ -41,12 +44,13 @@ export class ArgosOrchestratorV4 {
     );
     this.autoTuner = new AutoTuningEngine();
     this.ingestionService = new DataIngestionService(process.env.FOOTBALL_API_KEY || "");
+    this.anomalyDetector = new AnomalyDetectionService();
   }
 
   /**
    * MODO ZERO-TOUCH: Auditoria autônoma a partir de um único matchId
    */
-  async runZeroTouchAudit(matchId: string, requestedVerticals: string[]) {
+  async runZeroTouchAudit(matchId: string, requestedVerticals: string[], marketOdds?: { [key: string]: number }) {
     const startTime = Date.now();
     console.log(`[Argos v4.5] Iniciando Auditoria Zero-Touch para matchId: ${matchId}`);
 
@@ -120,6 +124,12 @@ export class ArgosOrchestratorV4 {
 
       // 5. CLASSIFICAÇÃO E PERSISTÊNCIA EM LOTE
       const classifiedSignals = SignalClassifierV4.classify(rawSignals, regime);
+
+      // 6. DETECÇÃO DE ANOMALIAS: Comparar com odds de mercado e emitir alertas
+      if (marketOdds && classifiedSignals.length > 0) {
+        const anomalyAlerts = this.anomalyDetector.detectAnomalies(classifiedSignals, marketOdds);
+        anomalyAlerts.forEach(alert => console.warn(alert));
+      }
       
       if (classifiedSignals.length > 0) {
         const ledgerEntries = SignalClassifierV4.prepareLedger(
@@ -145,12 +155,8 @@ export class ArgosOrchestratorV4 {
       }
 
       return {
-        status: "SUCCESS",
         matchId,
-        regime: regime.regime,
-        signalsFound: classifiedSignals.length,
-        executionTimeMs: Date.now() - startTime,
-        signals: classifiedSignals
+        status: "SUCCESS",
       };
 
     } catch (error: any) {

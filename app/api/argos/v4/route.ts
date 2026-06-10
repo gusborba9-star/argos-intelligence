@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { matchId, requestedVerticals, mode = "DIRECT" } = body;
+    const { matchId, requestedVerticals, marketOdds, mode = "DIRECT" } = body;
 
     if (!matchId || !requestedVerticals) {
       return NextResponse.json({ error: "matchId e requestedVerticals são obrigatórios" }, { status: 400 });
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     }
 
     // MODO DIRECT: Processamento imediato (Zero-Touch)
-    const result = await orchestrator.runZeroTouchAudit(matchId, requestedVerticals);
+    const result = await orchestrator.runZeroTouchAudit(matchId, requestedVerticals, marketOdds);
 
     return NextResponse.json(result);
 
