@@ -12,6 +12,12 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
+    // Verificação de API Key para segurança da rota POST
+    const apiKey = req.headers.get("x-api-key");
+    if (!apiKey || apiKey !== process.env.ARGOS_API_KEY) {
+      return NextResponse.json({ error: "Unauthorized: Invalid or missing API Key" }, { status: 401 });
+    }
+
     const body = await req.json();
     const { matchId, requestedVerticals, mode = "DIRECT" } = body;
 
