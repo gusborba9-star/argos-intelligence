@@ -2,20 +2,21 @@ import { createClient } from "@supabase/supabase-js";
 import { RegimeEngineV4, ExternalFactors } from "@/lib/argos/regime/RegimeEngineV4";
 import { RAGContextEngine } from "@/lib/argos/regime/RAGContextEngine";
 import { ModelFactory } from "@/lib/core/ModelFactory";
-import { SignalClassifierV4, SignalType, ClassifiedSignal } from "@/lib/core/SignalClassifierV4";
+import { SignalClassifierV4 } from "@/lib/core/SignalClassifierV4";
 import { ArgosSignal } from "@/lib/core/contracts/SignalContract";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 import { AutoTuningEngine } from "@/lib/core/AutoTuningEngine";
+import { DataIngestionService } from "@/lib/core/DataIngestionService";
 
 // ============================================================
-// ARGOS ORCHESTRATOR v4.4 — ADAPTIVE BRAIN EDITION
-// Suporte massivo multi-vertical, paralelo e auto-ajustável
+// ARGOS ORCHESTRATOR v4.5 — ZERO-TOUCH EDITION
+// Inteligência Exponencial • Ingestão Automática • Insight-Out
 // ============================================================
 
 export interface AuditPayload {
   matchId: string;
   leagueId?: string;
-  requestedVerticals: ('WINNER' | 'GOALS' | 'CORNERS' | 'CARDS' | 'SHOTS' | 'BTTS' | 'HANDICAP')[];
+  requestedVerticals: string[];
   externalFactors: ExternalFactors;
   baseMetrics: {
     home: Record<string, number>;
@@ -28,6 +29,7 @@ export class ArgosOrchestratorV4 {
   private regimeEngine: RegimeEngineV4;
   private ragEngine: RAGContextEngine;
   private autoTuner: AutoTuningEngine;
+  private ingestionService: DataIngestionService;
 
   constructor() {
     this.supabase = createClient(
@@ -41,30 +43,32 @@ export class ArgosOrchestratorV4 {
       process.env.GOOGLE_API_KEY!
     );
     this.autoTuner = new AutoTuningEngine();
+    this.ingestionService = new DataIngestionService(process.env.FOOTBALL_API_KEY || "");
   }
 
   /**
-   * Executa a auditoria completa de mercado para um jogo
+   * MODO ZERO-TOUCH: Auditoria autônoma a partir de um único matchId
    */
-  async runAudit(payload: AuditPayload) {
+  async runZeroTouchAudit(matchId: string, requestedVerticals: string[]) {
     const startTime = Date.now();
-    console.log(`[Argos v4.2] Iniciando auditoria para o jogo: ${payload.matchId}`);
+    console.log(`[Argos v4.5] Iniciando Auditoria Zero-Touch para matchId: ${matchId}`);
 
     try {
-      // 1. CACHE SEMÂNTICO: Verificar se já existe análise recente para este jogo
+      // 1. DATA INGESTION: Extração e Normalização Automática (Data-In)
+      const ingestedData = await this.ingestionService.ingest(matchId);
+
+      // 2. CACHE SEMÂNTICO: Verificar análise recente
       const { data: existingLedger } = await this.supabase
         .from("argos_signal_ledger")
         .select("regime, confidence")
-        .eq("match_id", payload.matchId)
+        .eq("match_id", matchId)
         .order("created_at", { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
 
       let regime;
-      let context;
-
       if (existingLedger) {
-        console.log(`[Argos v4.4] Cache Hit para matchId: ${payload.matchId}. Reutilizando regime.`);
+        console.log(`[Argos v4.5] Cache Hit. Reutilizando regime.`);
         regime = {
           regime: existingLedger.regime,
           confidence: existingLedger.confidence,
@@ -74,41 +78,56 @@ export class ArgosOrchestratorV4 {
           explanation: "Análise recuperada do cache local."
         };
       } else {
-        // 1.1 Extração de Contexto (RAG) - Cache Miss
-        context = await this.ragEngine.retrieveContext(payload.matchId);
-
-        // 2. Definição de Regime de Mercado via AI
+        // 2.1 AI ANALYSIS (RAG + Regime) - Cache Miss
+        const context = await this.ragEngine.retrieveContext(matchId);
         regime = await this.regimeEngine.analyze({
-          matchId: payload.matchId,
-          leagueId: payload.leagueId,
+          matchId,
+          leagueId: ingestedData.leagueId,
           contextEvidence: context,
-          factors: payload.externalFactors
+          factors: ingestedData.externalFactors
         });
       }
 
-      // 2.1 AUTO-TUNING: Ajustar regime com base no histórico real
-      if (payload.leagueId) {
-        const tuning = await this.autoTuner.tuneRegimeParameters(payload.leagueId, regime.regime);
-        regime.variance_multiplier *= tuning.suggestedVarianceMultiplier;
-        regime.confidence += tuning.confidenceAdjustment;
-        regime.reasoning_tags.push(`AUTO_TUNED_VAR_${tuning.suggestedVarianceMultiplier}`);
-      }
+      // 3. AUTO-TUNING: Ajuste dinâmico baseado no histórico real
+      const tuning = await this.autoTuner.tuneRegimeParameters(ingestedData.leagueId, regime.regime);
+      regime.variance_multiplier *= tuning.suggestedVarianceMultiplier;
+      regime.confidence += tuning.confidenceAdjustment;
+      regime.reasoning_tags.push(`AUTO_TUNED_VAR_${tuning.suggestedVarianceMultiplier.toFixed(2)}`);
 
-      // 3. Processamento Paralelo de Verticais (Market Factory Pattern)
-      const simulationPromises = payload.requestedVerticals.map(async (vertical) => {
+      // 4. MULTI-VERTICAL SIMULATION: Processamento Paralelo
+      const simulationPromises = requestedVerticals.map(async (vertical) => {
+        const payload: AuditPayload = {
+          matchId,
+          leagueId: ingestedData.leagueId,
+          requestedVerticals,
+          externalFactors: ingestedData.externalFactors,
+          baseMetrics: {
+            home: {
+              goals: ingestedData.home.goals,
+              corners: ingestedData.home.corners,
+              cards: ingestedData.home.cards,
+              shots: ingestedData.home.shots
+            },
+            away: {
+              goals: ingestedData.away.goals,
+              corners: ingestedData.away.corners,
+              cards: ingestedData.away.cards,
+              shots: ingestedData.away.shots
+            }
+          }
+        };
         return this.processVertical(vertical, payload, regime);
       });
 
       const rawSignals = (await Promise.all(simulationPromises)).flat();
 
-      // 4. Tripla Classificação de Sinais
+      // 5. CLASSIFICAÇÃO E PERSISTÊNCIA EM LOTE
       const classifiedSignals = SignalClassifierV4.classify(rawSignals, regime);
-
-      // 5. Persistência em Lote (Batch Insert) no Supabase
+      
       if (classifiedSignals.length > 0) {
         const ledgerEntries = SignalClassifierV4.prepareLedger(
-          payload.matchId,
-          payload.leagueId,
+          matchId,
+          ingestedData.leagueId,
           classifiedSignals,
           regime
         );
@@ -122,7 +141,7 @@ export class ArgosOrchestratorV4 {
 
       return {
         status: "SUCCESS",
-        matchId: payload.matchId,
+        matchId,
         regime: regime.regime,
         signalsFound: classifiedSignals.length,
         executionTimeMs: Date.now() - startTime,
@@ -130,10 +149,10 @@ export class ArgosOrchestratorV4 {
       };
 
     } catch (error: any) {
-      console.error(`[Argos v4.2] Erro na auditoria: ${error.message}`);
+      console.error(`[Argos v4.5] Zero-Touch Error: ${error.message}`);
       return {
         status: "FAILED",
-        matchId: payload.matchId,
+        matchId,
         error: error.message,
         executionTimeMs: Date.now() - startTime
       };
@@ -162,7 +181,7 @@ export class ArgosOrchestratorV4 {
           market: "HOME_WIN",
           vertical: MarketVertical.WINNER,
           probability: winnerSim.probabilities.home,
-          expectedValue: (winnerSim.probabilities.home * 2.0) - 1, // Exemplo de odd
+          expectedValue: (winnerSim.probabilities.home * 2.0) - 1,
           status: "OPTIMIZED" as any
         });
         break;
@@ -176,7 +195,7 @@ export class ArgosOrchestratorV4 {
         signals.push({
           market: "OVER_9_5_CORNERS",
           vertical: MarketVertical.CORNERS,
-          probability: cornerSim.probabilities.home + cornerSim.probabilities.away, // Simplificado
+          probability: cornerSim.probabilities.home + cornerSim.probabilities.away,
           expectedValue: ((cornerSim.probabilities.home + cornerSim.probabilities.away) * 1.8) - 1,
           status: "OPTIMIZED" as any
         });
@@ -199,14 +218,6 @@ export class ArgosOrchestratorV4 {
         break;
 
       case 'BTTS':
-        const bttsSim = ModelFactory.runMonteCarlo(
-          { homeMean: payload.baseMetrics.home.goals || 1.2, awayMean: payload.baseMetrics.away.goals || 1.0 },
-          regime,
-          1500,
-          'GOALS'
-        );
-        // BTTS Yes = Ambos marcam pelo menos 1 gol
-        // Simplificação probabilística: P(H>0) * P(A>0)
         const probH = 1 - Math.exp(-(payload.baseMetrics.home.goals || 1.2));
         const probA = 1 - Math.exp(-(payload.baseMetrics.away.goals || 1.0));
         const probBTTS = probH * probA;
@@ -243,7 +254,6 @@ export class ArgosOrchestratorV4 {
           1500,
           'GOALS'
         );
-        // Exemplo: Handicap Asiático -0.5 (mesmo que Home Win)
         signals.push({
           market: "AH_-0.5_HOME",
           vertical: MarketVertical.HANDICAP,

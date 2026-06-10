@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
-import { ArgosOrchestratorV4, AuditPayload } from "@/lib/argos/orchestrator/ArgosOrchestratorV4";
-import { RAGContextEngine } from "@/lib/argos/regime/RAGContextEngine";
-import { RegimeEngineV4 } from "@/lib/argos/regime/RegimeEngineV4";
-import { ModelFactory } from "@/lib/core/ModelFactory";
+import { ArgosOrchestratorV4 } from "@/lib/argos/orchestrator/ArgosOrchestratorV4";
+import { BatchQueueService } from "@/lib/core/BatchQueueService";
 
 // ============================================================
-// ARGOS API v4.2 — INDUSTRIAL AUDIT ENDPOINT
-// Endpoint consolidado para auditoria massiva multi-vertical
+// ARGOS API v4.5 — ZERO-TOUCH & BATCH ENDPOINT
+// Endpoint consolidado para auditoria autônoma e em lote
 // ============================================================
 
 export const runtime = "nodejs";
@@ -15,50 +13,64 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    
-    // Se o payload tiver 'action', tratamos como chamada interna do Orchestrator (legado/modular)
-    if (body.action) {
-      const { action, payload } = body;
-      const googleKey = process.env.GOOGLE_API_KEY!;
-      
-      switch (action) {
-        case 'retrieve_context':
-          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-          const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-          const ragEngine = new RAGContextEngine(supabaseUrl, supabaseKey, googleKey);
-          const context = await ragEngine.retrieveContext(payload.matchId);
-          return NextResponse.json({ context_evidence: context });
+    const { matchId, requestedVerticals, mode = "DIRECT" } = body;
 
-        case 'classify_regime':
-          const regimeEngine = new RegimeEngineV4(googleKey);
-          const regime = await regimeEngine.analyze(payload);
-          return NextResponse.json(regime);
-
-        case 'run_monte_carlo':
-          const mc = ModelFactory.runMonteCarlo(payload.metrics, payload.regime, payload.iterations, payload.marketType);
-          return NextResponse.json(mc);
-          
-        default:
-          return NextResponse.json({ error: "Ação modular inválida" }, { status: 400 });
-      }
-    }
-
-    // Fluxo Principal v4.2: Auditoria Massiva Direta
-    const payload: AuditPayload = body;
-    if (!payload.matchId || !payload.requestedVerticals) {
-      return NextResponse.json({ error: "Payload de auditoria inválido" }, { status: 400 });
+    if (!matchId || !requestedVerticals) {
+      return NextResponse.json({ error: "matchId e requestedVerticals são obrigatórios" }, { status: 400 });
     }
 
     const orchestrator = new ArgosOrchestratorV4();
-    const result = await orchestrator.runAudit(payload);
+
+    // MODO BATCH: Adiciona à fila e retorna imediatamente (Ideal para auditorias massivas na Vercel)
+    if (mode === "BATCH") {
+      const queueService = new BatchQueueService();
+      const queueId = await queueService.enqueue(matchId, requestedVerticals);
+      return NextResponse.json({ 
+        status: "QUEUED", 
+        queueId,
+        message: "O jogo foi adicionado à fila de processamento industrial." 
+      });
+    }
+
+    // MODO DIRECT: Processamento imediato (Zero-Touch)
+    const result = await orchestrator.runZeroTouchAudit(matchId, requestedVerticals);
 
     return NextResponse.json(result);
 
   } catch (error: any) {
-    console.error("[Argos API v4.2] Fatal Error:", error);
+    console.error("[Argos API v4.5] Fatal Error:", error);
     return NextResponse.json({ 
       status: "FAILED", 
       error: error.message 
     }, { status: 500 });
+  }
+}
+
+/**
+ * Endpoint GET para processar o próximo item da fila (Worker Trigger)
+ */
+export async function GET() {
+  try {
+    const queueService = new BatchQueueService();
+    const nextItem = await queueService.getNextInQueue();
+
+    if (!nextItem) {
+      return NextResponse.json({ message: "Fila vazia. Nenhum jogo para processar." });
+    }
+
+    const orchestrator = new ArgosOrchestratorV4();
+    const result = await orchestrator.runZeroTouchAudit(nextItem.matchId, nextItem.requestedVerticals);
+
+    await queueService.updateStatus(nextItem.id, "COMPLETED");
+
+    return NextResponse.json({ 
+      status: "SUCCESS", 
+      matchId: nextItem.matchId, 
+      result 
+    });
+
+  } catch (error: any) {
+    console.error("[Argos API v4.5] Queue Processing Error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

@@ -122,4 +122,19 @@ BEGIN
 END;
 $$;
 
--- Fim do script de configuração do Argos v4.0
+-- 6. Tabela: argos_batch_queue (para Processamento em Lote v4.5)
+CREATE TABLE IF NOT EXISTS argos_batch_queue (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    match_id TEXT NOT NULL,
+    requested_verticals TEXT[] NOT NULL,
+    status TEXT NOT NULL DEFAULT 'QUEUED', -- QUEUED, PROCESSING, COMPLETED, FAILED
+    priority INTEGER DEFAULT 1,
+    error_message TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexação para busca rápida por status e prioridade
+CREATE INDEX IF NOT EXISTS argos_batch_queue_status_priority_idx ON argos_batch_queue (status, priority);
+
+-- Fim do script de configuração do Argos v4.5
