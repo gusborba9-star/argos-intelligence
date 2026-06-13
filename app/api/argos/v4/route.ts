@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ArgosOrchestratorV4 } from "@/lib/argos/orchestrator/ArgosOrchestratorV4";
 import { BatchQueueService } from "@/lib/core/BatchQueueService";
+import { ValueDeliveryService } from "@/lib/argos/delivery/ValueDeliveryService";
 
 // ============================================================
 // ARGOS API v4.5 — ZERO-TOUCH & BATCH ENDPOINT
@@ -19,18 +20,19 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { matchId, requestedVerticals, marketOdds, mode = "DIRECT" } = body;
+    const { matchId, requestedVerticals, marketOdds, userId, mode = "DIRECT" } = body;
 
     if (!matchId || !requestedVerticals) {
       return NextResponse.json({ error: "matchId e requestedVerticals são obrigatórios" }, { status: 400 });
     }
 
     const orchestrator = new ArgosOrchestratorV4();
+    const deliveryService = new ValueDeliveryService();
 
     // MODO BATCH: Adiciona à fila e retorna imediatamente (Ideal para auditorias massivas na Vercel)
     if (mode === "BATCH") {
       const queueService = new BatchQueueService();
-      const queueId = await queueService.enqueue(matchId, requestedVerticals);
+      const queueId = await queueService.enqueue(matchId, requestedVerticals, userId);
       return NextResponse.json({ 
         status: "QUEUED", 
         queueId,
@@ -39,9 +41,44 @@ export async function POST(req: Request) {
     }
 
     // MODO DIRECT: Processamento imediato (Zero-Touch)
-    const result = await orchestrator.runZeroTouchAudit(matchId, requestedVerticals, marketOdds);
+    const auditResult = await orchestrator.runZeroTouchAudit(matchId, requestedVerticals, marketOdds);
 
-    return NextResponse.json(result);
+    if (auditResult.status === "FAILED") {
+      return NextResponse.json(auditResult, { status: 500 });
+    }
+
+    // Lógica de Tiers e Entrega de Valor
+    let signalsToDeliver = auditResult.classifiedSignals || [];
+    let userTier: 'FREE' | 'PRO' | 'WHALE/VIP' = 'FREE';
+    let kellyStakes: { signalId: string, stake: number }[] = [];
+
+    if (userId) {
+      userTier = await deliveryService.getUserTier(userId);
+      signalsToDeliver = deliveryService.filterSignalsByTier(signalsToDeliver, userTier);
+
+      if (userTier === 'WHALE/VIP') {
+        const bankroll = 1000; // Exemplo: 1000 unidades de banca para cálculo de Kelly
+        kellyStakes = signalsToDeliver.map(signal => ({
+          signalId: signal.id || '',
+          stake: deliveryService.calculateKellyCriterion(signal, bankroll)
+        }));
+        // Logar a entrega para usuários WHALE/VIP
+        for (const signal of signalsToDeliver) {
+          if (signal.id) {
+            await deliveryService.logSignalDelivery(userId, signal, userTier, 'API_DIRECT');
+          }
+        }
+      }
+    }
+
+    return NextResponse.json({
+      matchId: auditResult.matchId,
+      status: auditResult.status,
+      regime: auditResult.regime,
+      signals: signalsToDeliver,
+      userTier,
+      kellyStakes: kellyStakes.filter(ks => ks.stake > 0) // Apenas stakes positivas
+    });
 
   } catch (error: any) {
     console.error("[Argos API v4.5] Fatal Error:", error);
@@ -65,15 +102,47 @@ export async function GET() {
     }
 
     const orchestrator = new ArgosOrchestratorV4();
-    const result = await orchestrator.runZeroTouchAudit(nextItem.matchId, nextItem.requestedVerticals);
+    const deliveryService = new ValueDeliveryService();
+    const auditResult = await orchestrator.runZeroTouchAudit(nextItem.matchId, nextItem.requestedVerticals);
 
-    await queueService.updateStatus(nextItem.id, "COMPLETED");
+    if (auditResult.status === "FAILED") {
+      await queueService.updateStatus(nextItem.id, "FAILED", auditResult.error);
+      return NextResponse.json(auditResult, { status: 500 });
+    }
 
-    return NextResponse.json({ 
-      status: "SUCCESS", 
-      matchId: nextItem.matchId, 
-      result 
+    let signalsToDeliver = auditResult.classifiedSignals || [];
+    let userTier: 'FREE' | 'PRO' | 'WHALE/VIP' = 'FREE';
+    let kellyStakes: { signalId: string, stake: number }[] = [];
+
+    if (nextItem.userId) {
+      userTier = await deliveryService.getUserTier(nextItem.userId);
+      signalsToDeliver = deliveryService.filterSignalsByTier(signalsToDeliver, userTier);
+
+      if (userTier === 'WHALE/VIP') {
+        const bankroll = 1000; // Exemplo: 1000 unidades de banca para cálculo de Kelly
+        kellyStakes = signalsToDeliver.map(signal => ({
+          signalId: signal.id || '',
+          stake: deliveryService.calculateKellyCriterion(signal, bankroll)
+        }));
+        // Logar a entrega para usuários WHALE/VIP
+        for (const signal of signalsToDeliver) {
+          if (signal.id) {
+            await deliveryService.logSignalDelivery(nextItem.userId, signal, userTier, 'QUEUE_WORKER');
+          }
+        }
+      }
+    }
+
+    return NextResponse.json({
+      status: "SUCCESS",
+      matchId: nextItem.matchId,
+      regime: auditResult.regime,
+      signals: signalsToDeliver,
+      userTier,
+      kellyStakes: kellyStakes.filter(ks => ks.stake > 0)
     });
+
+
 
   } catch (error: any) {
     console.error("[Argos API v4.5] Queue Processing Error:", error);

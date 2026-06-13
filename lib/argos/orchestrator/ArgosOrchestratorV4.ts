@@ -139,9 +139,18 @@ export class ArgosOrchestratorV4 {
           regime
         );
 
-        const { error: persistError } = await this.supabase
+        const { data: persistedSignals, error: persistError } = await this.supabase
           .from("argos_signal_ledger")
-          .insert(ledgerEntries);
+          .insert(ledgerEntries)
+          .select("id"); // Seleciona o ID dos sinais inseridos
+
+        if (persistedSignals) {
+          // Mapeia os IDs de volta para os sinais classificados
+          classifiedSignals = classifiedSignals.map((signal, index) => ({
+            ...signal,
+            id: persistedSignals[index].id,
+          }));
+        }
 
         if (persistError) {
           console.error("[Argos v4.5.1] Erro na Persistência do Ledger:", {
@@ -157,6 +166,8 @@ export class ArgosOrchestratorV4 {
       return {
         matchId,
         status: "SUCCESS",
+        classifiedSignals: classifiedSignals.map(s => ({ ...s, id: s.id || '' })), // Garante que o ID esteja presente
+        regime,
       };
 
     } catch (error: any) {

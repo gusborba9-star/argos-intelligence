@@ -3,6 +3,7 @@
 // ============================================================
 
 export interface ArgosSignal {
+  id?: string; // ID do ledger após persistência
   matchId?: string; // Adicionado para AnomalyDetectionService
   vertical: string;
   market: string;

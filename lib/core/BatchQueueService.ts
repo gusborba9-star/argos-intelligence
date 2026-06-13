@@ -11,6 +11,7 @@ export interface QueueItem {
   id: string;
   matchId: string;
   requestedVerticals: string[];
+  userId?: string; // Adicionado para rastreamento de usuário
   status: QueueStatus;
 }
 
@@ -24,12 +25,13 @@ export class BatchQueueService {
   /**
    * Adiciona um jogo à fila de processamento
    */
-  async enqueue(matchId: string, verticals: string[]): Promise<string> {
+  async enqueue(matchId: string, verticals: string[], userId?: string): Promise<string> {
     const { data, error } = await this.supabase
       .from("argos_batch_queue")
       .insert({
         match_id: matchId,
         requested_verticals: verticals,
+        user_id: userId, // Persiste o userId na fila
         status: "QUEUED"
       })
       .select()
@@ -61,6 +63,7 @@ export class BatchQueueService {
       id: data.id,
       matchId: data.match_id,
       requestedVerticals: data.requested_verticals,
+      userId: data.user_id, // Retorna o userId
       status: "PROCESSING"
     };
   }
