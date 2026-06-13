@@ -2,6 +2,7 @@ import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 import { ArgosSignal } from "@/lib/core/contracts/SignalContract";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 import { NotificationService } from "@/lib/argos/notifications/NotificationService";
+import { ClassifiedSignal, SignalType } from "@/lib/core/SignalClassifierV4";
 
 export interface UserTier {
   user_id: string;
@@ -48,14 +49,14 @@ export class ValueDeliveryService {
    * @returns Sinais filtrados.
    */
   public filterSignalsByTier(
-    signals: ArgosSignal[],
+    signals: any[],
     userTier: UserTier['tier_level']
-  ): ArgosSignal[] {
+  ): any[] {
     switch (userTier) {
       case 'FREE':
-        return signals.filter(s => s.status === 'VALIDATION');
+        return signals.filter(s => s.signal_type === SignalType.VALIDATION || s.status === 'HEDGED');
       case 'PRO':
-        return signals.filter(s => s.status === 'OPTIMIZED' || s.status === 'VALIDATION');
+        return signals.filter(s => s.signal_type === SignalType.VALUE || s.signal_type === SignalType.VALIDATION || s.status === 'OPTIMIZED' || s.status === 'HEDGED');
       case 'WHALE/VIP':
         // WHALE/VIP recebe todos os sinais, a lógica de Kelly será aplicada posteriormente
         return signals;
@@ -71,8 +72,8 @@ export class ValueDeliveryService {
    * @param bankroll O capital total disponível para apostas.
    * @returns A fração da banca a ser apostada.
    */
-  public calculateKellyCriterion(signal: ArgosSignal, bankroll: number): number {
-    if (signal.status !== 'OPTIMIZED' || !signal.impliedOdds || signal.expectedValue <= 0) {
+  public calculateKellyCriterion(signal: any, bankroll: number): number {
+    if ((signal.signal_type !== SignalType.VALUE && signal.status !== 'OPTIMIZED') || !signal.impliedOdds || signal.expectedValue <= 0) {
       return 0; // Kelly só se aplica a apostas de valor com EV positivo
     }
 
@@ -94,7 +95,7 @@ export class ValueDeliveryService {
    * @param notificationChannels Canais de notificação ('telegram', 'discord').
    */
   public async sendSignalNotifications(
-    signal: ArgosSignal,
+    signal: any,
     tier: UserTier['tier_level'],
     notificationChannels: string[] = ['telegram', 'discord']
   ): Promise<void> {
@@ -116,7 +117,7 @@ export class ValueDeliveryService {
    */
   public async logSignalDelivery(
     userId: string,
-    signal: ArgosSignal,
+    signal: any,
     tier: UserTier['tier_level'],
     deliveryMethod: string
   ): Promise<void> {

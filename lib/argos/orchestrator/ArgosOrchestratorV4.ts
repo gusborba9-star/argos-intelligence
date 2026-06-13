@@ -123,7 +123,7 @@ export class ArgosOrchestratorV4 {
       const rawSignals = (await Promise.all(simulationPromises)).flat();
 
       // 5. CLASSIFICAÇÃO E PERSISTÊNCIA EM LOTE
-      const classifiedSignals = SignalClassifierV4.classify(rawSignals, regime);
+      let classifiedSignals = SignalClassifierV4.classify(rawSignals, regime);
 
       // 6. DETECÇÃO DE ANOMALIAS: Comparar com odds de mercado e emitir alertas
       if (marketOdds && classifiedSignals.length > 0) {
