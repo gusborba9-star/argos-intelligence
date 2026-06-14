@@ -29,9 +29,31 @@ export interface IngestedData {
 export class DataIngestionService {
   private apiKey: string;
   private baseUrl: string = "https://v3.football.api-sports.io";
+  private MAX_DAILY_REQUESTS: number = 100;
+  private dailyRequestCount: number = 0;
+  private lastRequestDate: string = "";
 
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
+  constructor() {
+    this.apiKey = process.env.API_SPORTS_KEY || "";
+    this.loadRequestCount();
+  }
+
+  private loadRequestCount() {
+    const today = new Date().toISOString().split('T')[0];
+    // Em produção, isso deveria ser persistido no Supabase/Redis. 
+    // Para fins de demonstração, usamos uma variável simples (resetada no deploy).
+    if (this.lastRequestDate !== today) {
+      this.dailyRequestCount = 0;
+      this.lastRequestDate = today;
+    }
+  }
+
+  private async incrementRequestCount() {
+    this.loadRequestCount();
+    if (this.dailyRequestCount >= this.MAX_DAILY_REQUESTS) {
+      throw new Error("Limite diário de requisições da API Football atingido (100/dia).");
+    }
+    this.dailyRequestCount++;
   }
 
   /**
@@ -39,6 +61,7 @@ export class DataIngestionService {
    */
   async ingest(matchId: string): Promise<IngestedData> {
     try {
+      await this.incrementRequestCount();
       // 1. Buscar detalhes do jogo (Ligas, Times, Árbitro)
       const fixtureResponse = await axios.get(`${this.baseUrl}/fixtures?id=${matchId}`, {
         headers: { "x-apisports-key": this.apiKey }
@@ -83,7 +106,37 @@ export class DataIngestionService {
   }
 
   private async getTeamHistory(teamId: number, limit: number): Promise<any[]> {
+    await this.incrementRequestCount();
     const response = await axios.get(`${this.baseUrl}/fixtures?team=${teamId}&last=${limit}`, {
+      headers: { "x-apisports-key": this.apiKey }
+    });
+    return response.data.response || [];
+  }
+
+  /**
+   * Retorna a lista de ligas prioritárias (Elite)
+   */
+  public getPriorityLeagues() {
+    return [
+      { id: 71, name: "Brasileirão Série A" },
+      { id: 72, name: "Brasileirão Série B" },
+      { id: 2, name: "Champions League" },
+      { id: 39, name: "Premier League" },
+      { id: 78, name: "Bundesliga" },
+      { id: 140, name: "La Liga" },
+      { id: 135, name: "Serie A" },
+      { id: 61, name: "Ligue 1" },
+      { id: 307, name: "Saudi Pro League" },
+      { id: 128, name: "Liga Argentina" }
+    ];
+  }
+
+  /**
+   * Busca jogos de uma liga específica para uma data
+   */
+  public async getFixturesByLeague(leagueId: number, date: string): Promise<any[]> {
+    await this.incrementRequestCount();
+    const response = await axios.get(`${this.baseUrl}/fixtures?league=${leagueId}&date=${date}`, {
       headers: { "x-apisports-key": this.apiKey }
     });
     return response.data.response || [];

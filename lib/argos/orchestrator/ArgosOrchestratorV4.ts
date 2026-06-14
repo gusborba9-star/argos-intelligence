@@ -43,7 +43,7 @@ export class ArgosOrchestratorV4 {
       process.env.GOOGLE_API_KEY!
     );
     this.autoTuner = new AutoTuningEngine();
-    this.ingestionService = new DataIngestionService(process.env.FOOTBALL_API_KEY || "");
+    this.ingestionService = new DataIngestionService();
     this.anomalyDetector = new AnomalyDetectionService();
   }
 
@@ -95,8 +95,13 @@ export class ArgosOrchestratorV4 {
       regime.confidence += tuning.confidenceAdjustment;
       regime.reasoning_tags.push(`AUTO_TUNED_VAR_${tuning.suggestedVarianceMultiplier.toFixed(2)}`);
 
-      // 4. MULTI-VERTICAL SIMULATION: Processamento Paralelo
-      const simulationPromises = requestedVerticals.map(async (vertical) => {
+      // 4. MULTI-VERTICAL SIMULATION: Processamento Paralelo (1.500 simulações/vertical)
+      // Se nenhuma vertical for solicitada, processar todas as 7 verticais padrão
+      const verticalsToProcess = requestedVerticals.length > 0 
+        ? requestedVerticals 
+        : ["WINNER", "GOALS", "CORNERS", "CARDS", "BTTS", "SHOTS", "HANDICAP"];
+
+      const simulationPromises = verticalsToProcess.map(async (vertical) => {
         const payload: AuditPayload = {
           matchId,
           leagueId: ingestedData.leagueId,
@@ -163,11 +168,15 @@ export class ArgosOrchestratorV4 {
         }
       }
 
+      const executionTimeMs = Date.now() - startTime;
+      console.log(`[Argos v5.0] Auditoria concluída em ${executionTimeMs}ms para ${matchId}`);
+
       return {
         matchId,
         status: "SUCCESS",
         classifiedSignals: classifiedSignals.map(s => ({ ...s, id: s.id || '' })), // Garante que o ID esteja presente
         regime,
+        executionTimeMs
       };
 
     } catch (error: any) {
