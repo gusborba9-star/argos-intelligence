@@ -18,8 +18,8 @@ export async function GET(request: Request) {
     const result = await scheduler.scheduleDailyIngestion();
 
     return NextResponse.json({
-      status: "SUCCESS",
-      ...result
+      ...result,
+      status: "SUCCESS" // Sobrescreve o status do result para garantir padronização
     });
   } catch (error: any) {
     console.error("[Schedule Ingestion API] Error:", error.message);
