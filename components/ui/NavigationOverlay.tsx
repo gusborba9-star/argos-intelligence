@@ -20,15 +20,15 @@ const NavigationOverlay: React.FC<NavigationOverlayProps> = ({ onToggle, userNam
   return (
     <header className="flex justify-between items-center mb-10 animate-fade-in">
       <div className="greeting-section">
-        <h1 className="text-lg text-text-secondary font-light">{greeting},</h1>
-        <h2 className="text-4xl font-playfair text-nexus-gold mt-1 tracking-tight">
+        <h1 className="text-lg text-[#B0B0B0] font-light">{greeting},</h1>
+        <h2 className="text-4xl font-playfair text-[#D4AF37] mt-1 tracking-tight">
           {userName}
         </h2>
       </div>
       
       <button 
         onClick={onToggle}
-        className="bg-nexus-glass border border-nexus-border text-nexus-gold w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg transition-all hover:scale-110 hover:bg-nexus-gold/10 active:scale-95 z-[90]"
+        className="bg-white/5 border border-[#D4AF37]/15 text-[#D4AF37] w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg transition-all hover:scale-110 hover:bg-[#D4AF37]/10 active:scale-95 z-[90]"
       >
         ☰
       </button>

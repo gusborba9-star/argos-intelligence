@@ -29,28 +29,6 @@ body {
   font-family: 'Playfair Display', serif;
 }
 
-@layer components {
-  .glass-card {
-    @apply bg-nexus-glass border border-nexus-border backdrop-blur-md rounded-[25px] transition-all duration-500;
-  }
-  
-  .glass-card:hover {
-    @apply -translate-y-2 border-nexus-gold/50 shadow-[0_15px_40px_rgba(212,175,55,0.1)];
-  }
-
-  .nexus-title {
-    @apply font-playfair text-nexus-gold;
-  }
-
-  .nav-link {
-    @apply flex items-center p-4 text-text-secondary no-underline rounded-xl transition-all duration-300 font-medium border border-transparent;
-  }
-
-  .nav-link:hover, .nav-link.active {
-    @apply bg-nexus-glass text-nexus-gold border-nexus-border translate-x-1;
-  }
-}
-
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
@@ -73,4 +51,40 @@ body {
 
 .animate-fade-in {
   animation: fadeIn 0.5s ease-out forwards;
+}
+
+/* Glass Card Styles */
+.glass-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(212, 175, 55, 0.15);
+  backdrop-filter: blur(10px);
+  border-radius: 25px;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  transform: translateY(-8px);
+  border-color: rgba(212, 175, 55, 0.5);
+  box-shadow: 0 15px 40px rgba(212, 175, 55, 0.1);
+}
+
+/* Navigation Link Styles */
+.nav-link {
+  display: flex;
+  align-items: center;
+  padding: 1rem;
+  color: #b0b0b0;
+  text-decoration: none;
+  border-radius: 12px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+
+.nav-link:hover,
+.nav-link.active {
+  background: rgba(255, 255, 255, 0.05);
+  color: #d4af37;
+  border-color: rgba(212, 175, 55, 0.15);
+  transform: translateX(4px);
 }

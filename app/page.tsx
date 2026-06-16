@@ -23,8 +23,8 @@ export default function Home() {
 
             <div>
               <div className="flex items-center gap-4 mb-8">
-                <h2 className="font-playfair text-3xl text-nexus-gold">Oportunidades em Destaque</h2>
-                <div className="flex-1 h-[1px] bg-nexus-border" />
+                <h2 className="font-playfair text-3xl text-[#D4AF37]">Oportunidades em Destaque</h2>
+                <div className="flex-1 h-[1px] bg-[#D4AF37]/15" />
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -53,8 +53,8 @@ export default function Home() {
       case "oracle":
         return (
           <div className="animate-fade-in text-center py-20">
-            <h2 className="font-playfair text-4xl text-nexus-gold mb-4">The Oracle</h2>
-            <p className="text-text-secondary">Análise em tempo real alimentada por 1.5k simulações Monte Carlo.</p>
+            <h2 className="font-playfair text-4xl text-[#D4AF37] mb-4">The Oracle</h2>
+            <p className="text-[#B0B0B0]">Análise em tempo real alimentada por 1.5k simulações Monte Carlo.</p>
             <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
                <div className="glass-card p-10">Live Feed coming soon...</div>
                <div className="glass-card p-10">Shock Engine active...</div>
@@ -64,25 +64,25 @@ export default function Home() {
       case "track":
         return (
           <div className="animate-fade-in">
-            <h2 className="font-playfair text-3xl text-nexus-gold mb-8">Track Record | Transparência</h2>
+            <h2 className="font-playfair text-3xl text-[#D4AF37] mb-8">Track Record | Transparência</h2>
             <div className="glass-card overflow-hidden">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-nexus-border text-nexus-gold">
+                  <tr className="border-b border-[#D4AF37]/15 text-[#D4AF37]">
                     <th className="p-5 font-semibold">Data</th>
                     <th className="p-5 font-semibold">Evento</th>
                     <th className="p-5 font-semibold">Mercado</th>
                     <th className="p-5 font-semibold">Resultado</th>
                   </tr>
                 </thead>
-                <tbody className="text-text-secondary">
-                  <tr className="border-b border-nexus-border/50 hover:bg-white/5 transition-colors">
+                <tbody className="text-[#B0B0B0]">
+                  <tr className="border-b border-[#D4AF37]/10 hover:bg-white/5 transition-colors">
                     <td className="p-5">15/06/2026</td>
                     <td className="p-5">Celtics vs Mavericks</td>
                     <td className="p-5">Under 210.5</td>
                     <td className="p-5 text-green-500 font-bold">WIN</td>
                   </tr>
-                  <tr className="border-b border-nexus-border/50 hover:bg-white/5 transition-colors">
+                  <tr className="border-b border-[#D4AF37]/10 hover:bg-white/5 transition-colors">
                     <td className="p-5">15/06/2026</td>
                     <td className="p-5">Brazil vs Argentina</td>
                     <td className="p-5">BTTS - Yes</td>
@@ -96,19 +96,19 @@ export default function Home() {
       case "intel":
         return (
           <div className="animate-fade-in space-y-10">
-            <h2 className="font-playfair text-3xl text-nexus-gold">Argos Intelligence | Tech Stack</h2>
+            <h2 className="font-playfair text-3xl text-[#D4AF37]">Argos Intelligence | Tech Stack</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="glass-card p-8">
-                <h3 className="text-nexus-gold mb-4 font-bold">Monte Carlo</h3>
-                <p className="text-sm text-text-secondary">1.500 simulações por vertical para garantir precisão quântica.</p>
+                <h3 className="text-[#D4AF37] mb-4 font-bold">Monte Carlo</h3>
+                <p className="text-sm text-[#B0B0B0]">1.500 simulações por vertical para garantir precisão quântica.</p>
               </div>
               <div className="glass-card p-8">
-                <h3 className="text-nexus-gold mb-4 font-bold">Shock Engine</h3>
-                <p className="text-sm text-text-secondary">Detecção de volatilidade em tempo real para mudanças bruscas de placar.</p>
+                <h3 className="text-[#D4AF37] mb-4 font-bold">Shock Engine</h3>
+                <p className="text-sm text-[#B0B0B0]">Detecção de volatilidade em tempo real para mudanças bruscas de placar.</p>
               </div>
               <div className="glass-card p-8">
-                <h3 className="text-nexus-gold mb-4 font-bold">Chameleon Logic</h3>
-                <p className="text-sm text-text-secondary">Sistema bilateral que inverte sinais para lucrar na inércia tática.</p>
+                <h3 className="text-[#D4AF37] mb-4 font-bold">Chameleon Logic</h3>
+                <p className="text-sm text-[#B0B0B0]">Sistema bilateral que inverte sinais para lucrar na inércia tática.</p>
               </div>
             </div>
           </div>
@@ -117,11 +117,11 @@ export default function Home() {
         return (
           <div className="animate-fade-in flex flex-col items-center justify-center py-20">
             <div className="text-6xl mb-6">💎</div>
-            <h2 className="font-playfair text-4xl text-nexus-gold mb-4">VIP Lounge</h2>
-            <p className="text-text-secondary mb-10 text-center max-w-lg">
+            <h2 className="font-playfair text-4xl text-[#D4AF37] mb-4">VIP Lounge</h2>
+            <p className="text-[#B0B0B0] mb-10 text-center max-w-lg">
               Acesso restrito aos sinais Alpha com maior confiança e ROI projetado superior a 20% ao mês.
             </p>
-            <button className="bg-nexus-gold text-black px-10 py-4 rounded-full font-bold hover:scale-105 transition-transform shadow-[0_0_30px_rgba(212,175,55,0.3)]">
+            <button className="bg-[#D4AF37] text-black px-10 py-4 rounded-full font-bold hover:scale-105 transition-transform shadow-[0_0_30px_rgba(212,175,55,0.3)]">
               UPGRADE PARA VIP
             </button>
           </div>
@@ -132,7 +132,7 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-nexus-bg text-white selection:bg-nexus-gold/30">
+    <div className="min-h-screen bg-[#0A0A0A] text-white selection:bg-[#D4AF37]/30">
       <Sidebar 
         isOpen={isSidebarOpen} 
         activePage={activePage} 
@@ -153,7 +153,7 @@ export default function Home() {
 
       {/* FAB - Floating Action Button */}
       <button 
-        className="fixed bottom-8 right-8 w-16 h-16 bg-nexus-gold text-black rounded-full flex items-center justify-center text-3xl shadow-[0_10px_30px_rgba(212,175,55,0.3)] z-[900] transition-all duration-500 hover:scale-110 hover:rotate-90 active:scale-95"
+        className="fixed bottom-8 right-8 w-16 h-16 bg-[#D4AF37] text-black rounded-full flex items-center justify-center text-3xl shadow-[0_10px_30px_rgba(212,175,55,0.3)] z-[900] transition-all duration-500 hover:scale-110 hover:rotate-90 active:scale-95"
         onClick={() => setIsSidebarOpen(true)}
       >
         +

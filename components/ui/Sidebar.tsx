@@ -30,12 +30,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activePage, onPageChange, onC
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-full w-[300px] bg-nexus-bg/98 border-r border-nexus-border z-[1000] transition-transform duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] flex flex-col p-10 shadow-[10px_0_30px_rgba(0,0,0,0.8)] ${
+        className={`fixed top-0 left-0 h-full w-[300px] bg-[#0A0A0A]/98 border-r border-[#D4AF37]/15 z-[1000] transition-transform duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] flex flex-col p-10 shadow-[10px_0_30px_rgba(0,0,0,0.8)] ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         <div className="mb-12 text-center">
-          <h2 className="font-playfair text-nexus-gold text-3xl tracking-[2px]">ARGOS</h2>
+          <h2 className="font-playfair text-[#D4AF37] text-3xl tracking-[2px]">ARGOS</h2>
         </div>
 
         <nav className="flex-1">
@@ -57,7 +57,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activePage, onPageChange, onC
           </ul>
         </nav>
 
-        <div className="mt-auto pt-5 border-t border-nexus-border text-[0.85rem] text-text-secondary leading-relaxed">
+        <div className="mt-auto pt-5 border-t border-[#D4AF37]/15 text-[0.85rem] text-[#B0B0B0] leading-relaxed">
           <p>
             Argos é um sistema de inteligência quântica bilateral que utiliza Monte Carlo (1.5k simulações), RAG e Shock Engines para dominar o mercado esportivo.
           </p>
