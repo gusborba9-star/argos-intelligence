@@ -230,6 +230,19 @@ export class ArgosOrchestratorV4 {
           expectedValue: (winnerSim.probabilities.home * 2.0) - 1,
           status: "OPTIMIZED" as any
         });
+
+        // CHAMELEON: Inversão para DRAW ou AWAY se o favorito acomodar
+        if (winnerSim.probabilities.home < 0.30 && elapsed > 60) {
+          signals.push({
+            matchId: payload.matchId,
+            market: "X2_DOUBLE_CHANCE",
+            vertical: MarketVertical.WINNER,
+            probability: winnerSim.probabilities.draw + winnerSim.probabilities.away,
+            expectedValue: ((winnerSim.probabilities.draw + winnerSim.probabilities.away) * 1.7) - 1,
+            status: "HEDGED" as any,
+            reasoning: "Chameleon Logic: Favorito em baixa intensidade. Valor em Dupla Chance."
+          } as any);
+        }
         break;
 
       case 'CORNERS':
@@ -238,14 +251,29 @@ export class ArgosOrchestratorV4 {
           payload.baseMetrics.away.corners || 4.0,
           regime
         );
+        const probOverCorners = cornerSim.probabilities.home + cornerSim.probabilities.away;
         signals.push({
           matchId: payload.matchId,
           market: "OVER_9_5_CORNERS",
           vertical: MarketVertical.CORNERS,
-          probability: cornerSim.probabilities.home + cornerSim.probabilities.away,
-          expectedValue: ((cornerSim.probabilities.home + cornerSim.probabilities.away) * 1.8) - 1,
+          probability: probOverCorners,
+          expectedValue: (probOverCorners * 1.8) - 1,
           status: "OPTIMIZED" as any
         });
+
+        // CHAMELEON: Inversão para UNDER_CORNERS em regime de acomodação
+        const probUnderCorners = 1 - probOverCorners;
+        if (probUnderCorners > 0.70) {
+          signals.push({
+            matchId: payload.matchId,
+            market: "UNDER_9_5_CORNERS",
+            vertical: MarketVertical.CORNERS,
+            probability: probUnderCorners,
+            expectedValue: (probUnderCorners * 1.85) - 1,
+            status: "HEDGED" as any,
+            reasoning: "Chameleon Logic: Jogo esfriou. Valor estratégico em UNDER Escanteios."
+          } as any);
+        }
         break;
 
       case 'CARDS':

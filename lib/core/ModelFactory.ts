@@ -70,7 +70,7 @@ export class ModelFactory {
     // 4. MATRIZ DE CORRELAÇÃO DE GAME STATE (Gols vs Escanteios)
     // Se um time está vencendo por 2+, a intensidade de escanteios cai.
     // Se está perdendo, a urgência aumenta a busca por fundo de campo.
-    const goalDiff = score.home - score.away;
+    const goalDiff = currentScore.home - currentScore.away;
     let homeUrgency = 1.0;
     let awayUrgency = 1.0;
 
