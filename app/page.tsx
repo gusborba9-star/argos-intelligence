@@ -1,7 +1,11 @@
+import fs from 'fs';
+import path from 'path';
+
 export default function Home() {
+  const filePath = path.join(process.cwd(), 'public', 'index.html');
+  const htmlContent = fs.readFileSync(filePath, 'utf8');
+
   return (
-    <main>
-      <h1>Argos Intelligence</h1>
-    </main>
+    <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
   );
 }
