@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ArgosOrchestratorV4 } from "@/lib/argos/orchestrator/ArgosOrchestratorV4";
 import { BatchQueueService } from "@/lib/core/BatchQueueService";
 import { ValueDeliveryService } from "@/lib/argos/delivery/ValueDeliveryService";
+import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 
 // ============================================================
 // ARGOS API v4.5 — ZERO-TOUCH & BATCH ENDPOINT
@@ -103,7 +104,8 @@ export async function GET() {
 
     const orchestrator = new ArgosOrchestratorV4();
     const deliveryService = new ValueDeliveryService();
-    const auditResult = await orchestrator.runZeroTouchAudit(nextItem.matchId, nextItem.requestedVerticals);
+    const requestedVerticals: MarketVertical[] = (nextItem.requestedVerticals || []).map((v: string) => v as MarketVertical);
+    const auditResult = await orchestrator.runZeroTouchAudit(nextItem.matchId, requestedVerticals);
 
     if (auditResult.status === "FAILED") {
       await queueService.updateStatus(nextItem.id, "FAILED", auditResult.error);

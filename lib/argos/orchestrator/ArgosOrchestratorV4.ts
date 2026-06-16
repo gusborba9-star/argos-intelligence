@@ -1,29 +1,39 @@
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 import { RegimeEngineV4, ExternalFactors } from "@/lib/argos/regime/RegimeEngineV4";
 import { RAGContextEngine } from "@/lib/argos/regime/RAGContextEngine";
-import { ModelFactory } from "@/lib/core/ModelFactory";
+import { ModelFactory, SimulationResult } from "@/lib/core/ModelFactory";
 import { SignalClassifierV4 } from "@/lib/core/SignalClassifierV4";
 import { ArgosSignal } from "@/lib/core/contracts/SignalContract";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
-import { AutoTuningEngine } from "@/lib/core/AutoTuningEngine";
-import { DataIngestionService } from "@/lib/core/DataIngestionService";
+import { AutoTuningEngine, TuningResult } from "@/lib/core/AutoTuningEngine";
+import { DataIngestionService, IngestedData } from "@/lib/core/DataIngestionService";
 import { AnomalyDetectionService } from "@/lib/argos/auditor/AnomalyDetectionService";
+import { RegimeProfile, MarketRegime } from "@/lib/argos/regime/RegimeSchema";
 
 // ============================================================
-// ARGOS ORCHESTRATOR v4.5 — ZERO-TOUCH EDITION
-// Inteligência Exponencial • Ingestão Automática • Insight-Out
+// ARGOS ORCHESTRATOR v5.0 — INDUSTRIAL EDITION
+// Inteligência Exponencial • Ingestão Reativa • Anti-Fragilidade • Telemetria
 // ============================================================
 
 export interface AuditPayload {
   matchId: string;
   leagueId?: string;
-  requestedVerticals: string[];
+  requestedVerticals: MarketVertical[];
   externalFactors: ExternalFactors;
   baseMetrics: {
-    home: Record<string, number>;
-    away: Record<string, number>;
+    home: { goals: number; corners: number; cards: number; shots: number };
+    away: { goals: number; corners: number; cards: number; shots: number };
   };
-  marketOdds?: { [key: string]: number }; // Adicionado para AnomalyDetectionService
+  marketOdds?: { [key: string]: number };
+}
+
+export interface AuditResult {
+  matchId: string;
+  status: "SUCCESS" | "FAILED";
+  classifiedSignals?: ArgosSignal[];
+  regime?: RegimeProfile;
+  executionTimeMs: number;
+  error?: string;
 }
 
 export class ArgosOrchestratorV4 {
@@ -52,18 +62,18 @@ export class ArgosOrchestratorV4 {
    * @param liveData Dados em tempo real (opcional) { score: { home: number, away: number }, elapsed: number }
    */
   async runZeroTouchAudit(
-    matchId: string, 
-    requestedVerticals: string[], 
+    matchId: string,
+    requestedVerticals: MarketVertical[],
     marketOdds?: { [key: string]: number },
-    liveData?: { score: { home: number, away: number }, elapsed: number }
-  ) {
+    liveData?: { score: { home: number; away: number }; elapsed: number }
+  ): Promise<AuditResult> {
     const startTime = Date.now();
     console.log(`[Argos v5.0] Iniciando Auditoria Zero-Touch para matchId: ${matchId}`);
 
     try {
       // 1. DATA INGESTION: Extração e Normalização Automática (Data-In)
-      const ingestedData = await this.ingestionService.ingest(matchId);
-      
+      const ingestedData: IngestedData = await this.ingestionService.ingest(matchId);
+
       // Ajuste de Live Data se disponível
       const currentScore = liveData?.score || { home: 0, away: 0 };
       const elapsed = liveData?.elapsed || 0;
@@ -77,16 +87,16 @@ export class ArgosOrchestratorV4 {
         .limit(1)
         .maybeSingle();
 
-      let regime;
+      let regime: RegimeProfile;
       if (existingLedger) {
-        console.log(`[Argos v4.5] Cache Hit. Reutilizando regime.`);
+        console.log(`[Argos v5.0] Cache Hit. Reutilizando regime.`);
         regime = {
-          regime: existingLedger.regime,
-          confidence: existingLedger.confidence,
+          regime: existingLedger.regime as MarketRegime,
+          confidence: existingLedger.confidence as number,
           model_bias: 0,
           variance_multiplier: 1.0,
           reasoning_tags: ["CACHED_ANALYSIS"],
-          explanation: "Análise recuperada do cache local."
+          explanation: "Análise recuperada do cache local.",
         };
       } else {
         // 2.1 AI ANALYSIS (RAG + Regime) - Cache Miss
@@ -95,21 +105,20 @@ export class ArgosOrchestratorV4 {
           matchId,
           leagueId: ingestedData.leagueId,
           contextEvidence: context,
-          factors: ingestedData.externalFactors
+          factors: ingestedData.externalFactors,
         });
       }
 
-      // 3. AUTO-TUNING: Ajuste dinâmico baseado no histórico real
-      const tuning = await this.autoTuner.tuneRegimeParameters(ingestedData.leagueId, regime.regime);
+      // 3. ANTI-FRAGILITY ENGINE & AUTO-TUNING: Ajuste dinâmico baseado no histórico real
+      const tuning: TuningResult = await this.autoTuner.tuneRegimeParameters(ingestedData.leagueId, regime.regime);
       regime.variance_multiplier *= tuning.suggestedVarianceMultiplier;
       regime.confidence += tuning.confidenceAdjustment;
       regime.reasoning_tags.push(`AUTO_TUNED_VAR_${tuning.suggestedVarianceMultiplier.toFixed(2)}`);
 
-      // 4. MULTI-VERTICAL SIMULATION: Processamento Paralelo (1.500 simulações/vertical)
-      // Se nenhuma vertical for solicitada, processar todas as 7 verticais padrão
-      const verticalsToProcess = requestedVerticals.length > 0 
-        ? requestedVerticals 
-        : ["WINNER", "GOALS", "CORNERS", "CARDS", "BTTS", "SHOTS", "HANDICAP"];
+      // 4. MULTI-VERTICAL SIMULATION: Processamento Paralelo (10.000 simulações/vertical)
+      const verticalsToProcess = requestedVerticals.length > 0
+        ? requestedVerticals
+        : [MarketVertical.WINNER, MarketVertical.GOALS, MarketVertical.CORNERS, MarketVertical.CARDS, MarketVertical.BTTS, MarketVertical.SHOTS, MarketVertical.HANDICAP];
 
       const simulationPromises = verticalsToProcess.map(async (vertical) => {
         const payload: AuditPayload = {
@@ -122,20 +131,30 @@ export class ArgosOrchestratorV4 {
               goals: ingestedData.home.goals,
               corners: ingestedData.home.corners,
               cards: ingestedData.home.cards,
-              shots: ingestedData.home.shots
+              shots: ingestedData.home.shots,
             },
             away: {
               goals: ingestedData.away.goals,
               corners: ingestedData.away.corners,
               cards: ingestedData.away.cards,
-              shots: ingestedData.away.shots
-            }
-          }
+              shots: ingestedData.away.shots,
+            },
+          },
         };
         return this.processVertical(vertical, payload, regime, elapsed, currentScore);
       });
 
-      const rawSignals = (await Promise.all(simulationPromises)).flat();
+      const simulationResults = await Promise.allSettled(simulationPromises);
+      const rawSignals: ArgosSignal[] = [];
+
+      simulationResults.forEach((result) => {
+        if (result.status === "fulfilled") {
+          rawSignals.push(...result.value);
+        } else {
+          console.error(`[Argos v5.0] Erro na simulação de vertical: ${result.reason}`);
+          // TODO: Implementar telemetria avançada para erros de vertical
+        }
+      });
 
       // 5. CLASSIFICAÇÃO E PERSISTÊNCIA EM LOTE
       let classifiedSignals = SignalClassifierV4.classify(rawSignals, regime);
@@ -143,9 +162,9 @@ export class ArgosOrchestratorV4 {
       // 6. DETECÇÃO DE ANOMALIAS: Comparar com odds de mercado e emitir alertas
       if (marketOdds && classifiedSignals.length > 0) {
         const anomalyAlerts = this.anomalyDetector.detectAnomalies(classifiedSignals, marketOdds);
-        anomalyAlerts.forEach(alert => console.warn(alert));
+        anomalyAlerts.forEach((alert) => console.warn(alert));
       }
-      
+
       if (classifiedSignals.length > 0) {
         const ledgerEntries = SignalClassifierV4.prepareLedger(
           matchId,
@@ -157,10 +176,9 @@ export class ArgosOrchestratorV4 {
         const { data: persistedSignals, error: persistError } = await this.supabase
           .from("argos_signal_ledger")
           .insert(ledgerEntries)
-          .select("id"); // Seleciona o ID dos sinais inseridos
+          .select("id");
 
         if (persistedSignals) {
-          // Mapeia os IDs de volta para os sinais classificados
           classifiedSignals = classifiedSignals.map((signal, index) => ({
             ...signal,
             id: persistedSignals[index].id,
@@ -168,11 +186,11 @@ export class ArgosOrchestratorV4 {
         }
 
         if (persistError) {
-          console.error("[Argos v4.5.1] Erro na Persistência do Ledger:", {
+          console.error("[Argos v5.0] Erro na Persistência do Ledger:", {
             message: persistError.message,
             code: persistError.code,
             details: persistError.details,
-            hint: persistError.hint
+            hint: persistError.hint,
           });
           throw new Error(`Supabase Persistence Error [${persistError.code}]: ${persistError.message} (${persistError.details || 'no details'})`);
         }
@@ -184,18 +202,19 @@ export class ArgosOrchestratorV4 {
       return {
         matchId,
         status: "SUCCESS",
-        classifiedSignals: classifiedSignals.map(s => ({ ...s, id: s.id || '' })), // Garante que o ID esteja presente
+        classifiedSignals: classifiedSignals.map((s) => ({ ...s, id: s.id || '' })),
         regime,
-        executionTimeMs
+        executionTimeMs,
       };
-
-    } catch (error: any) {
-      console.error(`[Argos v4.5] Zero-Touch Error: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      console.error(`[Argos v5.0] Zero-Touch Error: ${errorMessage}`);
+      // TODO: Implementar telemetria avançada para erros gerais
       return {
         status: "FAILED",
         matchId,
-        error: error.message,
-        executionTimeMs: Date.now() - startTime
+        error: errorMessage,
+        executionTimeMs: Date.now() - startTime,
       };
     }
   }
@@ -204,21 +223,21 @@ export class ArgosOrchestratorV4 {
    * Processa uma vertical específica de mercado
    */
   private async processVertical(
-    vertical: string,
+    vertical: MarketVertical,
     payload: AuditPayload,
-    regime: any,
+    regime: RegimeProfile,
     elapsed: number = 0,
-    currentScore: { home: number, away: number } = { home: 0, away: 0 }
+    currentScore: { home: number; away: number } = { home: 0, away: 0 }
   ): Promise<ArgosSignal[]> {
     const signals: ArgosSignal[] = [];
 
     switch (vertical) {
-      case 'WINNER':
-        const winnerSim = ModelFactory.runMonteCarlo(
+      case MarketVertical.WINNER:
+        const winnerSim: SimulationResult = ModelFactory.runMonteCarlo(
           { homeMean: payload.baseMetrics.home.goals || 1.2, awayMean: payload.baseMetrics.away.goals || 1.0 },
           regime,
-          1500,
-          'GOALS',
+          10000, // 10.000 iterações
+          "GOALS",
           elapsed,
           currentScore
         );
@@ -227,26 +246,26 @@ export class ArgosOrchestratorV4 {
           market: "HOME_WIN",
           vertical: MarketVertical.WINNER,
           probability: winnerSim.probabilities.home,
-          expectedValue: (winnerSim.probabilities.home * 2.0) - 1,
-          status: "OPTIMIZED" as any
+          expectedValue: winnerSim.probabilities.home * 2.0 - 1,
+          status: "OPTIMIZED",
         });
 
         // CHAMELEON: Inversão para DRAW ou AWAY se o favorito acomodar
-        if (winnerSim.probabilities.home < 0.30 && elapsed > 60) {
+        if (winnerSim.probabilities.home < 0.3 && elapsed > 60) {
           signals.push({
             matchId: payload.matchId,
             market: "X2_DOUBLE_CHANCE",
             vertical: MarketVertical.WINNER,
             probability: winnerSim.probabilities.draw + winnerSim.probabilities.away,
-            expectedValue: ((winnerSim.probabilities.draw + winnerSim.probabilities.away) * 1.7) - 1,
-            status: "HEDGED" as any,
-            reasoning: "Chameleon Logic: Favorito em baixa intensidade. Valor em Dupla Chance."
-          } as any);
+            expectedValue: (winnerSim.probabilities.draw + winnerSim.probabilities.away) * 1.7 - 1,
+            status: "HEDGED",
+            reasoning: "Chameleon Logic: Favorito em baixa intensidade. Valor em Dupla Chance.",
+          });
         }
         break;
 
-      case 'CORNERS':
-        const cornerSim = ModelFactory.modelCorners(
+      case MarketVertical.CORNERS:
+        const cornerSim: SimulationResult = ModelFactory.modelCorners(
           payload.baseMetrics.home.corners || 5.0,
           payload.baseMetrics.away.corners || 4.0,
           regime
@@ -257,40 +276,38 @@ export class ArgosOrchestratorV4 {
           market: "OVER_9_5_CORNERS",
           vertical: MarketVertical.CORNERS,
           probability: probOverCorners,
-          expectedValue: (probOverCorners * 1.8) - 1,
-          status: "OPTIMIZED" as any
+          expectedValue: probOverCorners * 1.8 - 1,
+          status: "OPTIMIZED",
         });
 
         // UNIVERSAL ALPHA LOGIC: Busca bidirecional de valor extremo
         const probUnderCorners = 1 - probOverCorners;
-        
-        // Inversão para UNDER se houver acomodação ou probabilidade esmagadora
+
         if (probUnderCorners > 0.65) {
           signals.push({
             matchId: payload.matchId,
             market: "UNDER_9_5_CORNERS",
             vertical: MarketVertical.CORNERS,
             probability: probUnderCorners,
-            expectedValue: (probUnderCorners * 1.90) - 1, // Alpha em mercados de inércia
-            status: "HEDGED" as any,
-            reasoning: "Universal Alpha: Detecção de inércia tática. Inversão estratégica para UNDER."
-          } as any);
+            expectedValue: probUnderCorners * 1.9 - 1,
+            status: "HEDGED",
+            reasoning: "Universal Alpha: Detecção de inércia tática. Inversão estratégica para UNDER.",
+          });
         } else if (probOverCorners > 0.65) {
-          // Reforço de sinal de OVER se a intensidade for reativada (Shock Engine)
           signals.push({
             matchId: payload.matchId,
             market: "OVER_9_5_CORNERS",
             vertical: MarketVertical.CORNERS,
             probability: probOverCorners,
-            expectedValue: (probOverCorners * 1.80) - 1,
-            status: "OPTIMIZED" as any,
-            reasoning: "Shock Engine: Reativação de intensidade detectada. Valor em OVER."
-          } as any);
+            expectedValue: probOverCorners * 1.8 - 1,
+            status: "OPTIMIZED",
+            reasoning: "Shock Engine: Reativação de intensidade detectada. Valor em OVER.",
+          });
         }
         break;
 
-      case 'CARDS':
-        const cardSim = ModelFactory.modelCards(
+      case MarketVertical.CARDS:
+        const cardSim: SimulationResult = ModelFactory.modelCards(
           payload.baseMetrics.home.cards || 2.0,
           payload.baseMetrics.away.cards || 2.5,
           payload.externalFactors.refereeStrictness || 1.0,
@@ -301,50 +318,34 @@ export class ArgosOrchestratorV4 {
           market: "OVER_4_5_CARDS",
           vertical: MarketVertical.CARDS,
           probability: cardSim.probabilities.home + cardSim.probabilities.away,
-          expectedValue: ((cardSim.probabilities.home + cardSim.probabilities.away) * 1.9) - 1,
-          status: "OPTIMIZED" as any
+          expectedValue: (cardSim.probabilities.home + cardSim.probabilities.away) * 1.9 - 1,
+          status: "OPTIMIZED",
         });
         break;
 
-      case 'BTTS':
-        const bttsResult = ModelFactory.modelBTTS(
+      case MarketVertical.BTTS:
+        const bttsResult: { yes: number; no: number } = ModelFactory.modelBTTS(
           payload.baseMetrics.home.goals || 1.2,
           payload.baseMetrics.away.goals || 1.0,
           regime
         );
-        
+
         signals.push({
           matchId: payload.matchId,
           market: "BTTS_YES",
           vertical: MarketVertical.BTTS,
           probability: bttsResult.yes,
-          expectedValue: (bttsResult.yes * 1.95) - 1,
-          status: "OPTIMIZED" as any
+          expectedValue: bttsResult.yes * 1.95 - 1,
+          status: "OPTIMIZED",
         });
         break;
 
-      case 'TEAM_STATS':
-        // Mercados de Equipe (Mais Cantos, Mais Finalizações)
-        const homeShots = payload.baseMetrics.home.shots || 12;
-        const awayShots = payload.baseMetrics.away.shots || 10;
-        const probHomeMoreShots = homeShots / (homeShots + awayShots);
-        
-        signals.push({
-          matchId: payload.matchId,
-          market: "MOST_SHOTS_HOME",
-          vertical: MarketVertical.SHOTS,
-          probability: probHomeMoreShots,
-          expectedValue: (probHomeMoreShots * 1.7) - 1,
-          status: "OPTIMIZED" as any
-        });
-        break;
-
-      case 'SHOTS':
-        const shotSim = ModelFactory.runMonteCarlo(
+      case MarketVertical.SHOTS:
+        const shotSim: SimulationResult = ModelFactory.runMonteCarlo(
           { homeMean: payload.baseMetrics.home.shots || 12, awayMean: payload.baseMetrics.away.shots || 10 },
           regime,
-          1500,
-          'SHOTS',
+          10000, // 10.000 iterações
+          "SHOTS",
           elapsed,
           { home: 0, away: 0 } // Shots não acumulam no placar para fins de simulação de Poisson residual
         );
@@ -353,17 +354,17 @@ export class ArgosOrchestratorV4 {
           market: "OVER_22_5_SHOTS",
           vertical: MarketVertical.SHOTS,
           probability: shotSim.probabilities.home + shotSim.probabilities.away,
-          expectedValue: ((shotSim.probabilities.home + shotSim.probabilities.away) * 1.85) - 1,
-          status: "OPTIMIZED" as any
+          expectedValue: (shotSim.probabilities.home + shotSim.probabilities.away) * 1.85 - 1,
+          status: "OPTIMIZED",
         });
         break;
 
-      case 'HANDICAP':
-        const handicapSim = ModelFactory.runMonteCarlo(
+      case MarketVertical.HANDICAP:
+        const handicapSim: SimulationResult = ModelFactory.runMonteCarlo(
           { homeMean: payload.baseMetrics.home.goals || 1.2, awayMean: payload.baseMetrics.away.goals || 1.0 },
           regime,
-          1500,
-          'GOALS',
+          10000, // 10.000 iterações
+          "GOALS",
           elapsed,
           currentScore
         );
@@ -372,9 +373,13 @@ export class ArgosOrchestratorV4 {
           market: "AH_-0.5_HOME",
           vertical: MarketVertical.HANDICAP,
           probability: handicapSim.probabilities.home,
-          expectedValue: (handicapSim.probabilities.home * 2.0) - 1,
-          status: "OPTIMIZED" as any
+          expectedValue: handicapSim.probabilities.home * 2.0 - 1,
+          status: "OPTIMIZED",
         });
+        break;
+
+      default:
+        console.warn(`[Argos v5.0] Vertical ${vertical} não suportada.`);
         break;
     }
 

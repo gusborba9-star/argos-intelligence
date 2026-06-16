@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { AutoTuningEngine } from "@/lib/core/AutoTuningEngine";
+import { MarketRegime } from "@/lib/argos/regime/RegimeSchema";
 
 // ============================================================
 // ARGOS API v4.3 — AUTO-TUNING ENDPOINT
@@ -20,7 +21,7 @@ export async function GET(req: Request) {
     }
 
     const tuner = new AutoTuningEngine();
-    const tuningResult = await tuner.tuneRegimeParameters(leagueId, regime);
+    const tuningResult = await tuner.tuneRegimeParameters(leagueId, regime as MarketRegime);
 
     return NextResponse.json(tuningResult);
   } catch (error: any) {

@@ -1,4 +1,5 @@
 import { ArgosOrchestratorV4 } from "./argos/orchestrator/ArgosOrchestratorV4";
+import { MarketVertical } from "./core/ArgosUnifiedEngine";
 import dotenv from "dotenv";
 
 // ============================================================
@@ -12,7 +13,7 @@ async function runStressTest() {
   const orchestrator = new ArgosOrchestratorV4();
   const CONCURRENT_REQUESTS = 50;
   const matchId = "test_match_stress_" + Date.now();
-  const verticals = ["WINNER", "GOALS", "CORNERS", "CARDS", "BTTS"];
+  const verticals: MarketVertical[] = [MarketVertical.WINNER, MarketVertical.GOALS, MarketVertical.CORNERS, MarketVertical.CARDS, MarketVertical.BTTS];
 
   console.log(`🚀 Iniciando Teste de Estresse: ${CONCURRENT_REQUESTS} requisições simultâneas...`);
   const startTime = Date.now();

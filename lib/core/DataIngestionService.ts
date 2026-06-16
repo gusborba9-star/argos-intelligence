@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { AxiosResponse } from "axios";
 
 // ============================================================
 // DATA INGESTION SERVICE v4.5 — EXPONENTIAL INTELLIGENCE
@@ -13,17 +13,89 @@ export interface AdjustedMetrics {
   shotsOnTarget: number;
 }
 
+export interface ExternalFactors {
+  refereeStrictness: number;
+  weatherCondition: "CLEAR" | "RAIN" | "EXTREME_HEAT";
+  motivationLevel: "NORMAL" | "HIGH" | "LOW";
+  isDerby: boolean;
+}
+
 export interface IngestedData {
   matchId: string;
   leagueId: string;
   home: AdjustedMetrics;
   away: AdjustedMetrics;
-  externalFactors: {
-    refereeStrictness: number;
-    weatherCondition: "CLEAR" | "RAIN" | "EXTREME_HEAT";
-    motivationLevel: "NORMAL" | "HIGH" | "LOW";
-    isDerby: boolean;
+  externalFactors: ExternalFactors;
+}
+
+interface FixtureTeam {
+  id: number;
+  name: string;
+  logo: string;
+  winner: boolean | null;
+}
+
+interface FixtureLeague {
+  id: number;
+  name: string;
+  country: string;
+  logo: string;
+  flag: string;
+  season: number;
+  round: string;
+}
+
+interface FixtureStatus {
+  long: string;
+  short: string;
+  elapsed: number | null;
+}
+
+interface FixtureVenue {
+  id: number;
+  name: string;
+  city: string;
+}
+
+interface FixtureReferee {
+  id: number;
+  name: string;
+}
+
+interface FixtureGoals {
+  home: number | null;
+  away: number | null;
+}
+
+interface FixtureResponse {
+  fixture: {
+    id: number;
+    referee: string | null;
+    timezone: string;
+    date: string;
+    timestamp: number;
+    periods: {
+      first: number | null;
+      second: number | null;
+    };
+    venue: FixtureVenue;
+    status: FixtureStatus;
   };
+  league: FixtureLeague;
+  teams: {
+    home: FixtureTeam;
+    away: FixtureTeam;
+  };
+  goals: FixtureGoals;
+  score: {
+    halftime: FixtureGoals;
+    fulltime: FixtureGoals;
+    extratime: FixtureGoals;
+    penalty: FixtureGoals;
+  };
+  events: any[]; // TODO: Definir tipo mais específico para eventos
+  // statistics: any[]; // TODO: Definir tipo mais específico para estatísticas
+  // players: any[]; // TODO: Definir tipo mais específico para jogadores
 }
 
 export class DataIngestionService {
@@ -32,23 +104,26 @@ export class DataIngestionService {
   private MAX_DAILY_REQUESTS: number = 100;
   private dailyRequestCount: number = 0;
   private lastRequestDate: string = "";
+  private cache: Map<string, { data: any; timestamp: number }> = new Map();
+  private CACHE_TTL_MS: number = 5 * 60 * 1000; // 5 minutos de cache
 
   constructor() {
     this.apiKey = process.env.API_SPORTS_KEY || "";
+    if (!this.apiKey) {
+      console.warn("API_SPORTS_KEY não configurada. O DataIngestionService pode não funcionar.");
+    }
     this.loadRequestCount();
   }
 
-  private loadRequestCount() {
-    const today = new Date().toISOString().split('T')[0];
-    // Em produção, isso deveria ser persistido no Supabase/Redis. 
-    // Para fins de demonstração, usamos uma variável simples (resetada no deploy).
+  private loadRequestCount(): void {
+    const today = new Date().toISOString().split("T")[0];
     if (this.lastRequestDate !== today) {
       this.dailyRequestCount = 0;
       this.lastRequestDate = today;
     }
   }
 
-  private async incrementRequestCount() {
+  private async incrementRequestCount(): Promise<void> {
     this.loadRequestCount();
     if (this.dailyRequestCount >= this.MAX_DAILY_REQUESTS) {
       throw new Error("Limite diário de requisições da API Football atingido (100/dia).");
@@ -56,19 +131,46 @@ export class DataIngestionService {
     this.dailyRequestCount++;
   }
 
+  private getFromCache<T>(key: string): T | null {
+    const entry = this.cache.get(key);
+    if (entry && (Date.now() - entry.timestamp < this.CACHE_TTL_MS)) {
+      return entry.data as T;
+    }
+    this.cache.delete(key); // Cache expirado ou não existente
+    return null;
+  }
+
+  private setToCache<T>(key: string, data: T): void {
+    this.cache.set(key, { data, timestamp: Date.now() });
+  }
+
   /**
    * Coleta dados de um jogo e calcula métricas ajustadas (xG/xGA) com decaimento exponencial
+   * @param matchId ID do jogo
+   * @param refresh Força a atualização dos dados, ignorando o cache.
    */
-  async ingest(matchId: string): Promise<IngestedData> {
+  async ingest(matchId: string, refresh: boolean = false): Promise<IngestedData> {
+    const cacheKey = `ingest-${matchId}`;
+    if (!refresh) {
+      const cachedData = this.getFromCache<IngestedData>(cacheKey);
+      if (cachedData) {
+        console.log(`[DataIngestionService] Retornando dados de ingestão para ${matchId} do cache.`);
+        return cachedData;
+      }
+    }
+
     try {
       await this.incrementRequestCount();
       // 1. Buscar detalhes do jogo (Ligas, Times, Árbitro)
-      const fixtureResponse = await axios.get(`${this.baseUrl}/fixtures?id=${matchId}`, {
-        headers: { "x-apisports-key": this.apiKey }
-      });
+      const fixtureResponse: AxiosResponse<{ response: FixtureResponse[] }> = await axios.get(
+        `${this.baseUrl}/fixtures?id=${matchId}`,
+        { headers: { "x-apisports-key": this.apiKey } }
+      );
 
       const fixture = fixtureResponse.data.response[0];
-      if (!fixture) throw new Error(`Fixture ${matchId} not found`);
+      if (!fixture) {
+        throw new Error(`Fixture ${matchId} not found`);
+      }
 
       const leagueId = fixture.league.id.toString();
       const homeTeamId = fixture.teams.home.id;
@@ -76,8 +178,8 @@ export class DataIngestionService {
 
       // 2. Buscar histórico dos últimos 10 jogos para cada time (Janela Temporal Móvel)
       const [homeHistory, awayHistory] = await Promise.all([
-        this.getTeamHistory(homeTeamId, 10),
-        this.getTeamHistory(awayTeamId, 10)
+        this.getTeamHistory(homeTeamId, 10, refresh),
+        this.getTeamHistory(awayTeamId, 10, refresh),
       ]);
 
       // 3. Calcular Médias Ajustadas com Decaimento Exponencial
@@ -85,38 +187,57 @@ export class DataIngestionService {
       const awayMetrics = this.calculateExponentialAverages(awayHistory);
 
       // 4. Extrair Fatores Externos
-      const externalFactors: IngestedData["externalFactors"] = {
-        refereeStrictness: this.parseRefereeStrictness(fixture.fixture.referee),
-        weatherCondition: "CLEAR", 
-        motivationLevel: "NORMAL", 
-        isDerby: false 
+      const externalFactors: ExternalFactors = {
+        refereeStrictness: this.parseRefereeStrictness(fixture.fixture.referee || ""),
+        weatherCondition: "CLEAR", // TODO: Implementar lógica real de clima
+        motivationLevel: "NORMAL", // TODO: Implementar lógica real de motivação
+        isDerby: false, // TODO: Implementar lógica real de derby
       };
 
-      return {
+      const result: IngestedData = {
         matchId,
         leagueId,
         home: homeMetrics,
         away: awayMetrics,
-        externalFactors
+        externalFactors,
       };
-    } catch (error: any) {
-      console.error("[DataIngestionService] Ingestion Error:", error.message);
-      throw error;
+      this.setToCache(cacheKey, result);
+      return result;
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        console.error("[DataIngestionService] Ingestion Error:", error.message);
+        throw error;
+      } else {
+        console.error("[DataIngestionService] Unknown Ingestion Error:", error);
+        throw new Error("An unknown error occurred during data ingestion.");
+      }
     }
   }
 
-  private async getTeamHistory(teamId: number, limit: number): Promise<any[]> {
+  private async getTeamHistory(teamId: number, limit: number, refresh: boolean = false): Promise<FixtureResponse[]> {
+    const cacheKey = `teamHistory-${teamId}-${limit}`;
+    if (!refresh) {
+      const cachedHistory = this.getFromCache<FixtureResponse[]>(cacheKey);
+      if (cachedHistory) {
+        console.log(`[DataIngestionService] Retornando histórico do time ${teamId} do cache.`);
+        return cachedHistory;
+      }
+    }
+
     await this.incrementRequestCount();
-    const response = await axios.get(`${this.baseUrl}/fixtures?team=${teamId}&last=${limit}`, {
-      headers: { "x-apisports-key": this.apiKey }
-    });
-    return response.data.response || [];
+    const response: AxiosResponse<{ response: FixtureResponse[] }> = await axios.get(
+      `${this.baseUrl}/fixtures?team=${teamId}&last=${limit}`,
+      { headers: { "x-apisports-key": this.apiKey } }
+    );
+    const history = response.data.response || [];
+    this.setToCache(cacheKey, history);
+    return history;
   }
 
   /**
    * Retorna a lista de ligas prioritárias (Elite)
    */
-  public getPriorityLeagues() {
+  public getPriorityLeagues(): { id: number; name: string }[] {
     return [
       { id: 71, name: "Brasileirão Série A" },
       { id: 72, name: "Brasileirão Série B" },
@@ -127,42 +248,59 @@ export class DataIngestionService {
       { id: 135, name: "Serie A" },
       { id: 61, name: "Ligue 1" },
       { id: 307, name: "Saudi Pro League" },
-      { id: 128, name: "Liga Argentina" }
+      { id: 128, name: "Liga Argentina" },
     ];
   }
 
   /**
    * Busca jogos de uma liga específica para uma data
+   * @param leagueId ID da liga
+   * @param date Data dos jogos (YYYY-MM-DD)
+   * @param refresh Força a atualização dos dados, ignorando o cache.
    */
-  public async getFixturesByLeague(leagueId: number, date: string): Promise<any[]> {
+  public async getFixturesByLeague(leagueId: number, date: string, refresh: boolean = false): Promise<FixtureResponse[]> {
+    const cacheKey = `fixturesByLeague-${leagueId}-${date}`;
+    if (!refresh) {
+      const cachedFixtures = this.getFromCache<FixtureResponse[]>(cacheKey);
+      if (cachedFixtures) {
+        console.log(`[DataIngestionService] Retornando jogos da liga ${leagueId} para ${date} do cache.`);
+        return cachedFixtures;
+      }
+    }
+
     await this.incrementRequestCount();
-    const response = await axios.get(`${this.baseUrl}/fixtures?league=${leagueId}&date=${date}`, {
-      headers: { "x-apisports-key": this.apiKey }
-    });
-    return response.data.response || [];
+    const response: AxiosResponse<{ response: FixtureResponse[] }> = await axios.get(
+      `${this.baseUrl}/fixtures?league=${leagueId}&date=${date}`,
+      { headers: { "x-apisports-key": this.apiKey } }
+    );
+    const fixtures = response.data.response || [];
+    this.setToCache(cacheKey, fixtures);
+    return fixtures;
   }
 
   /**
    * Aplica Fator de Decaimento Exponencial: Jogos recentes têm peso maior
    * Fórmula: Peso = alpha * (1 - alpha)^n, onde n é a distância do jogo atual
    */
-  private calculateExponentialAverages(history: any[]): AdjustedMetrics {
+  private calculateExponentialAverages(history: FixtureResponse[]): AdjustedMetrics {
     const alpha = 0.3; // Fator de decaimento (30% de peso para o mais recente)
     let totalWeight = 0;
-    
+
     const sums = { goals: 0, corners: 0, cards: 0, shots: 0, shotsOnTarget: 0 };
 
     history.forEach((match, index) => {
       const weight = Math.pow(1 - alpha, index);
       totalWeight += weight;
 
-      // Nota: No mundo real, extrairíamos estatísticas detalhadas de cada jogo (match.statistics)
-      // Aqui estamos simulando a extração de gols como base
-      const stats = match.goals; 
-      sums.goals += (stats.home || 0) * weight;
+      // Usar os gols reais do jogo, se disponíveis
+      const homeGoals = match.goals.home !== null ? match.goals.home : 0;
+      const awayGoals = match.goals.away !== null ? match.goals.away : 0;
+      sums.goals += (homeGoals + awayGoals) * weight;
+
+      // TODO: Substituir simulações por dados reais de estatísticas (corners, cards, shots, shotsOnTarget)
       sums.corners += 5 * weight; // Simulação de média
-      sums.cards += 2 * weight;   // Simulação de média
-      sums.shots += 12 * weight;  // Simulação de média
+      sums.cards += 2 * weight; // Simulação de média
+      sums.shots += 12 * weight; // Simulação de média
       sums.shotsOnTarget += 5 * weight; // Simulação de média
     });
 
@@ -171,13 +309,14 @@ export class DataIngestionService {
       corners: sums.corners / totalWeight,
       cards: sums.cards / totalWeight,
       shots: sums.shots / totalWeight,
-      shotsOnTarget: sums.shotsOnTarget / totalWeight
+      shotsOnTarget: sums.shotsOnTarget / totalWeight,
     };
   }
 
   private parseRefereeStrictness(refereeName: string): number {
     if (!refereeName) return 1.0;
     // Lógica simples: nomes conhecidos por rigor podem ser mapeados aqui
-    return 1.0; 
+    // Exemplo: if (refereeName.includes("Lahoz")) return 1.5; // Árbitro rigoroso
+    return 1.0; // Valor padrão
   }
 }

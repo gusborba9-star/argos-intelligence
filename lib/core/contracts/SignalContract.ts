@@ -16,4 +16,5 @@ export interface ArgosSignal {
   modelConsensusSize?: number;
   unitSize?: number;
   status: "OPTIMIZED" | "HEDGED";
+  reasoning?: string; // Explicação da lógica de sinal
 }
