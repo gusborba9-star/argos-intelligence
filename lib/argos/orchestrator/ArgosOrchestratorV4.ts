@@ -1,4 +1,4 @@
-import { getSupabaseClient } from "@/lib/core/SupabaseClient";
+import { getSupabaseClient, SupabaseClient } from "@/lib/core/SupabaseClient";
 import { RegimeEngineV4, ExternalFactors } from "@/lib/argos/regime/RegimeEngineV4";
 import { RAGContextEngine } from "@/lib/argos/regime/RAGContextEngine";
 import { ModelFactory, SimulationResult } from "@/lib/core/ModelFactory";
@@ -37,23 +37,23 @@ export interface AuditResult {
 }
 
 export class ArgosOrchestratorV4 {
-  private supabase;
+  private supabase: SupabaseClient;
   private regimeEngine: RegimeEngineV4;
   private ragEngine: RAGContextEngine;
   private autoTuner: AutoTuningEngine;
   private ingestionService: DataIngestionService;
   private anomalyDetector: AnomalyDetectionService;
 
-  constructor() {
-    this.supabase = getSupabaseClient();
+  constructor(ingestionService?: DataIngestionService, supabaseClient?: SupabaseClient) {
+    this.supabase = supabaseClient || getSupabaseClient();
     this.regimeEngine = new RegimeEngineV4(process.env.GOOGLE_API_KEY!);
     this.ragEngine = new RAGContextEngine(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       process.env.GOOGLE_API_KEY!
     );
-    this.autoTuner = new AutoTuningEngine();
-    this.ingestionService = new DataIngestionService();
+    this.autoTuner = new AutoTuningEngine(supabaseClient);
+    this.ingestionService = ingestionService || new DataIngestionService();
     this.anomalyDetector = new AnomalyDetectionService();
   }
 

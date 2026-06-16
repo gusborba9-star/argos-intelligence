@@ -1,4 +1,6 @@
 import axios, { AxiosResponse } from "axios";
+import { getRedisCacheInstance } from "@/lib/core/RedisCache";
+import { circuitBreakerPool } from "@/lib/core/CircuitBreaker";
 
 // ============================================================
 // DATA INGESTION SERVICE v4.5 — EXPONENTIAL INTELLIGENCE
@@ -104,8 +106,9 @@ export class DataIngestionService {
   private MAX_DAILY_REQUESTS: number = 100;
   private dailyRequestCount: number = 0;
   private lastRequestDate: string = "";
-  private cache: Map<string, { data: any; timestamp: number }> = new Map();
-  private CACHE_TTL_MS: number = 5 * 60 * 1000; // 5 minutos de cache
+  // Removendo cache local, usando RedisCache global
+  // private cache: Map<string, { data: any; timestamp: number }> = new Map();
+  // private CACHE_TTL_MS: number = 5 * 60 * 1000; // 5 minutos de cache
 
   constructor() {
     this.apiKey = process.env.API_SPORTS_KEY || "";
@@ -113,6 +116,14 @@ export class DataIngestionService {
       console.warn("API_SPORTS_KEY não configurada. O DataIngestionService pode não funcionar.");
     }
     this.loadRequestCount();
+    // Registrar Circuit Breaker para a API Football
+    circuitBreakerPool.register({
+      name: "FootballAPI",
+      failureThreshold: 5, // 5 falhas antes de abrir o circuito
+      successThreshold: 3, // 3 sucessos para fechar o circuito
+      timeout: 60000, // 60 segundos de espera antes de tentar novamente
+      resetTimeout: 300000, // 5 minutos para resetar contadores
+    });
   }
 
   private loadRequestCount(): void {
@@ -131,18 +142,9 @@ export class DataIngestionService {
     this.dailyRequestCount++;
   }
 
-  private getFromCache<T>(key: string): T | null {
-    const entry = this.cache.get(key);
-    if (entry && (Date.now() - entry.timestamp < this.CACHE_TTL_MS)) {
-      return entry.data as T;
-    }
-    this.cache.delete(key); // Cache expirado ou não existente
-    return null;
-  }
-
-  private setToCache<T>(key: string, data: T): void {
-    this.cache.set(key, { data, timestamp: Date.now() });
-  }
+  // Métodos de cache movidos para RedisCache
+  // private getFromCache<T>(key: string): T | null { ... }
+  // private setToCache<T>(key: string, data: T): void { ... }
 
   /**
    * Coleta dados de um jogo e calcula métricas ajustadas (xG/xGA) com decaimento exponencial
@@ -150,22 +152,25 @@ export class DataIngestionService {
    * @param refresh Força a atualização dos dados, ignorando o cache.
    */
   async ingest(matchId: string, refresh: boolean = false): Promise<IngestedData> {
-    const cacheKey = `ingest-${matchId}`;
+    const cacheKey = getRedisCacheInstance().getMatchDataKey(matchId);
     if (!refresh) {
-      const cachedData = this.getFromCache<IngestedData>(cacheKey);
+      const cachedData = await getRedisCacheInstance().get<IngestedData>(cacheKey);
       if (cachedData) {
-        console.log(`[DataIngestionService] Retornando dados de ingestão para ${matchId} do cache.`);
+        console.log(`[DataIngestionService] Retornando dados de ingestão para ${matchId} do cache Redis.`);
         return cachedData;
       }
     }
 
     try {
-      await this.incrementRequestCount();
-      // 1. Buscar detalhes do jogo (Ligas, Times, Árbitro)
-      const fixtureResponse: AxiosResponse<{ response: FixtureResponse[] }> = await axios.get(
-        `${this.baseUrl}/fixtures?id=${matchId}`,
-        { headers: { "x-apisports-key": this.apiKey } }
-      );
+      // 1. Buscar detalhes do jogo (Ligas, Times, Árbitro) com Circuit Breaker
+      const fixtureResponse: AxiosResponse<{ response: FixtureResponse[] }> = await circuitBreakerPool.get("FootballAPI")!.execute(async () => {
+        // Incrementa o contador APENAS se a requisição for realmente para a API externa
+        await this.incrementRequestCount();
+        return await axios.get(
+          `${this.baseUrl}/fixtures?id=${matchId}`,
+          { headers: { "x-apisports-key": this.apiKey } }
+        );
+      });
 
       const fixture = fixtureResponse.data.response[0];
       if (!fixture) {
@@ -201,7 +206,7 @@ export class DataIngestionService {
         away: awayMetrics,
         externalFactors,
       };
-      this.setToCache(cacheKey, result);
+      await getRedisCacheInstance().cacheMatchData(matchId, result);
       return result;
     } catch (error: unknown) {
       if (error instanceof Error) {
@@ -217,20 +222,23 @@ export class DataIngestionService {
   private async getTeamHistory(teamId: number, limit: number, refresh: boolean = false): Promise<FixtureResponse[]> {
     const cacheKey = `teamHistory-${teamId}-${limit}`;
     if (!refresh) {
-      const cachedHistory = this.getFromCache<FixtureResponse[]>(cacheKey);
+      const cachedHistory = await getRedisCacheInstance().get<FixtureResponse[]>(cacheKey);
       if (cachedHistory) {
-        console.log(`[DataIngestionService] Retornando histórico do time ${teamId} do cache.`);
+        console.log(`[DataIngestionService] Retornando histórico do time ${teamId} do cache Redis.`);
         return cachedHistory;
       }
     }
 
-    await this.incrementRequestCount();
-    const response: AxiosResponse<{ response: FixtureResponse[] }> = await axios.get(
-      `${this.baseUrl}/fixtures?team=${teamId}&last=${limit}`,
-      { headers: { "x-apisports-key": this.apiKey } }
-    );
+    const response: AxiosResponse<{ response: FixtureResponse[] }> = await circuitBreakerPool.get("FootballAPI")!.execute(async () => {
+      // Incrementa o contador APENAS se a requisição for realmente para a API externa
+      await this.incrementRequestCount();
+      return await axios.get(
+        `${this.baseUrl}/fixtures?team=${teamId}&last=${limit}`,
+        { headers: { "x-apisports-key": this.apiKey } }
+      );
+    });
     const history = response.data.response || [];
-    this.setToCache(cacheKey, history);
+    await getRedisCacheInstance().set(cacheKey, history, 3600); // Cache por 1 hora
     return history;
   }
 
@@ -261,20 +269,23 @@ export class DataIngestionService {
   public async getFixturesByLeague(leagueId: number, date: string, refresh: boolean = false): Promise<FixtureResponse[]> {
     const cacheKey = `fixturesByLeague-${leagueId}-${date}`;
     if (!refresh) {
-      const cachedFixtures = this.getFromCache<FixtureResponse[]>(cacheKey);
+      const cachedFixtures = await getRedisCacheInstance().get<FixtureResponse[]>(cacheKey);
       if (cachedFixtures) {
-        console.log(`[DataIngestionService] Retornando jogos da liga ${leagueId} para ${date} do cache.`);
+        console.log(`[DataIngestionService] Retornando jogos da liga ${leagueId} para ${date} do cache Redis.`);
         return cachedFixtures;
       }
     }
 
-    await this.incrementRequestCount();
-    const response: AxiosResponse<{ response: FixtureResponse[] }> = await axios.get(
-      `${this.baseUrl}/fixtures?league=${leagueId}&date=${date}`,
-      { headers: { "x-apisports-key": this.apiKey } }
-    );
+    const response: AxiosResponse<{ response: FixtureResponse[] }> = await circuitBreakerPool.get("FootballAPI")!.execute(async () => {
+      // Incrementa o contador APENAS se a requisição for realmente para a API externa
+      await this.incrementRequestCount();
+      return await axios.get(
+        `${this.baseUrl}/fixtures?league=${leagueId}&date=${date}`,
+        { headers: { "x-apisports-key": this.apiKey } }
+      );
+    });
     const fixtures = response.data.response || [];
-    this.setToCache(cacheKey, fixtures);
+    await getRedisCacheInstance().set(cacheKey, fixtures, 3600); // Cache por 1 hora
     return fixtures;
   }
 

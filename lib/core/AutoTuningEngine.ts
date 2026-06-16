@@ -18,8 +18,8 @@ export interface TuningResult {
 export class AutoTuningEngine {
   private supabase: SupabaseClient;
 
-  constructor() {
-    this.supabase = createClient(
+  constructor(supabaseClient?: SupabaseClient) {
+    this.supabase = supabaseClient || createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );

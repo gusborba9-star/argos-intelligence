@@ -17,11 +17,12 @@ export class RedisCache {
   private readonly MATCH_CACHE_TTL = 600; // 10 minutos para dados de jogo
   private readonly REGIME_CACHE_TTL = 1800; // 30 minutos para regimes
 
-  constructor() {
+  constructor(url: string, token: string) {
     this.redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL!,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+      url,
+      token,
     });
+    console.log(`[RedisCache] Initialized with URL: ${url ? '******' : 'UNDEFINED'}`);
   }
 
   /**
@@ -34,7 +35,7 @@ export class RedisCache {
         timestamp: Date.now(),
         ttl,
       };
-      await this.redis.setex(key, ttl, JSON.stringify(cacheEntry));
+      await this.redis.setex(key, ttl, cacheEntry);
       console.log(`[RedisCache] SET: ${key} (TTL: ${ttl}s)`);
     } catch (error) {
       console.error(`[RedisCache] SET Error for ${key}:`, error);
@@ -53,7 +54,7 @@ export class RedisCache {
         return null;
       }
 
-      const cacheEntry: CacheEntry<T> = JSON.parse(cached as string);
+      const cacheEntry: CacheEntry<T> = cached as CacheEntry<T>;
       const age = Date.now() - cacheEntry.timestamp;
 
       console.log(`[RedisCache] HIT: ${key} (Age: ${age}ms)`);
@@ -173,5 +174,21 @@ export class RedisCache {
   }
 }
 
-// Singleton global
-export const redisCache = new RedisCache();
+let redisCacheInstance: RedisCache | null = null;
+
+export function getRedisCacheInstance(): RedisCache {
+  if (!redisCacheInstance) {
+    const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
+    const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+    console.log(`[getRedisCacheInstance] Raw URL: ${redisUrl}`);
+    console.log(`[getRedisCacheInstance] Raw Token: ${redisToken ? '******' : 'UNDEFINED'}`);
+
+    if (!redisUrl || !redisToken) {
+      console.error("[RedisCache] UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN is not defined.");
+      throw new Error("Upstash Redis credentials are not configured.");
+    }
+    redisCacheInstance = new RedisCache(redisUrl, redisToken);
+  }
+  return redisCacheInstance;
+}

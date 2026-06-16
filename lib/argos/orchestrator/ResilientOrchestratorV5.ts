@@ -5,15 +5,17 @@
 
 import { ArgosOrchestratorV4 } from "@/lib/argos/orchestrator/ArgosOrchestratorV4";
 import { circuitBreakerPool, CircuitState } from "@/lib/core/CircuitBreaker";
-import { redisCache } from "@/lib/core/RedisCache";
+import { getRedisCacheInstance } from "@/lib/core/RedisCache";
 import { telemetryService } from "@/lib/core/TelemetryService";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
+import { DataIngestionServiceMock } from "@/lib/mocks/DataIngestionServiceMock";
 
 export class ResilientOrchestratorV5 {
   private orchestrator: ArgosOrchestratorV4;
 
-  constructor() {
-    this.orchestrator = new ArgosOrchestratorV4();
+  constructor(useMock: boolean = false) {
+    const ingestionService = useMock ? new DataIngestionServiceMock() : undefined;
+    this.orchestrator = new ArgosOrchestratorV4(ingestionService);
     this.initializeCircuitBreakers();
   }
 
@@ -98,7 +100,7 @@ export class ResilientOrchestratorV5 {
       if (cacheBreaker) {
         try {
           const cachedResult = await cacheBreaker.execute(async () => {
-            return await redisCache.getSignals(matchId);
+            return await getRedisCacheInstance().getSignals(matchId);
           });
 
           if (cachedResult) {
@@ -107,7 +109,17 @@ export class ResilientOrchestratorV5 {
               eventType: "CACHE_HIT",
               matchId,
             });
-            return { ...cachedResult, source: "CACHE" };
+            return {
+              matchId,
+              status: "SUCCESS",
+              classifiedSignals: cachedResult || [],
+              regime: { regime: "CACHED", confidence: 1.0, model_bias: 0, variance_multiplier: 1.0, reasoning_tags: ["CACHE_HIT"], explanation: "Dados recuperados do cache." },
+              executionTimeMs: Date.now() - startTime,
+              resilience: {
+                circuitBreakerStatus: circuitBreakerPool.getHealthStatus(),
+                executionTimeMs: Date.now() - startTime,
+              },
+            };
           }
         } catch (cacheError) {
           console.warn(`[ResilientOrchestratorV5] Cache falhou, continuando sem cache`, cacheError);
@@ -131,7 +143,7 @@ export class ResilientOrchestratorV5 {
       if (auditResult.status === "SUCCESS" && cacheBreaker) {
         try {
           await cacheBreaker.execute(async () => {
-            await redisCache.cacheSignals(matchId, auditResult.classifiedSignals || []);
+            await getRedisCacheInstance().cacheSignals(matchId, auditResult.classifiedSignals || []);
           });
         } catch (cacheError) {
           console.warn(`[ResilientOrchestratorV5] Falha ao cachear resultado`, cacheError);
