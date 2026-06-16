@@ -5,7 +5,23 @@
 
 export interface TelemetryEvent {
   timestamp: number;
-  eventType: "SIMULATION_START" | "SIMULATION_END" | "ERROR" | "ANOMALY" | "CACHE_HIT" | "CACHE_MISS" | "ANTI_FRAGILITY_TRIGGER";
+  eventType: 
+    | "SIMULATION_START" 
+    | "SIMULATION_END" 
+    | "ERROR" 
+    | "ANOMALY" 
+    | "CACHE_HIT" 
+    | "CACHE_MISS" 
+    | "ANTI_FRAGILITY_TRIGGER"
+    | "SECURITY_ALERT"
+    | "PAYMENT_CONFIRMED"
+    | "PAYMENT_ERROR"
+    | "PAYMENT_EXPIRED"
+    | "WEBHOOK_ERROR"
+    | "MODEL_RECALIBRATION"
+    | "CONSENSUS_VOTING"
+    | "FAILOVER_EXECUTED"
+    | "MAINTENANCE_ALERT";
   matchId: string;
   leagueId?: string;
   vertical?: string;
@@ -45,7 +61,8 @@ export class TelemetryService {
     }
 
     // Log em tempo real para eventos críticos
-    if (event.eventType === "ERROR" || event.eventType === "ANOMALY" || event.eventType === "ANTI_FRAGILITY_TRIGGER") {
+    const criticalEvents: Array<TelemetryEvent["eventType"]> = ["ERROR", "ANOMALY", "ANTI_FRAGILITY_TRIGGER", "SECURITY_ALERT", "PAYMENT_ERROR", "WEBHOOK_ERROR", "MAINTENANCE_ALERT"];
+    if (criticalEvents.includes(event.eventType)) {
       console.warn(`[TelemetryService] ${event.eventType}:`, telemetryEvent);
     }
   }

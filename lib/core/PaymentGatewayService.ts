@@ -48,8 +48,7 @@ export class PaymentGatewayService {
     this.pixKey = process.env.EFI_PIX_KEY || "";
 
     if (!this.clientId || !this.clientSecret || !this.accountId || !this.certificateBase64 || !this.pixKey) {
-      console.error("[PaymentGatewayService] Credenciais Efi não configuradas completamente.");
-      throw new Error("Efi credentials are not fully configured in environment variables.");
+      console.warn("[PaymentGatewayService] Credenciais Efi não configuradas completamente. O serviço funcionará em modo limitado.");
     }
 
     // Inicializar cliente Axios com certificado

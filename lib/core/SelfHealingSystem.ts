@@ -168,7 +168,7 @@ export class SelfHealingSystem {
       telemetryService.recordEvent({
         eventType: "MODEL_RECALIBRATION",
         matchId: leagueId,
-        details: `Weights recalibrated for ${leagueName}. New assertivity: ${assertivityScore.toFixed(2)}%`,
+        metadata: { details: `Weights recalibrated for ${leagueName}. New assertivity: ${assertivityScore.toFixed(2)}%` },
       });
     } catch (error: any) {
       console.error(`[SelfHealingSystem] Erro na recalibração:`, error.message);

@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
       telemetryService.recordEvent({
         eventType: "SECURITY_ALERT",
         matchId: "webhook-pix",
-        details: "Invalid webhook signature detected",
+        metadata: { details: "Invalid webhook signature detected" },
       });
       return NextResponse.json(
         { error: "Invalid signature" },
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
         telemetryService.recordEvent({
           eventType: "PAYMENT_ERROR",
           matchId: webhookData.txId,
-          details: `Failed to update user: ${updateError.message}`,
+          metadata: { details: `Failed to update user: ${updateError.message}` },
         });
         return NextResponse.json(
           { error: "Failed to update user" },
@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
       telemetryService.recordEvent({
         eventType: "PAYMENT_CONFIRMED",
         matchId: webhookData.txId,
-        details: `User ${webhookData.userId} upgraded to ${webhookData.planType}`,
+        metadata: { details: `User ${webhookData.userId} upgraded to ${webhookData.planType}` },
       });
 
       console.log(`[Webhook-Pix] ✅ Pagamento confirmado e usuário ${webhookData.userId} atualizado para ${webhookData.planType}`);
@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
     telemetryService.recordEvent({
       eventType: "WEBHOOK_ERROR",
       matchId: "webhook-pix",
-      details: error.message,
+      metadata: { details: error.message },
     });
     return NextResponse.json(
       { error: "Internal server error", details: error.message },

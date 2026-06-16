@@ -90,7 +90,15 @@ export class PredictiveMaintenanceService {
     for (const [name, health] of this.endpointHealth) {
       try {
         const startTime = Date.now();
-        const response = await fetch(health.url, { method: "HEAD", timeout: 5000 });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(health.url, { 
+          method: "HEAD", 
+          signal: controller.signal 
+        });
+        
+        clearTimeout(timeoutId);
         const latency = Date.now() - startTime;
 
         if (response.ok || response.status === 405) {
@@ -180,7 +188,16 @@ export class PredictiveMaintenanceService {
 
     for (const backupUrl of backupRoutes) {
       try {
-        const response = await fetch(backupUrl, { method: "HEAD", timeout: 5000 });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(backupUrl, { 
+          method: "HEAD", 
+          signal: controller.signal 
+        });
+        
+        clearTimeout(timeoutId);
+        
         if (response.ok || response.status === 405) {
           console.log(`[PredictiveMaintenanceService] ✅ Failover bem-sucedido para ${backupUrl}`);
           this.createAlert(
@@ -193,7 +210,7 @@ export class PredictiveMaintenanceService {
           telemetryService.recordEvent({
             eventType: "FAILOVER_EXECUTED",
             matchId: endpointName,
-            details: `Failover to ${backupUrl}`,
+            metadata: { details: `Failover to ${backupUrl}` },
           });
 
           return;
@@ -242,7 +259,7 @@ export class PredictiveMaintenanceService {
     telemetryService.recordEvent({
       eventType: "MAINTENANCE_ALERT",
       matchId: endpoint,
-      details: `${severity}: ${message}`,
+      metadata: { details: `${severity}: ${message}` },
     });
   }
 

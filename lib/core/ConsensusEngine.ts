@@ -78,7 +78,7 @@ export class ConsensusEngine {
       telemetryService.recordEvent({
         eventType: "CONSENSUS_VOTING",
         matchId,
-        details: `Convergence: ${convergencePercentage.toFixed(2)}% | VIP: ${isVipSignal}`,
+        metadata: { details: `Convergence: ${convergencePercentage.toFixed(2)}% | VIP: ${isVipSignal}` },
       });
 
       return result;
