@@ -159,4 +159,18 @@ export class ModelFactory {
     const awayMean = awayAggression * refereeStrictness;
     return this.runMonteCarlo({ homeMean, awayMean }, regime, 1500, 'CARDS');
   }
+
+  /**
+   * Modelagem de Ambas Marcam (BTTS)
+   */
+  static modelBTTS(homeMean: number, awayMean: number, regime: RegimeProfile): { yes: number, no: number } {
+    let yesCount = 0;
+    const iterations = 1500;
+    for (let i = 0; i < iterations; i++) {
+      const h = this.poisson(homeMean);
+      const a = this.poisson(awayMean);
+      if (h > 0 && a > 0) yesCount++;
+    }
+    return { yes: yesCount / iterations, no: 1 - (yesCount / iterations) };
+  }
 }

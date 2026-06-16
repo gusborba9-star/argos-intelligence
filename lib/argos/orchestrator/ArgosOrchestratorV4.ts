@@ -307,16 +307,34 @@ export class ArgosOrchestratorV4 {
         break;
 
       case 'BTTS':
-        const probH = 1 - Math.exp(-(payload.baseMetrics.home.goals || 1.2));
-        const probA = 1 - Math.exp(-(payload.baseMetrics.away.goals || 1.0));
-        const probBTTS = probH * probA;
+        const bttsResult = ModelFactory.modelBTTS(
+          payload.baseMetrics.home.goals || 1.2,
+          payload.baseMetrics.away.goals || 1.0,
+          regime
+        );
         
         signals.push({
           matchId: payload.matchId,
           market: "BTTS_YES",
           vertical: MarketVertical.BTTS,
-          probability: probBTTS,
-          expectedValue: (probBTTS * 1.9) - 1,
+          probability: bttsResult.yes,
+          expectedValue: (bttsResult.yes * 1.95) - 1,
+          status: "OPTIMIZED" as any
+        });
+        break;
+
+      case 'TEAM_STATS':
+        // Mercados de Equipe (Mais Cantos, Mais Finalizações)
+        const homeShots = payload.baseMetrics.home.shots || 12;
+        const awayShots = payload.baseMetrics.away.shots || 10;
+        const probHomeMoreShots = homeShots / (homeShots + awayShots);
+        
+        signals.push({
+          matchId: payload.matchId,
+          market: "MOST_SHOTS_HOME",
+          vertical: MarketVertical.SHOTS,
+          probability: probHomeMoreShots,
+          expectedValue: (probHomeMoreShots * 1.7) - 1,
           status: "OPTIMIZED" as any
         });
         break;
