@@ -54,13 +54,15 @@ export class ValueDeliveryService {
   ): any[] {
     switch (userTier) {
       case 'FREE':
-        // 1. Regras para Usuários FREE (Nosso Marketing e Validador):
-        // Limitação de Mercado: Restrito a WINNER e GOALS.
-        // Qualidade do Sinal: Prioriza sinais de média a alta assertividade (VALIDATION).
-        return signals.filter(s => 
-          (s.vertical === MarketVertical.WINNER || s.vertical === MarketVertical.GOALS) &&
-          (s.signal_type === SignalType.VALIDATION || s.status === 'HEDGED')
-        );
+        // 1. Regras para Usuários FREE (Vitrine & Tendência):
+        // Limitação de Mercado: WINNER e GOALS (Under/Over).
+        // Ajuste de Mentalidade: O FREE recebe a "Leitura de Tendência" do motor.
+        // Reduzimos o rigor: Probabilidade > 52% já é considerada uma tendência digna de entrega.
+        return signals.filter(s => {
+          const isBasicMarket = s.vertical === MarketVertical.WINNER || s.vertical === MarketVertical.GOALS;
+          const isClearTrend = s.probability > 0.52; // O motor "opina" se houver inclinação clara
+          return isBasicMarket && isClearTrend;
+        });
       case 'PRO':
         // PRO: Sinais de 'Value' + 'Validation' em mercados padrão.
         return signals.filter(s => 
