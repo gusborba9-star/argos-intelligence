@@ -18,8 +18,8 @@ const config: Config = {
         "text-secondary": "#B0B0B0",
       },
       fontFamily: {
-        playfair: ["Playfair Display", "serif"],
-        inter: ["Inter", "sans-serif"],
+        playfair: ["var(--font-playfair)", "serif"],
+        inter: ["var(--font-inter)", "serif"],
       },
       backgroundImage: {
         "gradient-nexus": "linear-gradient(145deg, #121212, #0A0A0A)",

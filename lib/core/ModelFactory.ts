@@ -4,6 +4,7 @@
 // ============================================================
 
 import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
+import { ContextualFactorsEngine, ContextualFactors } from "@/lib/core/ContextualFactorsEngine";
 
 export interface MarketMetrics {
   homeMean: number;
@@ -25,6 +26,32 @@ export interface SimulationResult {
 
 export class ModelFactory {
   private static readonly DEFAULT_ITERATIONS = 10000;
+
+  /**
+   * Simulação de Monte Carlo com contexto total (variáveis reais)
+   */
+  static runMonteCarloWithContext(
+    metrics: MarketMetrics,
+    regime: RegimeProfile,
+    contextualFactors: ContextualFactors,
+    iterations: number = ModelFactory.DEFAULT_ITERATIONS,
+    marketType: "GOALS" | "CORNERS" | "CARDS" | "SHOTS" = "GOALS",
+    elapsedTime: number = 0,
+    currentScore: { home: number; away: number } = { home: 0, away: 0 }
+  ): SimulationResult {
+    // Calcular multiplicador contextual total
+    const contextualMultiplier = ContextualFactorsEngine.calculateTotalContextualMultiplier(contextualFactors);
+    
+    // Aplicar multiplicador contextual aos métricas
+    const adjustedMetrics: MarketMetrics = {
+      homeMean: metrics.homeMean * contextualMultiplier,
+      awayMean: metrics.awayMean * contextualMultiplier,
+      dispersion: metrics.dispersion,
+    };
+
+    // Executar Monte Carlo com métricas ajustadas
+    return this.runMonteCarlo(adjustedMetrics, regime, iterations, marketType, elapsedTime, currentScore);
+  }
 
   /**
    * Simulação de Monte Carlo com 10.000 iterações
