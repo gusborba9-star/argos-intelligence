@@ -49,14 +49,24 @@ export class ArgosOrchestratorV4 {
 
   /**
    * MODO ZERO-TOUCH: Auditoria autônoma a partir de um único matchId
+   * @param liveData Dados em tempo real (opcional) { score: { home: number, away: number }, elapsed: number }
    */
-  async runZeroTouchAudit(matchId: string, requestedVerticals: string[], marketOdds?: { [key: string]: number }) {
+  async runZeroTouchAudit(
+    matchId: string, 
+    requestedVerticals: string[], 
+    marketOdds?: { [key: string]: number },
+    liveData?: { score: { home: number, away: number }, elapsed: number }
+  ) {
     const startTime = Date.now();
-    console.log(`[Argos v4.5] Iniciando Auditoria Zero-Touch para matchId: ${matchId}`);
+    console.log(`[Argos v5.0] Iniciando Auditoria Zero-Touch para matchId: ${matchId}`);
 
     try {
       // 1. DATA INGESTION: Extração e Normalização Automática (Data-In)
       const ingestedData = await this.ingestionService.ingest(matchId);
+      
+      // Ajuste de Live Data se disponível
+      const currentScore = liveData?.score || { home: 0, away: 0 };
+      const elapsed = liveData?.elapsed || 0;
 
       // 2. CACHE SEMÂNTICO: Verificar análise recente
       const { data: existingLedger } = await this.supabase
@@ -122,7 +132,7 @@ export class ArgosOrchestratorV4 {
             }
           }
         };
-        return this.processVertical(vertical, payload, regime);
+        return this.processVertical(vertical, payload, regime, elapsed, currentScore);
       });
 
       const rawSignals = (await Promise.all(simulationPromises)).flat();
@@ -196,7 +206,9 @@ export class ArgosOrchestratorV4 {
   private async processVertical(
     vertical: string,
     payload: AuditPayload,
-    regime: any
+    regime: any,
+    elapsed: number = 0,
+    currentScore: { home: number, away: number } = { home: 0, away: 0 }
   ): Promise<ArgosSignal[]> {
     const signals: ArgosSignal[] = [];
 
@@ -206,7 +218,9 @@ export class ArgosOrchestratorV4 {
           { homeMean: payload.baseMetrics.home.goals || 1.2, awayMean: payload.baseMetrics.away.goals || 1.0 },
           regime,
           1500,
-          'GOALS'
+          'GOALS',
+          elapsed,
+          currentScore
         );
         signals.push({
           matchId: payload.matchId,
@@ -271,7 +285,9 @@ export class ArgosOrchestratorV4 {
           { homeMean: payload.baseMetrics.home.shots || 12, awayMean: payload.baseMetrics.away.shots || 10 },
           regime,
           1500,
-          'SHOTS'
+          'SHOTS',
+          elapsed,
+          { home: 0, away: 0 } // Shots não acumulam no placar para fins de simulação de Poisson residual
         );
         signals.push({
           matchId: payload.matchId,
@@ -288,7 +304,9 @@ export class ArgosOrchestratorV4 {
           { homeMean: payload.baseMetrics.home.goals || 1.2, awayMean: payload.baseMetrics.away.goals || 1.0 },
           regime,
           1500,
-          'GOALS'
+          'GOALS',
+          elapsed,
+          currentScore
         );
         signals.push({
           matchId: payload.matchId,

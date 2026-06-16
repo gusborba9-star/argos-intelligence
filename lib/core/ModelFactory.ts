@@ -28,31 +28,51 @@ export class ModelFactory {
    * Simulação de Monte Carlo com 1.500 iterações
    * Agora suporta múltiplos mercados e ajustes de regime
    */
+  /**
+   * Simulação de Monte Carlo com Probabilidade Condicional (Time-Aware)
+   * @param elapsedTime Tempo decorrido em minutos (0-90)
+   * @param currentScore Placar atual { home: number, away: number }
+   */
   static runMonteCarlo(
     metrics: MarketMetrics,
     regime: RegimeProfile,
     iterations: number = 1500,
-    marketType: 'GOALS' | 'CORNERS' | 'CARDS' | 'SHOTS' = 'GOALS'
+    marketType: 'GOALS' | 'CORNERS' | 'CARDS' | 'SHOTS' = 'GOALS',
+    elapsedTime: number = 0,
+    currentScore: { home: number, away: number } = { home: 0, away: 0 }
   ): SimulationResult {
     let homeWins = 0;
     let draws = 0;
     let awayWins = 0;
     let totalScore = 0;
+    let over25Count = 0;
+
+    // 1. CÁLCULO DE TEMPO RESIDUAL (Time-Decay)
+    const remainingTimeRatio = Math.max(0, (90 - elapsedTime) / 90);
+    
+    // 2. INTENSIDADE POR MINUTO (Fadiga & Contexto)
+    // Se o tempo passa e o evento não ocorre, a intensidade residual cai exponencialmente
+    const intensityFactor = Math.pow(remainingTimeRatio, 1.1); 
 
     // Ajuste de dispersão baseado no regime
     const variance = regime.variance_multiplier || 1.0;
     
     for (let i = 0; i < iterations; i++) {
-      const hLambda = metrics.homeMean * (1 + (Math.random() - 0.5) * (variance - 1));
-      const aLambda = metrics.awayMean * (1 + (Math.random() - 0.5) * (variance - 1));
+      // Aplicamos o intensityFactor nas médias para refletir o tempo restante
+      const hLambda = (metrics.homeMean * intensityFactor) * (1 + (Math.random() - 0.5) * (variance - 1));
+      const aLambda = (metrics.awayMean * intensityFactor) * (1 + (Math.random() - 0.5) * (variance - 1));
 
-      const hScore = this.poisson(hLambda);
-      const aScore = this.poisson(aLambda);
+      const hAddedScore = this.poisson(hLambda);
+      const aAddedScore = this.poisson(aLambda);
 
-      totalScore += (hScore + aScore);
+      const finalHomeScore = currentScore.home + hAddedScore;
+      const finalAwayScore = currentScore.away + aAddedScore;
 
-      if (hScore > aScore) homeWins++;
-      else if (hScore === aScore) draws++;
+      totalScore += (hAddedScore + aAddedScore);
+      if (finalHomeScore + finalAwayScore > 2.5) over25Count++;
+
+      if (finalHomeScore > finalAwayScore) homeWins++;
+      else if (finalHomeScore === finalAwayScore) draws++;
       else awayWins++;
     }
 
@@ -60,7 +80,9 @@ export class ModelFactory {
       probabilities: {
         home: homeWins / iterations,
         draw: draws / iterations,
-        away: awayWins / iterations
+        away: awayWins / iterations,
+        over: over25Count / iterations,
+        under: 1 - (over25Count / iterations)
       },
       iterations,
       expectedValue: totalScore / iterations
