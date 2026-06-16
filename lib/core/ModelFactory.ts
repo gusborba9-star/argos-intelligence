@@ -71,27 +71,38 @@ export class ModelFactory {
     // Se um time está vencendo por 2+, a intensidade de escanteios cai.
     // Se está perdendo, a urgência aumenta a busca por fundo de campo.
     const goalDiff = currentScore.home - currentScore.away;
+    const totalGoals = currentScore.home + currentScore.away;
+    
+    // 4. SHOCK & VOLATILITY ENGINE (Estado de Arte)
+    // Detecta mudanças bruscas (ex: 2x1) que resetam a inércia tática
     let homeUrgency = 1.0;
     let awayUrgency = 1.0;
+    let volatilityMultiplier = 1.0;
 
-    if (goalDiff >= 2) {
-      homeUrgency = 0.7; // Acomodação (menos cantos)
-      awayUrgency = 1.3; // Desespero (mais cantos/ataques)
+    if (Math.abs(goalDiff) === 1 && totalGoals >= 2) {
+      // "Shock State": Placar perigoso (2x1, 1x2, 3x2). Explosão de intensidade.
+      homeUrgency = 1.45; 
+      awayUrgency = 1.45;
+      volatilityMultiplier = 1.35; // Aumenta a incerteza/caos
+    } else if (goalDiff >= 2) {
+      homeUrgency = 0.65; // Acomodação profunda
+      awayUrgency = 1.40; // Desespero total do visitante
     } else if (goalDiff <= -2) {
-      homeUrgency = 1.3;
-      awayUrgency = 0.7;
+      homeUrgency = 1.40;
+      awayUrgency = 0.65;
     } else if (goalDiff === 0 && elapsedTime > 70) {
-      homeUrgency = 1.15; // Busca pelo desempate
-      awayUrgency = 1.15;
+      homeUrgency = 1.25; // Tensão máxima pelo gol da vitória
+      awayUrgency = 1.25;
     }
 
-    // Ajuste de dispersão baseado no regime
-    const variance = (regime.variance_multiplier || 1.0) * importanceMultiplier;
+    // 5. TENSOR DE DECISÃO MULTIMODAL
+    // Unifica Regime, Contexto e Volatilidade em um único vetor de variância
+    const finalVariance = (regime.variance_multiplier || 1.0) * importanceMultiplier * volatilityMultiplier;
     
     for (let i = 0; i < iterations; i++) {
-      // Aplicamos o intensityFactor e Urgency nas médias
-      const hLambda = (metrics.homeMean * intensityFactor * homeUrgency) * (1 + (Math.random() - 0.5) * (variance - 1));
-      const aLambda = (metrics.awayMean * intensityFactor * awayUrgency) * (1 + (Math.random() - 0.5) * (variance - 1));
+      // Aplicamos o intensityFactor e Urgency nas médias com a Variância Multimodal
+      const hLambda = (metrics.homeMean * intensityFactor * homeUrgency) * (1 + (Math.random() - 0.5) * (finalVariance - 1));
+      const aLambda = (metrics.awayMean * intensityFactor * awayUrgency) * (1 + (Math.random() - 0.5) * (finalVariance - 1));
 
       const hAddedScore = this.poisson(hLambda);
       const aAddedScore = this.poisson(aLambda);

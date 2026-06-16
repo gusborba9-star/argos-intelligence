@@ -261,17 +261,30 @@ export class ArgosOrchestratorV4 {
           status: "OPTIMIZED" as any
         });
 
-        // CHAMELEON: Inversão para UNDER_CORNERS em regime de acomodação
+        // UNIVERSAL ALPHA LOGIC: Busca bidirecional de valor extremo
         const probUnderCorners = 1 - probOverCorners;
-        if (probUnderCorners > 0.70) {
+        
+        // Inversão para UNDER se houver acomodação ou probabilidade esmagadora
+        if (probUnderCorners > 0.65) {
           signals.push({
             matchId: payload.matchId,
             market: "UNDER_9_5_CORNERS",
             vertical: MarketVertical.CORNERS,
             probability: probUnderCorners,
-            expectedValue: (probUnderCorners * 1.85) - 1,
+            expectedValue: (probUnderCorners * 1.90) - 1, // Alpha em mercados de inércia
             status: "HEDGED" as any,
-            reasoning: "Chameleon Logic: Jogo esfriou. Valor estratégico em UNDER Escanteios."
+            reasoning: "Universal Alpha: Detecção de inércia tática. Inversão estratégica para UNDER."
+          } as any);
+        } else if (probOverCorners > 0.65) {
+          // Reforço de sinal de OVER se a intensidade for reativada (Shock Engine)
+          signals.push({
+            matchId: payload.matchId,
+            market: "OVER_9_5_CORNERS",
+            vertical: MarketVertical.CORNERS,
+            probability: probOverCorners,
+            expectedValue: (probOverCorners * 1.80) - 1,
+            status: "OPTIMIZED" as any,
+            reasoning: "Shock Engine: Reativação de intensidade detectada. Valor em OVER."
           } as any);
         }
         break;
