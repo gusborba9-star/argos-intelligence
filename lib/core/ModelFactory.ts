@@ -67,13 +67,31 @@ export class ModelFactory {
     // Se for Copa do Mundo, a variância é maior devido à tensão emocional
     const importanceMultiplier = regime.reasoning_tags?.includes("WORLD_CUP") ? 1.25 : 1.0;
 
+    // 4. MATRIZ DE CORRELAÇÃO DE GAME STATE (Gols vs Escanteios)
+    // Se um time está vencendo por 2+, a intensidade de escanteios cai.
+    // Se está perdendo, a urgência aumenta a busca por fundo de campo.
+    const goalDiff = score.home - score.away;
+    let homeUrgency = 1.0;
+    let awayUrgency = 1.0;
+
+    if (goalDiff >= 2) {
+      homeUrgency = 0.7; // Acomodação (menos cantos)
+      awayUrgency = 1.3; // Desespero (mais cantos/ataques)
+    } else if (goalDiff <= -2) {
+      homeUrgency = 1.3;
+      awayUrgency = 0.7;
+    } else if (goalDiff === 0 && elapsedTime > 70) {
+      homeUrgency = 1.15; // Busca pelo desempate
+      awayUrgency = 1.15;
+    }
+
     // Ajuste de dispersão baseado no regime
     const variance = (regime.variance_multiplier || 1.0) * importanceMultiplier;
     
     for (let i = 0; i < iterations; i++) {
-      // Aplicamos o intensityFactor nas médias para refletir o tempo restante
-      const hLambda = (metrics.homeMean * intensityFactor) * (1 + (Math.random() - 0.5) * (variance - 1));
-      const aLambda = (metrics.awayMean * intensityFactor) * (1 + (Math.random() - 0.5) * (variance - 1));
+      // Aplicamos o intensityFactor e Urgency nas médias
+      const hLambda = (metrics.homeMean * intensityFactor * homeUrgency) * (1 + (Math.random() - 0.5) * (variance - 1));
+      const aLambda = (metrics.awayMean * intensityFactor * awayUrgency) * (1 + (Math.random() - 0.5) * (variance - 1));
 
       const hAddedScore = this.poisson(hLambda);
       const aAddedScore = this.poisson(aLambda);
