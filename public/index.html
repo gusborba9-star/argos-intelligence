@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Argos Intelligence - The Oracle of Sports Analytics</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-black: #0A0A0A;
+            --secondary-black: #1A1A1A;
+            --tertiary-black: #2A2A2A;
+            --gold: #D4AF37;
+            --gold-light: #E8C547;
+            --text-light: #F5F5F5;
+            --text-muted: #A0A0A0;
+            --accent-blue: #00D9FF;
+            --success-green: #00C853;
+            --danger-red: #FF3D3D;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--primary-black) 0%, var(--secondary-black) 100%);
+            color: var(--text-light);
+            overflow-x: hidden;
+        }
+
+        /* SIDEBAR RETRÁTIL */
+        .sidebar {
+            position: fixed;
+            left: -320px;
+            top: 0;
+            width: 300px;
+            height: 100vh;
+            background: linear-gradient(180deg, var(--secondary-black) 0%, var(--tertiary-black) 100%);
+            border-right: 2px solid var(--gold);
+            padding: 30px 20px;
+            transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 1000;
+            overflow-y: auto;
+        }
+
+        .sidebar.active {
+            left: 0;
+        }
+
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--gold);
+        }
+
+        .sidebar-logo {
+            font-size: 24px;
+            font-weight: 900;
+            color: var(--gold);
+            letter-spacing: 2px;
+        }
+
+        .sidebar-close {
+            background: none;
+            border: none;
+            color: var(--gold);
+            font-size: 28px;
+            cursor: pointer;
+            transition: transform 0.3s;
+        }
+
+        .sidebar-close:hover {
+            transform: rotate(90deg);
+        }
+
+        .sidebar-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 40px;
+        }
+
+        .nav-item {
+            padding: 15px 20px;
+            background: rgba(212, 175, 55, 0.05);
+            border-left: 3px solid transparent;
+            color: var(--text-light);
+            cursor: pointer;
+            transition: all 0.3s;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+
+        .nav-item:hover {
+            background: rgba(212, 175, 55, 0.15);
+            border-left-color: var(--gold);
+            transform: translateX(5px);
+        }
+
+        .nav-item.active {
+            background: rgba(212, 175, 55, 0.2);
+            border-left-color: var(--gold);
+            color: var(--gold);
+        }
+
+        .sidebar-divider {
+            height: 1px;
+            background: rgba(212, 175, 55, 0.2);
+            margin: 20px 0;
+        }
+
+        .sidebar-about {
+            padding: 20px;
+            background: rgba(0, 217, 255, 0.05);
+            border-radius: 8px;
+            border-left: 3px solid var(--accent-blue);
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-muted);
+        }
+
+        .sidebar-about-title {
+            color: var(--accent-blue);
+            font-weight: 700;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        /* MENU TOGGLE BUTTON */
+        .menu-toggle {
+            position: fixed;
+            top: 30px;
+            left: 30px;
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%);
+            border: none;
+            border-radius: 12px;
+            color: var(--primary-black);
+            font-size: 24px;
+            cursor: pointer;
+            z-index: 999;
+            transition: all 0.3s;
+            box-shadow: 0 8px 24px rgba(212, 175, 55, 0.3);
+        }
+
+        .menu-toggle:hover {
+            transform: scale(1.1);
+            box-shadow: 0 12px 32px rgba(212, 175, 55, 0.5);
+        }
+
+        /* MAIN CONTAINER */
+        .main-container {
+            margin-left: 0;
+            padding: 30px;
+            min-height: 100vh;
+            transition: margin-left 0.4s;
+        }
+
+        /* HEADER */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 50px;
+            padding-bottom: 30px;
+            border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+        }
+
+        .greeting {
+            font-size: 32px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .user-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--gold) 0%, var(--accent-blue) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 20px;
+        }
+
+        .user-tier {
+            text-align: right;
+        }
+
+        .tier-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .tier-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--gold);
+        }
+
+        /* PAGES */
+        .page {
+            display: none;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* HOME PAGE */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+
+        .card {
+            background: linear-gradient(135deg, rgba(212, 175, 55, 0.05) 0%, rgba(0, 217, 255, 0.05) 100%);
+            border: 1px solid rgba(212, 175, 55, 0.2);
+            border-radius: 16px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: var(--gold);
+            box-shadow: 0 12px 32px rgba(212, 175, 55, 0.2);
+        }
+
+        .card-title {
+            font-size: 14px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+        }
+
+        .card-value {
+            font-size: 36px;
+            font-weight: 900;
+            color: var(--gold);
+            margin-bottom: 10px;
+        }
+
+        .card-subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .card.positive .card-value {
+            color: var(--success-green);
+        }
+
+        .card.negative .card-value {
+            color: var(--danger-red);
+        }
+
+        /* SIGNALS SECTION */
+        .signals-container {
+            margin-top: 40px;
+        }
+
+        .section-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--gold);
+            margin-bottom: 25px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .signals-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .signal-card {
+            background: linear-gradient(135deg, rgba(212, 175, 55, 0.08) 0%, rgba(0, 217, 255, 0.08) 100%);
+            border: 1px solid rgba(212, 175, 55, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+
+        .signal-card:hover {
+            transform: scale(1.02);
+            border-color: var(--gold);
+            box-shadow: 0 8px 24px rgba(212, 175, 55, 0.15);
+        }
+
+        .signal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .signal-match {
+            font-weight: 700;
+            color: var(--text-light);
+        }
+
+        .signal-tier {
+            font-size: 11px;
+            padding: 4px 12px;
+            background: rgba(212, 175, 55, 0.2);
+            border-radius: 20px;
+            color: var(--gold);
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .signal-tier.vip {
+            background: rgba(0, 217, 255, 0.2);
+            color: var(--accent-blue);
+        }
+
+        .signal-market {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        .signal-probability {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .prob-label {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .prob-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--gold);
+        }
+
+        .signal-ev {
+            font-size: 12px;
+            color: var(--success-green);
+            font-weight: 600;
+        }
+
+        .signal-ev.negative {
+            color: var(--danger-red);
+        }
+
+        /* FLOATING BUTTONS */
+        .floating-button {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%);
+            border: none;
+            border-radius: 50%;
+            color: var(--primary-black);
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 8px 24px rgba(212, 175, 55, 0.4);
+            transition: all 0.3s;
+            z-index: 500;
+        }
+
+        .floating-button:hover {
+            transform: scale(1.15);
+            box-shadow: 0 12px 32px rgba(212, 175, 55, 0.6);
+        }
+
+        /* TRACK RECORD PAGE */
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .stats-table th {
+            background: rgba(212, 175, 55, 0.1);
+            padding: 15px;
+            text-align: left;
+            color: var(--gold);
+            font-weight: 700;
+            border-bottom: 2px solid var(--gold);
+        }
+
+        .stats-table td {
+            padding: 15px;
+            border-bottom: 1px solid rgba(212, 175, 55, 0.1);
+            color: var(--text-light);
+        }
+
+        .stats-table tr:hover {
+            background: rgba(212, 175, 55, 0.05);
+        }
+
+        /* ARGOS INTELLIGENCE PAGE */
+        .intelligence-section {
+            margin-bottom: 40px;
+        }
+
+        .intelligence-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--gold);
+            margin-bottom: 15px;
+        }
+
+        .intelligence-text {
+            font-size: 14px;
+            line-height: 1.8;
+            color: var(--text-muted);
+            margin-bottom: 20px;
+        }
+
+        .tech-stack {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .tech-item {
+            background: rgba(212, 175, 55, 0.1);
+            border-left: 3px solid var(--gold);
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .tech-name {
+            font-weight: 700;
+            color: var(--gold);
+            margin-bottom: 5px;
+        }
+
+        .tech-desc {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 768px) {
+            .main-container {
+                padding: 20px;
+            }
+
+            .greeting {
+                font-size: 24px;
+            }
+
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header {
+                flex-direction: column;
+                gap: 20px;
+                align-items: flex-start;
+            }
+
+            .user-info {
+                width: 100%;
+                justify-content: space-between;
+            }
+        }
+
+        /* OVERLAY */
+        .sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            z-index: 999;
+        }
+
+        .sidebar-overlay.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <!-- SIDEBAR -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo">ARGOS</div>
+            <button class="sidebar-close" id="sidebarClose">✕</button>
+        </div>
+
+        <div class="sidebar-nav">
+            <div class="nav-item active" data-page="home">🏠 Home</div>
+            <div class="nav-item" data-page="oracle">🔮 The Oracle</div>
+            <div class="nav-item" data-page="track-record">📊 Track Record</div>
+            <div class="nav-item" data-page="intelligence">🧠 Argos Intelligence</div>
+            <div class="nav-item" data-page="vip-lounge">👑 VIP Lounge</div>
+        </div>
+
+        <div class="sidebar-divider"></div>
+
+        <div class="sidebar-about">
+            <div class="sidebar-about-title">🌌 QUEM É ARGOS?</div>
+            <p>Argos é o maior sistema de análise esportiva do mundo, alimentado por RAG, Poison, MCP e 1.500 simulações de Monte Carlo. Processamos cada jogo como os maiores sindicatos americanos: com precisão cirúrgica, visão multidimensional e assertividade impossível de ser superada.</p>
+        </div>
+    </div>
+
+    <!-- MAIN CONTAINER -->
+    <div class="main-container">
+        <!-- MENU TOGGLE -->
+        <button class="menu-toggle" id="menuToggle">☰</button>
+
+        <!-- HEADER -->
+        <div class="header">
+            <div class="greeting" id="greeting">Bom dia, Apostador</div>
+            <div class="user-info">
+                <div class="user-avatar">A</div>
+                <div class="user-tier">
+                    <div class="tier-label">Seu Plano</div>
+                    <div class="tier-name" id="tierName">FREE</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- HOME PAGE -->
+        <div class="page active" id="home">
+            <div class="dashboard-grid">
+                <div class="card">
+                    <div class="card-title">Sinais Hoje</div>
+                    <div class="card-value">12</div>
+                    <div class="card-subtitle">+3 vs ontem</div>
+                </div>
+                <div class="card positive">
+                    <div class="card-title">Taxa de Acerto</div>
+                    <div class="card-value">78%</div>
+                    <div class="card-subtitle">Últimos 30 dias</div>
+                </div>
+                <div class="card positive">
+                    <div class="card-title">ROI Acumulado</div>
+                    <div class="card-value">+142%</div>
+                    <div class="card-subtitle">Desde o início</div>
+                </div>
+            </div>
+
+            <div class="signals-container">
+                <div class="section-title">🔥 Oportunidades em Destaque</div>
+                <div class="signals-grid" id="signalsGrid">
+                    <!-- Signals will be populated here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- ORACLE PAGE -->
+        <div class="page" id="oracle">
+            <div class="section-title">🔮 The Oracle - Sinais em Tempo Real</div>
+            <div class="signals-grid" id="oracleSignals">
+                <!-- Oracle signals will be populated here -->
+            </div>
+        </div>
+
+        <!-- TRACK RECORD PAGE -->
+        <div class="page" id="track-record">
+            <div class="section-title">📊 Histórico de Assertividade</div>
+            <table class="stats-table">
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Jogo</th>
+                        <th>Sinal</th>
+                        <th>Probabilidade</th>
+                        <th>Resultado</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>17/06/2026</td>
+                        <td>Argentina vs Algeria</td>
+                        <td>HOME_WIN</td>
+                        <td>79%</td>
+                        <td>✓ Acertou</td>
+                        <td><span style="color: var(--success-green);">✓ WIN</span></td>
+                    </tr>
+                    <tr>
+                        <td>17/06/2026</td>
+                        <td>Austria vs Jordan</td>
+                        <td>OVER 2.5</td>
+                        <td>56%</td>
+                        <td>✓ Acertou</td>
+                        <td><span style="color: var(--success-green);">✓ WIN</span></td>
+                    </tr>
+                    <tr>
+                        <td>17/06/2026</td>
+                        <td>Portugal vs Congo</td>
+                        <td>HOME_WIN</td>
+                        <td>75%</td>
+                        <td>✓ Acertou</td>
+                        <td><span style="color: var(--success-green);">✓ WIN</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ARGOS INTELLIGENCE PAGE -->
+        <div class="page" id="intelligence">
+            <div class="section-title">🧠 Argos Intelligence</div>
+
+            <div class="intelligence-section">
+                <div class="intelligence-title">O que é Argos?</div>
+                <div class="intelligence-text">
+                    Argos é a fusão de inteligência artificial avançada com análise estatística de nível profissional. 
+                    Nós processamos cada jogo como os maiores sindicatos de apostas do mundo: com precisão cirúrgica, 
+                    visão multidimensional e uma taxa de assertividade que desafia a concorrência.
+                </div>
+            </div>
+
+            <div class="intelligence-section">
+                <div class="intelligence-title">Nossa Tecnologia</div>
+                <div class="tech-stack">
+                    <div class="tech-item">
+                        <div class="tech-name">🔗 RAG (Retrieval-Augmented Generation)</div>
+                        <div class="tech-desc">Contexto em tempo real: notícias, lesões, clima e dinâmica de mercado.</div>
+                    </div>
+                    <div class="tech-item">
+                        <div class="tech-name">☠️ Poison (Pattern Detection)</div>
+                        <div class="tech-desc">Detecção de anomalias e padrões de manipulação de mercado.</div>
+                    </div>
+                    <div class="tech-item">
+                        <div class="tech-name">🎮 MCP (Model Context Protocol)</div>
+                        <div class="tech-desc">Orquestração inteligente de múltiplos modelos em paralelo.</div>
+                    </div>
+                    <div class="tech-item">
+                        <div class="tech-name">🎲 Monte Carlo (1.500 Simulações)</div>
+                        <div class="tech-desc">Precisão estatística de nível profissional em cada análise.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="intelligence-section">
+                <div class="intelligence-title">Quantum State Engine</div>
+                <div class="intelligence-text">
+                    O motor de Argos não é estático. Ele reage em tempo real a mudanças de placar, 
+                    detecta "Shock States" (ex: 2x1 que reativa o caos), e inverte sinais instantaneamente 
+                    quando a dinâmica tática muda. Isso nos permite lucrar tanto na euforia quanto na apatia.
+                </div>
+            </div>
+
+            <div class="intelligence-section">
+                <div class="intelligence-title">Mercados Cobertos</div>
+                <div class="intelligence-text">
+                    Winner (Casa/Fora/Empate) • Gols (Over/Under) • Escanteios (Over/Under) • 
+                    Cartões (Over/Under) • Handicaps • Ambas Marcam • Finalizações • Equipe com Mais Cantos • 
+                    Equipe com Mais Cartões • E muito mais...
+                </div>
+            </div>
+        </div>
+
+        <!-- VIP LOUNGE PAGE -->
+        <div class="page" id="vip-lounge">
+            <div class="section-title">👑 VIP Lounge - Acesso Exclusivo</div>
+            <div class="card">
+                <div class="card-title">Upgrade para VIP</div>
+                <div class="intelligence-text" style="margin-top: 20px;">
+                    Desbloqueie o arsenal completo do Argos:
+                    <br><br>
+                    ✓ 12+ mercados por jogo<br>
+                    ✓ Kelly Criterion (Gestão de Banca)<br>
+                    ✓ Sinais de Nicho (Escanteios, Cartões)<br>
+                    ✓ Análise de Liquidez de Mercado<br>
+                    ✓ Alertas em Tempo Real<br>
+                    ✓ Suporte Prioritário<br>
+                </div>
+                <button class="floating-button" style="position: relative; bottom: auto; right: auto; margin-top: 20px; width: 100%; height: auto; padding: 15px; border-radius: 8px;">
+                    Upgrade Agora
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- FLOATING ACTION BUTTON -->
+    <button class="floating-button" id="floatingAction">💬</button>
+
+    <script>
+        // SIDEBAR TOGGLE
+        const menuToggle = document.getElementById('menuToggle');
+        const sidebar = document.getElementById('sidebar');
+        const sidebarClose = document.getElementById('sidebarClose');
+        const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+        menuToggle.addEventListener('click', () => {
+            sidebar.classList.add('active');
+            sidebarOverlay.classList.add('active');
+        });
+
+        sidebarClose.addEventListener('click', () => {
+            sidebar.classList.remove('active');
+            sidebarOverlay.classList.remove('active');
+        });
+
+        sidebarOverlay.addEventListener('click', () => {
+            sidebar.classList.remove('active');
+            sidebarOverlay.classList.remove('active');
+        });
+
+        // PAGE NAVIGATION
+        const navItems = document.querySelectorAll('.nav-item');
+        const pages = document.querySelectorAll('.page');
+
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                const pageName = item.getAttribute('data-page');
+                
+                // Remove active from all nav items and pages
+                navItems.forEach(nav => nav.classList.remove('active'));
+                pages.forEach(page => page.classList.remove('active'));
+
+                // Add active to clicked item and corresponding page
+                item.classList.add('active');
+                document.getElementById(pageName).classList.add('active');
+
+                // Close sidebar
+                sidebar.classList.remove('active');
+                sidebarOverlay.classList.remove('active');
+            });
+        });
+
+        // GREETING BY TIME
+        function updateGreeting() {
+            const hour = new Date().getHours();
+            const greetingEl = document.getElementById('greeting');
+            let greeting = '';
+
+            if (hour >= 5 && hour < 12) {
+                greeting = '🌅 Bom dia, Apostador';
+            } else if (hour >= 12 && hour < 18) {
+                greeting = '☀️ Boa tarde, Apostador';
+            } else {
+                greeting = '🌙 Boa noite, Apostador';
+            }
+
+            greetingEl.textContent = greeting;
+        }
+
+        updateGreeting();
+        setInterval(updateGreeting, 60000);
+
+        // POPULATE SIGNALS
+        function populateSignals() {
+            const signals = [
+                {
+                    match: 'Argentina vs Algeria',
+                    market: 'HOME_WIN',
+                    probability: 79,
+                    ev: 27.5,
+                    tier: 'free'
+                },
+                {
+                    match: 'Austria vs Jordan',
+                    market: 'OVER 2.5 GOALS',
+                    probability: 56,
+                    ev: 12.3,
+                    tier: 'free'
+                },
+                {
+                    match: 'Portugal vs Congo',
+                    market: 'MOST_CORNERS_HOME',
+                    probability: 78,
+                    ev: 15.0,
+                    tier: 'vip'
+                },
+                {
+                    match: 'Argentina vs Algeria',
+                    market: 'OVER 9.5 CORNERS',
+                    probability: 68,
+                    ev: 29.2,
+                    tier: 'vip'
+                }
+            ];
+
+            const signalsGrid = document.getElementById('signalsGrid');
+            const oracleSignals = document.getElementById('oracleSignals');
+
+            signals.forEach(signal => {
+                const card = document.createElement('div');
+                card.className = 'signal-card';
+                card.innerHTML = `
+                    <div class="signal-header">
+                        <div class="signal-match">${signal.match}</div>
+                        <div class="signal-tier ${signal.tier}">${signal.tier.toUpperCase()}</div>
+                    </div>
+                    <div class="signal-market">${signal.market}</div>
+                    <div class="signal-probability">
+                        <span class="prob-label">Probabilidade</span>
+                        <span class="prob-value">${signal.probability}%</span>
+                    </div>
+                    <div class="signal-ev ${signal.ev < 0 ? 'negative' : ''}">
+                        EV: ${signal.ev > 0 ? '+' : ''}${signal.ev.toFixed(1)}%
+                    </div>
+                `;
+                signalsGrid.appendChild(card.cloneNode(true));
+                oracleSignals.appendChild(card);
+            });
+        }
+
+        populateSignals();
+
+        // FLOATING ACTION BUTTON
+        document.getElementById('floatingAction').addEventListener('click', () => {
+            alert('💬 Chat com Argos em breve!');
+        });
+    </script>
+</body>
+</html>
