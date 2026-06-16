@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { redisCache } from "@/lib/core/RedisCache";
+import { getRedisCacheInstance } from "@/lib/core/RedisCache";
 
 // ============================================================
 // CACHE STATUS ENDPOINT v5.0
@@ -16,8 +16,9 @@ export async function GET(req: Request) {
     const testValue = { timestamp: Date.now(), status: "ok" };
 
     // Tentar escrever e ler do cache
-    await redisCache.set(testKey, testValue, 10);
-    const retrieved = await redisCache.get(testKey);
+    const redis = getRedisCacheInstance();
+    await redis.set(testKey, testValue, 10);
+    const retrieved = await redis.get(testKey);
 
     if (!retrieved) {
       return NextResponse.json(

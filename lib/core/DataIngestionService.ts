@@ -219,7 +219,7 @@ export class DataIngestionService {
     }
   }
 
-  private async getTeamHistory(teamId: number, limit: number, refresh: boolean = false): Promise<FixtureResponse[]> {
+  protected async getTeamHistory(teamId: number, limit: number, refresh: boolean = false): Promise<FixtureResponse[]> {
     const cacheKey = `teamHistory-${teamId}-${limit}`;
     if (!refresh) {
       const cachedHistory = await getRedisCacheInstance().get<FixtureResponse[]>(cacheKey);

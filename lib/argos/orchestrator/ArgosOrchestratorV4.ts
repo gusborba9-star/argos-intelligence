@@ -1,4 +1,5 @@
-import { getSupabaseClient, SupabaseClient } from "@/lib/core/SupabaseClient";
+import { getSupabaseClient } from "@/lib/core/SupabaseClient";
+import { SupabaseClient } from "@supabase/supabase-js";
 import { RegimeEngineV4, ExternalFactors } from "@/lib/argos/regime/RegimeEngineV4";
 import { RAGContextEngine } from "@/lib/argos/regime/RAGContextEngine";
 import { ModelFactory, SimulationResult } from "@/lib/core/ModelFactory";
