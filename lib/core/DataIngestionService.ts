@@ -299,28 +299,33 @@ export class DataIngestionService {
 
     const sums = { goals: 0, corners: 0, cards: 0, shots: 0, shotsOnTarget: 0 };
 
+    if (!history || history.length === 0) {
+      console.warn("[DataIngestionService] Histórico vazio para cálculo de médias. Retornando valores padrão.");
+      return { goals: 1.5, corners: 5, cards: 2, shots: 12, shotsOnTarget: 5 };
+    }
+
     history.forEach((match, index) => {
       const weight = Math.pow(1 - alpha, index);
       totalWeight += weight;
 
       // Usar os gols reais do jogo, se disponíveis
-      const homeGoals = match.goals.home !== null ? match.goals.home : 0;
-      const awayGoals = match.goals.away !== null ? match.goals.away : 0;
+      const homeGoals = typeof match.goals.home === 'number' ? match.goals.home : 0;
+      const awayGoals = typeof match.goals.away === 'number' ? match.goals.away : 0;
       sums.goals += (homeGoals + awayGoals) * weight;
 
       // TODO: Substituir simulações por dados reais de estatísticas (corners, cards, shots, shotsOnTarget)
-      sums.corners += 5 * weight; // Simulação de média
-      sums.cards += 2 * weight; // Simulação de média
-      sums.shots += 12 * weight; // Simulação de média
-      sums.shotsOnTarget += 5 * weight; // Simulação de média
+      sums.corners += 5 * weight; 
+      sums.cards += 2 * weight; 
+      sums.shots += 12 * weight; 
+      sums.shotsOnTarget += 5 * weight; 
     });
 
     return {
-      goals: sums.goals / totalWeight,
-      corners: sums.corners / totalWeight,
-      cards: sums.cards / totalWeight,
-      shots: sums.shots / totalWeight,
-      shotsOnTarget: sums.shotsOnTarget / totalWeight,
+      goals: totalWeight > 0 ? sums.goals / totalWeight : 1.5,
+      corners: totalWeight > 0 ? sums.corners / totalWeight : 5,
+      cards: totalWeight > 0 ? sums.cards / totalWeight : 2,
+      shots: totalWeight > 0 ? sums.shots / totalWeight : 12,
+      shotsOnTarget: totalWeight > 0 ? sums.shotsOnTarget / totalWeight : 5,
     };
   }
 
