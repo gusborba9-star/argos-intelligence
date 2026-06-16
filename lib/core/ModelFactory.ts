@@ -50,12 +50,25 @@ export class ModelFactory {
     // 1. CÁLCULO DE TEMPO RESIDUAL (Time-Decay)
     const remainingTimeRatio = Math.max(0, (90 - elapsedTime) / 90);
     
-    // 2. INTENSIDADE POR MINUTO (Fadiga & Contexto)
-    // Se o tempo passa e o evento não ocorre, a intensidade residual cai exponencialmente
-    const intensityFactor = Math.pow(remainingTimeRatio, 1.1); 
+    // 2. CURVA DE INTENSIDADE NÃO-LINEAR (Momento de Pressão)
+    // Reconhece que o final do jogo tem uma "pressão de desespero" que compensa a fadiga
+    let pressureFactor = 1.0;
+    if (elapsedTime > 75) {
+      // Aumenta a intensidade no final do jogo (75-90 min)
+      pressureFactor = 1.0 + (elapsedTime - 75) * 0.02; 
+    } else if (elapsedTime < 15) {
+      // Intensidade de início de jogo (0-15 min)
+      pressureFactor = 1.15;
+    }
+    
+    const intensityFactor = Math.pow(remainingTimeRatio, 1.1) * pressureFactor;
+
+    // 3. FATOR DE IMPORTÂNCIA (World Cup Bias)
+    // Se for Copa do Mundo, a variância é maior devido à tensão emocional
+    const importanceMultiplier = regime.reasoning_tags?.includes("WORLD_CUP") ? 1.25 : 1.0;
 
     // Ajuste de dispersão baseado no regime
-    const variance = regime.variance_multiplier || 1.0;
+    const variance = (regime.variance_multiplier || 1.0) * importanceMultiplier;
     
     for (let i = 0; i < iterations; i++) {
       // Aplicamos o intensityFactor nas médias para refletir o tempo restante
