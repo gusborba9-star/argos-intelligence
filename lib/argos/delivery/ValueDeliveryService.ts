@@ -54,11 +54,22 @@ export class ValueDeliveryService {
   ): any[] {
     switch (userTier) {
       case 'FREE':
-        return signals.filter(s => s.signal_type === SignalType.VALIDATION || s.status === 'HEDGED');
+        // 1. Regras para Usuários FREE (Nosso Marketing e Validador):
+        // Limitação de Mercado: Restrito a WINNER e GOALS.
+        // Qualidade do Sinal: Prioriza sinais de média a alta assertividade (VALIDATION).
+        return signals.filter(s => 
+          (s.vertical === MarketVertical.WINNER || s.vertical === MarketVertical.GOALS) &&
+          (s.signal_type === SignalType.VALIDATION || s.status === 'HEDGED')
+        );
       case 'PRO':
-        return signals.filter(s => s.signal_type === SignalType.VALUE || s.signal_type === SignalType.VALIDATION || s.status === 'OPTIMIZED' || s.status === 'HEDGED');
+        // PRO: Sinais de 'Value' + 'Validation' em mercados padrão.
+        return signals.filter(s => 
+          (s.signal_type === SignalType.VALUE || s.signal_type === SignalType.VALIDATION || s.status === 'OPTIMIZED' || s.status === 'HEDGED')
+        );
       case 'WHALE/VIP':
-        // WHALE/VIP recebe todos os sinais, a lógica de Kelly será aplicada posteriormente
+        // 2. Regras para Usuários VIP (Inteligência Completa):
+        // Sem Limitações: Recebe todas as verticais (WINNER, GOALS, CORNERS, CARDS, etc.).
+        // Qualidade: Prioriza alta assertividade e EV+ (VALUE).
         return signals;
       default:
         return [];
