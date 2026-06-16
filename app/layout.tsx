@@ -1,17 +1,9 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-
 import "./globals.css";
 
-const inter = Inter({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-inter",
-});
-
 export const metadata: Metadata = {
-  title: "Argos Intelligence",
-  description: "Institutional Predictive Intelligence Platform",
+  title: "Argos Intelligence | The Oracle",
+  description: "Sistema de inteligência quântica bilateral para o mercado esportivo.",
 };
 
 export default function RootLayout({
@@ -21,7 +13,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR">
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <head>
+        <link 
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Playfair+Display:wght@700&display=swap" 
+          rel="stylesheet" 
+        />
+      </head>
+      <body className="antialiased bg-nexus-bg text-white">
         {children}
       </body>
     </html>

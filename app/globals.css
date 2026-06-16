@@ -5,15 +5,21 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Playfair+Display:wght@700&display=swap');
 
 :root {
-  --foreground-rgb: 255, 255, 255;
-  --background-start-rgb: 10, 10, 10;
-  --background-end-rgb: 10, 10, 10;
+  --bg-color: #0a0a0a;
+  --gold: #d4af37;
+  --gold-dark: #996515;
+  --text-primary: #ffffff;
+  --text-secondary: #b0b0b0;
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(212, 175, 55, 0.15);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: rgb(var(--background-start-rgb));
+  background-color: var(--bg-color);
+  color: var(--text-primary);
   font-family: 'Inter', sans-serif;
+  min-height: 100vh;
   margin: 0;
   padding: 0;
   overflow-x: hidden;
@@ -23,9 +29,31 @@ body {
   font-family: 'Playfair Display', serif;
 }
 
+@layer components {
+  .glass-card {
+    @apply bg-nexus-glass border border-nexus-border backdrop-blur-md rounded-[25px] transition-all duration-500;
+  }
+  
+  .glass-card:hover {
+    @apply -translate-y-2 border-nexus-gold/50 shadow-[0_15px_40px_rgba(212,175,55,0.1)];
+  }
+
+  .nexus-title {
+    @apply font-playfair text-nexus-gold;
+  }
+
+  .nav-link {
+    @apply flex items-center p-4 text-text-secondary no-underline rounded-xl transition-all duration-300 font-medium border border-transparent;
+  }
+
+  .nav-link:hover, .nav-link.active {
+    @apply bg-nexus-glass text-nexus-gold border-nexus-border translate-x-1;
+  }
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 ::-webkit-scrollbar-track {
   background: #0A0A0A;
@@ -38,7 +66,6 @@ body {
   background: rgba(212, 175, 55, 0.4);
 }
 
-/* Animations */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }

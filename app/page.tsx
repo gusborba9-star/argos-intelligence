@@ -1,170 +1,162 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import Sidebar from '@/components/ui/Sidebar';
-import SignalCard from '@/components/ui/SignalCard';
-import DashboardCard from '@/components/ui/DashboardCard';
+import React, { useState } from "react";
+import Sidebar from "@/components/ui/Sidebar";
+import DashboardCard from "@/components/ui/DashboardCard";
+import SignalCard from "@/components/ui/SignalCard";
+import NavigationOverlay from "@/components/ui/NavigationOverlay";
 
 export default function Home() {
-  const [activePage, setActivePage] = useState('home');
-  const [isSidebarActive, setIsSidebarActive] = useState(false);
-  const [greeting, setGreeting] = useState('Boa tarde,');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [activePage, setActivePage] = useState("home");
 
-  useEffect(() => {
-    const hour = new Date().getHours();
-    if (hour >= 5 && hour < 12) setGreeting("Bom dia,");
-    else if (hour >= 12 && hour < 18) setGreeting("Boa tarde,");
-    else setGreeting("Boa noite,");
-  }, []);
+  const renderContent = () => {
+    switch (activePage) {
+      case "home":
+        return (
+          <div className="animate-fade-in space-y-10">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <DashboardCard title="Sinais Hoje" value="42" trend="↑ 12% vs ontem" />
+              <DashboardCard title="Taxa de Acerto" value="87.4%" trend="Média 30 dias" />
+              <DashboardCard title="ROI Médio" value="+24.2%" trend="Tier VIP Alpha" />
+            </div>
 
-  const signals = [
-    { teams: "Argentina vs Algeria", league: "World Cup", market: "Home Win", prob: "85.1%", tier: "free" as const },
-    { teams: "Austria vs Jordan", league: "World Cup", market: "Over 2.5 Goals", prob: "63.8%", tier: "free" as const },
-    { teams: "Portugal vs Congo DR", league: "World Cup", market: "Most Corners Home", prob: "78.0%", tier: "vip" as const },
-    { teams: "Argentina vs Algeria", league: "World Cup", market: "Over 9.5 Corners", prob: "68.0%", tier: "vip" as const }
-  ];
-
-  const history = [
-    { date: "16/06", match: "Criciúma vs Ceará", market: "Under 9.5 Corners", res: "✅ Green" },
-    { date: "16/06", match: "Iran vs NZ", market: "Under 2.5 Goals", res: "✅ Green" },
-    { date: "15/06", match: "Londrina vs Avaí", market: "Over 2.5 Goals", res: "✅ Green" }
-  ];
-
-  return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white">
-      <Sidebar 
-        isActive={isSidebarActive} 
-        activePage={activePage} 
-        onNavigate={setActivePage} 
-        onClose={() => setIsSidebarActive(false)} 
-      />
-
-      <main className={`transition-all duration-400 max-w-[1200px] mx-auto p-5 md:p-10 ${isSidebarActive ? 'md:ml-[300px]' : 'md:ml-[300px]'}`}>
-        <header className="flex justify-between items-center mb-10">
-          <div>
-            <h1 className="text-lg font-light text-[#B0B0B0]">{greeting}</h1>
-            <h2 className="text-4xl font-playfair text-[#D4AF37] mt-1">Apostador de Elite</h2>
+            <div>
+              <div className="flex items-center gap-4 mb-8">
+                <h2 className="font-playfair text-3xl text-nexus-gold">Oportunidades em Destaque</h2>
+                <div className="flex-1 h-[1px] bg-nexus-border" />
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <SignalCard 
+                  teams="Real Madrid vs Man City" 
+                  league="Champions League" 
+                  prediction="Over 2.5 Goals" 
+                  tier="vip" 
+                />
+                <SignalCard 
+                  teams="Lakers vs Warriors" 
+                  league="NBA" 
+                  prediction="Warriors ML" 
+                  tier="free" 
+                />
+                <SignalCard 
+                  teams="Alcaraz vs Sinner" 
+                  league="ATP Roland Garros" 
+                  prediction="Sinner +1.5 Sets" 
+                  tier="vip" 
+                />
+              </div>
+            </div>
           </div>
-          <button 
-            onClick={() => setIsSidebarActive(!isSidebarActive)}
-            className="md:hidden bg-white/5 border border-[#D4AF37]/15 color-[#D4AF37] w-[50px] h-[50px] rounded-xl flex items-center justify-center text-2xl shadow-lg transition-all hover:scale-110"
-          >
-            ☰
-          </button>
-        </header>
-
-        {/* PAGE: HOME */}
-        {activePage === 'home' && (
-          <section className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-              <DashboardCard label="Sinais Hoje" value="42" trend="↑ 12% vs ontem" />
-              <DashboardCard label="Taxa de Acerto" value="87.4%" trend="Média 30 dias" />
-              <DashboardCard label="ROI Médio" value="+24.2%" trend="Tier VIP Alpha" />
+        );
+      case "oracle":
+        return (
+          <div className="animate-fade-in text-center py-20">
+            <h2 className="font-playfair text-4xl text-nexus-gold mb-4">The Oracle</h2>
+            <p className="text-text-secondary">Análise em tempo real alimentada por 1.5k simulações Monte Carlo.</p>
+            <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+               <div className="glass-card p-10">Live Feed coming soon...</div>
+               <div className="glass-card p-10">Shock Engine active...</div>
             </div>
-
-            <div className="flex items-center gap-4 mb-8">
-              <h2 className="font-playfair text-3xl text-[#D4AF37] whitespace-nowrap">Oportunidades em Destaque</h2>
-              <div className="h-px bg-[#D4AF37]/15 w-full" />
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {signals.filter(s => s.tier === 'free').map((s, i) => (
-                <SignalCard key={i} {...s} />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* PAGE: ORACLE */}
-        {activePage === 'oracle' && (
-          <section className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="flex items-center gap-4 mb-8">
-              <h2 className="font-playfair text-3xl text-[#D4AF37] whitespace-nowrap">The Oracle | Live Analysis</h2>
-              <div className="h-px bg-[#D4AF37]/15 w-full" />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {signals.map((s, i) => (
-                <SignalCard key={i} {...s} />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* PAGE: TRACK RECORD */}
-        {activePage === 'track' && (
-          <section className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="flex items-center gap-4 mb-8">
-              <h2 className="font-playfair text-3xl text-[#D4AF37] whitespace-nowrap">Track Record | Transparência</h2>
-              <div className="h-px bg-[#D4AF37]/15 w-full" />
-            </div>
-            <div className="bg-white/5 border border-[#D4AF37]/15 p-8 rounded-[25px] overflow-x-auto">
+          </div>
+        );
+      case "track":
+        return (
+          <div className="animate-fade-in">
+            <h2 className="font-playfair text-3xl text-nexus-gold mb-8">Track Record | Transparência</h2>
+            <div className="glass-card overflow-hidden">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-[#D4AF37]/15 text-[#D4AF37]">
-                    <th className="p-4">Data</th>
-                    <th className="p-4">Evento</th>
-                    <th className="p-4">Mercado</th>
-                    <th className="p-4">Resultado</th>
+                  <tr className="border-b border-nexus-border text-nexus-gold">
+                    <th className="p-5 font-semibold">Data</th>
+                    <th className="p-5 font-semibold">Evento</th>
+                    <th className="p-5 font-semibold">Mercado</th>
+                    <th className="p-5 font-semibold">Resultado</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {history.map((h, i) => (
-                    <tr key={i} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                      <td className="p-4 text-[#B0B0B0]">{h.date}</td>
-                      <td className="p-4 font-semibold">{h.match}</td>
-                      <td className="p-4 text-[#B0B0B0]">{h.market}</td>
-                      <td className="p-4 text-[#4CAF50] font-bold">{h.res}</td>
-                    </tr>
-                  ))}
+                <tbody className="text-text-secondary">
+                  <tr className="border-b border-nexus-border/50 hover:bg-white/5 transition-colors">
+                    <td className="p-5">15/06/2026</td>
+                    <td className="p-5">Celtics vs Mavericks</td>
+                    <td className="p-5">Under 210.5</td>
+                    <td className="p-5 text-green-500 font-bold">WIN</td>
+                  </tr>
+                  <tr className="border-b border-nexus-border/50 hover:bg-white/5 transition-colors">
+                    <td className="p-5">15/06/2026</td>
+                    <td className="p-5">Brazil vs Argentina</td>
+                    <td className="p-5">BTTS - Yes</td>
+                    <td className="p-5 text-green-500 font-bold">WIN</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
-          </section>
-        )}
-
-        {/* PAGE: INTELLIGENCE */}
-        {activePage === 'intel' && (
-          <section className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="flex items-center gap-4 mb-8">
-              <h2 className="font-playfair text-3xl text-[#D4AF37] whitespace-nowrap">Argos Intelligence | Tech Stack</h2>
-              <div className="h-px bg-[#D4AF37]/15 w-full" />
-            </div>
+          </div>
+        );
+      case "intel":
+        return (
+          <div className="animate-fade-in space-y-10">
+            <h2 className="font-playfair text-3xl text-nexus-gold">Argos Intelligence | Tech Stack</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <DashboardCard label="Monte Carlo" value="1.5k" trend="Simulações/Vertical" />
-              <DashboardCard label="Shock Engine" value="Live" trend="Volatilidade Real" />
-              <DashboardCard label="Chameleon" value="Bilateral" trend="Inércia Tática" />
+              <div className="glass-card p-8">
+                <h3 className="text-nexus-gold mb-4 font-bold">Monte Carlo</h3>
+                <p className="text-sm text-text-secondary">1.500 simulações por vertical para garantir precisão quântica.</p>
+              </div>
+              <div className="glass-card p-8">
+                <h3 className="text-nexus-gold mb-4 font-bold">Shock Engine</h3>
+                <p className="text-sm text-text-secondary">Detecção de volatilidade em tempo real para mudanças bruscas de placar.</p>
+              </div>
+              <div className="glass-card p-8">
+                <h3 className="text-nexus-gold mb-4 font-bold">Chameleon Logic</h3>
+                <p className="text-sm text-text-secondary">Sistema bilateral que inverte sinais para lucrar na inércia tática.</p>
+              </div>
             </div>
-            <div className="mt-10 p-8 bg-white/5 border border-[#D4AF37]/15 rounded-[25px]">
-              <p className="text-[#B0B0B0] leading-relaxed">
-                O Argos Intelligence não é apenas um software de predição; é um organismo analítico que unifica RAG, Poison, MCP e simulações quânticas para extrair o Alpha de qualquer mercado esportivo.
-              </p>
-            </div>
-          </section>
-        )}
+          </div>
+        );
+      case "vip":
+        return (
+          <div className="animate-fade-in flex flex-col items-center justify-center py-20">
+            <div className="text-6xl mb-6">💎</div>
+            <h2 className="font-playfair text-4xl text-nexus-gold mb-4">VIP Lounge</h2>
+            <p className="text-text-secondary mb-10 text-center max-w-lg">
+              Acesso restrito aos sinais Alpha com maior confiança e ROI projetado superior a 20% ao mês.
+            </p>
+            <button className="bg-nexus-gold text-black px-10 py-4 rounded-full font-bold hover:scale-105 transition-transform shadow-[0_0_30px_rgba(212,175,55,0.3)]">
+              UPGRADE PARA VIP
+            </button>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
 
-        {/* PAGE: VIP */}
-        {activePage === 'vip' && (
-          <section className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="flex items-center gap-4 mb-8">
-              <h2 className="font-playfair text-3xl text-[#D4AF37] whitespace-nowrap">VIP Lounge | Alpha Strategy</h2>
-              <div className="h-px bg-[#D4AF37]/15 w-full" />
-            </div>
-            <div className="bg-white/5 border border-[#D4AF37]/15 p-16 rounded-[25px] text-center">
-              <h2 className="font-playfair text-[#D4AF37] text-5xl mb-6">Torne-se um Whale</h2>
-              <p className="text-[#B0B0B0] text-xl mb-10 max-w-2xl mx-auto">
-                Acesse Kelly Criterion, Mercados de Nicho e Sinais Exclusivos de Sindicato com o motor de maior assertividade do mercado mundial.
-              </p>
-              <button className="bg-[#D4AF37] text-black px-12 py-4 rounded-full font-bold text-lg transition-all hover:scale-105 hover:shadow-[0_0_30px_rgba(212,175,55,0.4)]">
-                FALAR COM CONSULTOR
-              </button>
-            </div>
-          </section>
-        )}
+  return (
+    <div className="min-h-screen bg-nexus-bg text-white selection:bg-nexus-gold/30">
+      <Sidebar 
+        isOpen={isSidebarOpen} 
+        activePage={activePage} 
+        onPageChange={setActivePage} 
+        onClose={() => setIsSidebarOpen(false)} 
+      />
+
+      <main className="max-w-7xl mx-auto px-6 py-10 md:py-16 transition-all duration-500">
+        <NavigationOverlay 
+          onToggle={() => setIsSidebarOpen(true)} 
+          userName="Apostador de Elite" 
+        />
+
+        <div className="mt-8">
+          {renderContent()}
+        </div>
       </main>
 
-      {/* FLOATING ACTION BUTTON */}
-      <button className="fixed bottom-8 right-8 w-16 h-16 bg-[#D4AF37] text-black rounded-full flex items-center justify-center text-3xl shadow-[0_10px_30px_rgba(212,175,55,0.3)] transition-all hover:scale-110 hover:rotate-12 z-[900]">
-        💎
+      {/* FAB - Floating Action Button */}
+      <button 
+        className="fixed bottom-8 right-8 w-16 h-16 bg-nexus-gold text-black rounded-full flex items-center justify-center text-3xl shadow-[0_10px_30px_rgba(212,175,55,0.3)] z-[900] transition-all duration-500 hover:scale-110 hover:rotate-90 active:scale-95"
+        onClick={() => setIsSidebarOpen(true)}
+      >
+        +
       </button>
     </div>
   );
