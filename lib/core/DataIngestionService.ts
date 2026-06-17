@@ -9,6 +9,7 @@ import { circuitBreakerPool } from "@/lib/core/CircuitBreaker";
 
 export interface AdjustedMetrics {
   goals: number;
+  goalsHT: number;
   corners: number;
   cards: number;
   shots: number;
@@ -236,6 +237,9 @@ export class DataIngestionService {
         `${this.baseUrl}/fixtures?team=${teamId}&last=${limit}`,
         { headers: { "x-apisports-key": this.apiKey } }
       );
+    }).catch(err => {
+        console.error(`[DataIngestionService] Erro ao buscar histórico do time ${teamId}:`, err.message);
+        throw err; // Rejeitar novamente para ser pego pelo catch superior
     });
     const history = response.data.response || [];
     await getRedisCacheInstance().set(cacheKey, history, 3600); // Cache por 1 hora
@@ -246,6 +250,7 @@ export class DataIngestionService {
    * Retorna a lista de ligas prioritárias (Elite)
    */
   public getPriorityLeagues(): { id: number; name: string }[] {
+    // Lista de ligas prioritárias expandida para incluir mais opções
     return [
       { id: 71, name: "Brasileirão Série A" },
       { id: 72, name: "Brasileirão Série B" },
@@ -257,6 +262,13 @@ export class DataIngestionService {
       { id: 61, name: "Ligue 1" },
       { id: 307, name: "Saudi Pro League" },
       { id: 128, name: "Liga Argentina" },
+      { id: 4, name: "Copa Libertadores" },
+      { id: 11, name: "Copa Sudamericana" },
+      { id: 1, name: "World Cup" },
+      { id: 3, name: "Euro Championship" },
+      { id: 5, name: "Copa America" },
+      { id: 848, name: "USL League Two" },
+      { id: 849, name: "Division di Honor" }
     ];
   }
 
@@ -266,6 +278,64 @@ export class DataIngestionService {
    * @param date Data dos jogos (YYYY-MM-DD)
    * @param refresh Força a atualização dos dados, ignorando o cache.
    */
+  public async getFixtureDetails(matchId: string, refresh: boolean = false): Promise<FixtureResponse | null> {
+    const cacheKey = `fixtureDetails-${matchId}`;
+    if (!refresh) {
+      const cachedFixture = await getRedisCacheInstance().get<FixtureResponse>(cacheKey);
+      if (cachedFixture) {
+        console.log(`[DataIngestionService] Retornando detalhes do jogo ${matchId} do cache Redis.`);
+        return cachedFixture;
+      }
+    }
+
+    try {
+      const fixtureResponse: AxiosResponse<{ response: FixtureResponse[] }> = await circuitBreakerPool.get("FootballAPI")!.execute(async () => {
+        await this.incrementRequestCount();
+        return await axios.get(
+          `${this.baseUrl}/fixtures?id=${matchId}`,
+          { headers: { "x-apisports-key": this.apiKey } }
+        );
+      });
+
+      const fixture = fixtureResponse.data.response[0];
+      if (fixture) {
+        await getRedisCacheInstance().set(cacheKey, fixture, 3600); // Cache por 1 hora
+        return fixture;
+      }
+      return null;
+    } catch (error: any) {
+      console.error(`[DataIngestionService] Erro ao buscar detalhes do jogo ${matchId}:`, error.message);
+      throw error;
+    }
+  }
+
+  public async getFixturesAnyLeague(date: string, refresh: boolean = false): Promise<any[]> {
+    const cacheKey = `fixturesAnyLeague-${date}`;
+    if (!refresh) {
+      const cachedFixtures = await getRedisCacheInstance().get<any[]>(cacheKey);
+      if (cachedFixtures) {
+        console.log(`[DataIngestionService] Retornando jogos de qualquer liga para ${date} do cache Redis.`);
+        return cachedFixtures;
+      }
+    }
+
+    try {
+      const response: AxiosResponse<{ response: any[] }> = await circuitBreakerPool.get("FootballAPI")!.execute(async () => {
+        await this.incrementRequestCount();
+        return await axios.get(
+          `${this.baseUrl}/fixtures?date=${date}`,
+          { headers: { "x-apisports-key": this.apiKey } }
+        );
+      });
+      const fixtures = response.data.response || [];
+      await getRedisCacheInstance().set(cacheKey, fixtures, 3600); // Cache por 1 hora
+      return fixtures;
+    } catch (error: any) {
+      console.error(`[DataIngestionService] Erro ao buscar jogos de qualquer liga para ${date}:`, error);
+      return [];
+    }
+  }
+
   public async getFixturesByLeague(leagueId: number, date: string, refresh: boolean = false): Promise<FixtureResponse[]> {
     const cacheKey = `fixturesByLeague-${leagueId}-${date}`;
     if (!refresh) {
@@ -297,11 +367,11 @@ export class DataIngestionService {
     const alpha = 0.3; // Fator de decaimento (30% de peso para o mais recente)
     let totalWeight = 0;
 
-    const sums = { goals: 0, corners: 0, cards: 0, shots: 0, shotsOnTarget: 0 };
+    const sums = { goals: 0, goalsHT: 0, corners: 0, cards: 0, shots: 0, shotsOnTarget: 0 };
 
     if (!history || history.length === 0) {
       console.warn("[DataIngestionService] Histórico vazio para cálculo de médias. Retornando valores padrão.");
-      return { goals: 1.5, corners: 5, cards: 2, shots: 12, shotsOnTarget: 5 };
+      return { goals: 1.5, goalsHT: 0.5, corners: 5, cards: 2, shots: 12, shotsOnTarget: 5 };
     }
 
     history.forEach((match, index) => {
@@ -313,6 +383,10 @@ export class DataIngestionService {
       const awayGoals = typeof match.goals.away === 'number' ? match.goals.away : 0;
       sums.goals += (homeGoals + awayGoals) * weight;
 
+      const homeGoalsHT = typeof match.score.halftime.home === 'number' ? match.score.halftime.home : 0;
+      const awayGoalsHT = typeof match.score.halftime.away === 'number' ? match.score.halftime.away : 0;
+      sums.goalsHT += (homeGoalsHT + awayGoalsHT) * weight;
+
       // TODO: Substituir simulações por dados reais de estatísticas (corners, cards, shots, shotsOnTarget)
       sums.corners += 5 * weight; 
       sums.cards += 2 * weight; 
@@ -322,6 +396,7 @@ export class DataIngestionService {
 
     return {
       goals: totalWeight > 0 ? sums.goals / totalWeight : 1.5,
+      goalsHT: totalWeight > 0 ? sums.goalsHT / totalWeight : 0.5,
       corners: totalWeight > 0 ? sums.corners / totalWeight : 5,
       cards: totalWeight > 0 ? sums.cards / totalWeight : 2,
       shots: totalWeight > 0 ? sums.shots / totalWeight : 12,

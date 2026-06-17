@@ -1,5 +1,6 @@
 import { DataIngestionService } from "@/lib/core/DataIngestionService";
 import { BatchQueueService } from "@/lib/core/BatchQueueService";
+import { MarketVertical } from "../../core/ArgosUnifiedEngine";
 
 /**
  * DAILY INGESTION SCHEDULER v5.0
@@ -18,35 +19,68 @@ export class DailyIngestionScheduler {
   /**
    * Executa a curadoria diária de jogos
    */
-  async scheduleDailyIngestion() {
-    const today = new Date().toISOString().split('T')[0];
+  async scheduleDailyIngestion(): Promise<{ date: string; totalIngested: number; processedMatchIds: string[]; status: string; enqueuedMatchDetails: { id: string; home: string; away: string; league: string; date: string }[] }> {
+    const today = new Date();
+    const datesToFetch = [];
+    for (let i = 0; i < 3; i++) { // Próximos 3 dias
+        const d = new Date(today);
+        d.setDate(today.getDate() + i);
+        datesToFetch.push(d.toISOString().split("T")[0]);
+    }
     let ingestedCount = 0;
     const processedMatchIds = new Set<string>();
+    const enqueuedMatchDetails: { id: string; home: string; away: string; league: string; date: string }[] = [];
 
-    console.log(`[Argos v5.0] Iniciando curadoria diária para ${today}...`);
+    console.log(`[Argos v5.0] Iniciando curadoria diária para as datas: ${datesToFetch.join(", ")}...`);
 
     // 1. PRIORIDADE ELITE: Buscar jogos das ligas de maior liquidez
     const priorityLeagues = this.dataIngestionService.getPriorityLeagues();
     
     // Execução paralela para buscar fixtures das ligas prioritárias
-    const fixturePromises = priorityLeagues.map(league => 
-      this.dataIngestionService.getFixturesByLeague(league.id, today)
-        .catch(err => {
-          console.error(`[Argos v5.0] Erro ao buscar liga ${league.name}:`, err.message);
-          return [];
-        })
-    );
+    const fixturePromises: Promise<any[]>[] = [];
+    for (const date of datesToFetch) {
+        for (const league of priorityLeagues) {
+            fixturePromises.push(
+                this.dataIngestionService.getFixturesByLeague(league.id, date)
+                    .catch(err => {
+                        console.error(`[Argos v5.0] Erro ao buscar liga ${league.name} para ${date}:`, err.message);
+                        return [];
+                    })
+            );
+        }
+    }
 
-    const allFixtures = await Promise.all(fixturePromises);
+    const allFixtures = (await Promise.allSettled(fixturePromises))
+        .filter(result => result.status === 'fulfilled')
+        .map(result => (result as PromiseFulfilledResult<any[]>).value);
 
     for (const fixtures of allFixtures) {
       for (const fixture of fixtures) {
         if (ingestedCount >= this.MAX_DAILY_GAMES) break;
 
+        if (!fixture || !fixture.fixture || !fixture.teams || !fixture.league) {
+            console.warn(`[Argos v5.0] Fixture incompleta ou inválida encontrada, pulando: ${JSON.stringify(fixture)}`);
+            continue;
+        }
+
         const matchId = fixture.fixture.id.toString();
         if (!processedMatchIds.has(matchId)) {
-          await this.batchQueueService.enqueue(matchId, ["WINNER", "GOALS", "CORNERS", "CARDS", "BTTS", "SHOTS", "HANDICAP"]);
+          // Verificar se já está no Supabase para evitar duplicatas industriais
+          const alreadyQueued = await this.batchQueueService.isAlreadyEnqueued(matchId);
+          if (alreadyQueued) {
+            console.log(`[Argos v5.0] Jogo ${matchId} já está na fila. Pulando.`);
+            continue;
+          }
+
+          await this.batchQueueService.enqueue(matchId, Object.values(MarketVertical)); // Todas as verticais
           processedMatchIds.add(matchId);
+          enqueuedMatchDetails.push({
+              id: matchId,
+              home: fixture.teams.home.name,
+              away: fixture.teams.away.name,
+              league: fixture.league.name,
+              date: fixture.fixture.date
+          });
           ingestedCount++;
         }
       }
@@ -55,17 +89,60 @@ export class DailyIngestionScheduler {
 
     console.log(`[Argos v5.0] Curadoria Elite concluída: ${ingestedCount} jogos.`);
 
-    // 2. PREENCHIMENTO: Se a cota não foi atingida, buscar em ligas menores (Simulação)
+    // 2. PREENCHIMENTO: Se a cota não foi atingida, buscar em ligas menores/qualquer liga
     if (ingestedCount < this.MAX_DAILY_GAMES) {
-      console.log(`[Argos v5.0] Cota não atingida (${ingestedCount}/${this.MAX_DAILY_GAMES}). Buscando preenchimento...`);
-      // Aqui poderíamos buscar ligas regionais ou de volume (ex: Liga 2 da França, Championship, etc.)
-      // Para este MVP, focamos na lógica de exaustão da cota.
+      console.log(`[Argos v5.0] Cota não atingida (${ingestedCount}/${this.MAX_DAILY_GAMES}). Buscando preenchimento em ligas diversas...`);
+      for (const date of datesToFetch) {
+        if (ingestedCount >= this.MAX_DAILY_GAMES) break;
+        let anyFixtures: any[] = [];
+        try {
+            anyFixtures = await this.dataIngestionService.getFixturesAnyLeague(date);
+        } catch (err: any) {
+            console.error(`[Argos v5.0] Erro ao buscar jogos de qualquer liga para ${date}:`, err.message);
+        }
+        for (const fixture of anyFixtures) {
+          if (ingestedCount >= this.MAX_DAILY_GAMES) break;
+
+          if (!fixture || !fixture.fixture || !fixture.teams || !fixture.league) {
+              console.warn(`[Argos v5.0] Fixture incompleta ou inválida encontrada no preenchimento, pulando: ${JSON.stringify(fixture)}`);
+              continue;
+          }
+
+          const matchId = fixture.fixture.id.toString();
+          if (!processedMatchIds.has(matchId)) {
+            try {
+              // Verificar se já está no Supabase
+              const alreadyQueued = await this.batchQueueService.isAlreadyEnqueued(matchId);
+              if (alreadyQueued) {
+                console.log(`[Argos v5.0] Jogo ${matchId} já está na fila (preenchimento). Pulando.`);
+                continue;
+              }
+
+              await this.batchQueueService.enqueue(matchId, Object.values(MarketVertical));
+            } catch (enqueueError: any) {
+              console.error(`[Argos v5.0] Erro ao enfileirar jogo ${matchId}:`, enqueueError.message);
+              continue; // Pular para o próximo jogo se o enfileiramento falhar
+            }
+            processedMatchIds.add(matchId);
+            enqueuedMatchDetails.push({
+                id: matchId,
+                home: fixture.teams.home.name,
+                away: fixture.teams.away.name,
+                league: fixture.league.name,
+                date: fixture.fixture.date
+            });
+            ingestedCount++;
+          }
+        }
+      }
     }
 
     return {
-      date: today,
+      date: datesToFetch.join(", "),
       totalIngested: ingestedCount,
-      status: ingestedCount >= this.MAX_DAILY_GAMES ? "QUOTA_FULL" : "QUOTA_PARTIAL"
+      processedMatchIds: Array.from(processedMatchIds),
+      status: ingestedCount >= this.MAX_DAILY_GAMES ? "QUOTA_FULL" : "QUOTA_PARTIAL",
+      enqueuedMatchDetails: enqueuedMatchDetails
     };
   }
 }

@@ -233,14 +233,15 @@ export class ContextualFactorsEngine {
   static calculateTotalContextualMultiplier(factors: ContextualFactors): number {
     let totalMultiplier = 1.0;
 
-    // Aplicar todos os fatores com pesos
-    totalMultiplier *= factors.motivationFactor * 0.15; // 15%
-    totalMultiplier *= factors.injuryImpactFactor * 0.15; // 15%
-    totalMultiplier *= factors.homeAdvantageMultiplier * 0.1; // 10%
-    totalMultiplier *= factors.headToHeadWinRate * 0.1; // 10%
-    totalMultiplier *= factors.weatherImpactFactor * 0.1; // 10%
-    totalMultiplier *= factors.recentFormFactor * 0.15; // 15%
-    totalMultiplier *= factors.pressureFactor * 0.1; // 10%
+    // Aplicar todos os fatores com pesos (Média Ponderada)
+    totalMultiplier = 
+      (factors.motivationFactor * 0.20) + 
+      (factors.injuryImpactFactor * 0.20) + 
+      (factors.homeAdvantageMultiplier * 0.10) + 
+      (factors.headToHeadWinRate * 0.10) + 
+      (factors.weatherImpactFactor * 0.10) + 
+      (factors.recentFormFactor * 0.20) + 
+      (factors.pressureFactor * 0.10);
 
     // Normalizar para evitar distorções extremas
     return Math.min(1.4, Math.max(0.6, totalMultiplier));

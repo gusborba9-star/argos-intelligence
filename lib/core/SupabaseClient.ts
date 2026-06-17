@@ -15,6 +15,7 @@ let supabaseInstance: SupabaseClient | null = null;
 export function getSupabaseClient(): SupabaseClient {
   if (!supabaseInstance) {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    console.log(`[SupabaseClient] Original URL: ${url}`);
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!url || !key) {
@@ -23,6 +24,7 @@ export function getSupabaseClient(): SupabaseClient {
     }
 
     const sanitizedUrl = getSanitizedSupabaseUrl(url);
+    console.log(`[SupabaseClient] Sanitized URL: ${sanitizedUrl}`);
     
     supabaseInstance = createClient(sanitizedUrl, key, {
       auth: {

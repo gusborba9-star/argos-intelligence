@@ -27,6 +27,7 @@ const WEIGHT_LEARNING_RATE = 0.06;
 export enum MarketVertical {
   WINNER = "WINNER",
   GOALS = "GOALS",
+  GOALS_HT = "GOALS_HT",
   CARDS = "CARDS",
   CORNERS = "CORNERS",
   SHOTS = "SHOTS",
@@ -66,6 +67,7 @@ export interface MatchContextInput {
   leagueId?: string;
   winnerMatrix: Record<string, any>;
   goalsMatrix: Record<string, any>;
+  goalsHTMatrix?: Record<string, any>;
   cardsMatrix: Record<string, any>;
   cornersMatrix: Record<string, any>;
   shotsMatrix?: Record<string, any>;
@@ -73,6 +75,7 @@ export interface MatchContextInput {
   foulsMatrix?: Record<string, any>;
   bttsMatrix?: Record<string, any>;
   tacklesMatrix?: Record<string, any>;
+  handicapMatrix?: Record<string, any>;
 }
 
 export interface Signal {
@@ -300,13 +303,15 @@ export class ArgosUnifiedEngine {
     return {
       WINNER: Object.values(input.winnerMatrix ?? {}),
       GOALS: Object.values(input.goalsMatrix ?? {}),
+      GOALS_HT: Object.values(input.goalsHTMatrix ?? {}),
       CARDS: Object.values(input.cardsMatrix ?? {}),
       CORNERS: Object.values(input.cornersMatrix ?? {}),
       SHOTS: Object.values(input.shotsMatrix ?? {}),
       SHOTS_ON_TARGET: Object.values(input.shotsOnTargetMatrix ?? {}),
       FOULS: Object.values(input.foulsMatrix ?? {}),
       BTTS: Object.values(input.bttsMatrix ?? {}),
-      TACKLES: Object.values(input.tacklesMatrix ?? {})
+      TACKLES: Object.values(input.tacklesMatrix ?? {}),
+      HANDICAP: Object.values(input.handicapMatrix ?? {})
     };
   }
 

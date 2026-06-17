@@ -9,6 +9,7 @@ import { nbaDataIngestionService } from "@/lib/core/NBADataIngestionService";
 import { consensusEngine } from "@/lib/core/ConsensusEngine";
 import { assertivityOptimizationEngine } from "@/lib/core/AssertivityOptimizationEngine";
 import { ModelPrediction } from "@/lib/core/ConsensusEngine";
+import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 
 async function runBootstrapOperationSimulation() {
   console.log("\n╔════════════════════════════════════════════════════════╗");
@@ -78,7 +79,7 @@ async function runBootstrapOperationSimulation() {
     },
   ];
 
-  const consensusResult = await consensusEngine.runConsensusVoting("match-001", "WINNER", mockPredictions);
+  const consensusResult = await consensusEngine.runConsensusVoting("match-001", MarketVertical.WINNER, mockPredictions);
   console.log(`\n✅ Sinal gerado: ${consensusResult.vertical}`);
   console.log(`   Consenso: ${consensusResult.consensusScore.toFixed(2)}%`);
   console.log(`   Convergência: ${consensusResult.convergencePercentage.toFixed(2)}%`);
