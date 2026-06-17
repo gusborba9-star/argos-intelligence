@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/argos/v4/schedule-ingestion",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/argos/v4",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}
