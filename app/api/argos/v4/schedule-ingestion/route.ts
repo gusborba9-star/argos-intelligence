@@ -10,10 +10,13 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     // 1. Segurança: Validar x-api-key OU o header da Vercel Cron
+        const { searchParams } = new URL(request.url); // Adicione esta linha
     const authHeader = request.headers.get("Authorization");
     const cronHeader = request.headers.get("x-vercel-cron");
-    const apiKey = request.headers.get("x-api-key") || (authHeader ? authHeader.replace("Bearer ", "") : null);
-    
+    const apiKey = request.headers.get("x-api-key") || 
+                   (authHeader ? authHeader.replace("Bearer ", "") : null) || 
+                   searchParams.get("key"); // Adicione esta parte final
+
     // Verifica se a chave é válida OU se a requisição veio da própria infraestrutura da Vercel
     const isValidKey = apiKey === process.env.ARGOS_API_KEY;
     const isCron = cronHeader === "1";
