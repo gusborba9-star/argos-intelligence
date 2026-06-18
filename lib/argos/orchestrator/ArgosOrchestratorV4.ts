@@ -73,7 +73,21 @@ export class ArgosOrchestratorV4 {
 
     try {
       // 1. DATA INGESTION: Extração e Normalização Automática (Data-In)
-      const ingestedData: IngestedData = await this.ingestionService.ingest(matchId);
+      let ingestedData: IngestedData;
+      try {
+        ingestedData = await this.ingestionService.ingest(matchId);
+      } catch (ingestionError: any) {
+        if (ingestionError.message.includes("not found")) {
+          console.warn(`[Argos v5.0] Fixture ${matchId} não encontrada na API. Pulando auditoria.`);
+          return {
+            matchId,
+            status: "SUCCESS", // Retornar SUCCESS para evitar quebra do cron, mas sem sinais
+            error: "NOT_FOUND",
+            executionTimeMs: Date.now() - startTime,
+          };
+        }
+        throw ingestionError;
+      }
 
       // Ajuste de Live Data se disponível
       const currentScore = liveData?.score || { home: 0, away: 0 };

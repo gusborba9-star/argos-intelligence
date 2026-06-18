@@ -123,9 +123,27 @@ export async function POST(req: Request) {
     const auditResult = await orchestrator.runZeroTouchAudit(nextItem.matchId, requestedVerticals);
 
     if (auditResult.status === "FAILED") {
+      // Se falhar, marcamos como FAILED mas não retornamos 500 para não travar o worker
       await queueService.updateStatus(nextItem.id, "FAILED", auditResult.error);
-      return NextResponse.json(auditResult, { status: 500 });
+      return NextResponse.json({ 
+        status: "SKIPPED", 
+        matchId: nextItem.matchId, 
+        reason: auditResult.error 
+      }, { status: 200 });
     }
+
+    if (auditResult.error === "NOT_FOUND") {
+      // Caso específico de fixture não encontrada: Marcar como COMPLETED (ou SKIPPED) para sair da fila
+      await queueService.updateStatus(nextItem.id, "COMPLETED", "Fixture not found in API");
+      return NextResponse.json({ 
+        status: "SKIPPED", 
+        matchId: nextItem.matchId, 
+        reason: "Fixture not found" 
+      }, { status: 200 });
+    }
+
+    // Marcar como COMPLETED após sucesso
+    await queueService.updateStatus(nextItem.id, "COMPLETED");
 
     let signalsToDeliver = auditResult.classifiedSignals || [];
     let userTier: 'FREE' | 'PRO' | 'WHALE/VIP' = 'FREE';
