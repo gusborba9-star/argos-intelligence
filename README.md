@@ -55,5 +55,5 @@ argos-intelligence/
     - [x] **Canal Free**: Configurado para mercados de alta assertividade (Winner, Goals Over 1.5/Under 4.5, HT).
     - [x] **Canal VIP**: Configurado para fluxo integral de mercados com base em EV+.
 - [x] **Nexus Ultra Design System**: Mensagens formatadas com tipografia premium e CTAs de conversão.
-- [ ] **Ativação de Notificações Reais**: Configuração final dos Webhooks e Tokens em ambiente de produção.
+- [x] **Ativação de Notificações Reais**: Implementação do `TelegramDispatcher.ts` com distribuição automatizada Free/VIP.
 - [ ] **Monitoramento de ROI**: Integração com PaymentGateway (Efí) para acompanhamento de conversões.

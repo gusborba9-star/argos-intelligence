@@ -10,6 +10,7 @@ import { AutoTuningEngine, TuningResult } from "@/lib/core/AutoTuningEngine";
 import { DataIngestionService, IngestedData } from "@/lib/core/DataIngestionService";
 import { AnomalyDetectionService } from "@/lib/argos/auditor/AnomalyDetectionService";
 import { RegimeProfile, MarketRegime } from "@/lib/argos/regime/RegimeSchema";
+import { TelegramDispatcher } from "@/lib/argos/notifications/TelegramDispatcher";
 
 // ============================================================
 // ARGOS ORCHESTRATOR v5.0 — INDUSTRIAL EDITION
@@ -44,6 +45,7 @@ export class ArgosOrchestratorV4 {
   private autoTuner: AutoTuningEngine;
   private ingestionService: DataIngestionService;
   private anomalyDetector: AnomalyDetectionService;
+  private telegramDispatcher: TelegramDispatcher;
 
   constructor(ingestionService?: DataIngestionService, supabaseClient?: SupabaseClient) {
     this.supabase = supabaseClient || getSupabaseClient();
@@ -56,6 +58,7 @@ export class ArgosOrchestratorV4 {
     this.autoTuner = new AutoTuningEngine(supabaseClient);
     this.ingestionService = ingestionService || new DataIngestionService();
     this.anomalyDetector = new AnomalyDetectionService();
+    this.telegramDispatcher = new TelegramDispatcher();
   }
 
   /**
@@ -209,6 +212,12 @@ export class ArgosOrchestratorV4 {
           });
           throw new Error(`Supabase Persistence Error [${persistError.code}]: ${persistError.message} (${persistError.details || 'no details'})`);
         }
+
+        // 7. DISTRIBUIÇÃO AUTOMATIZADA (Telegram Dispatcher)
+        // Disparo assíncrono para não bloquear o retorno da API/Cron
+        this.telegramDispatcher.dispatch(classifiedSignals, regime).catch(err => {
+          console.error("[Argos v5.0] Falha crítica no despacho Telegram:", err.message);
+        });
       }
 
       const executionTimeMs = Date.now() - startTime;
