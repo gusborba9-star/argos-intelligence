@@ -88,13 +88,28 @@ export async function POST(req: Request) {
       error: error.message 
     }, { status: 500 });
   }
-}
+} 
 
 /**
  * Endpoint GET para processar o próximo item da fila (Worker Trigger)
  */
-export async function GET() {
+ export async function GET(request: Request) {
   try {
+        // Bloco de segurança novo entra aqui
+        const { searchParams } = new URL(request.url);
+        const apiKey = request.headers.get("x-api-key") || 
+                       request.headers.get("Authorization")?.replace("Bearer ", "") || 
+                       searchParams.get("key");
+
+        const cronHeader = request.headers.get("x-vercel-cron");
+        const isValidKey = apiKey === process.env.ARGOS_API_KEY;
+        const isCron = cronHeader === "1";
+
+        if (!isValidKey && !isCron) {
+          return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        // Fim do bloco
+
     const queueService = new BatchQueueService();
     const nextItem = await queueService.getNextInQueue();
 
