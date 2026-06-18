@@ -26,9 +26,16 @@ export function middleware(request: NextRequest) {
     if (apiKey) {
       if (apiKey === process.env.ARGOS_API_KEY) {
         // API Key válida = VIP access imediato
-        const response = NextResponse.next();
-        response.headers.set("x-user-tier", UserTier.VIP);
-        return response;
+        const requestHeaders = new Headers(request.headers);
+        requestHeaders.set("x-user-tier", UserTier.VIP);
+        requestHeaders.set("x-authorized", "true");
+
+        // IMPORTANTE: Retornar o NextResponse.next com os novos headers de request
+        return NextResponse.next({
+          request: {
+            headers: requestHeaders,
+          },
+        });
       } else {
         return NextResponse.json(
           { error: "Unauthorized: Invalid API Key" },
@@ -43,10 +50,16 @@ export function middleware(request: NextRequest) {
       const validation = EdgeGatekeeper.validateAuthToken(token);
 
       if (validation.valid) {
-        const response = NextResponse.next();
-        response.headers.set("x-user-id", validation.payload?.userId || "");
-        response.headers.set("x-user-tier", validation.payload?.userTier || UserTier.FREE);
-        return response;
+        const requestHeaders = new Headers(request.headers);
+        requestHeaders.set("x-user-id", validation.payload?.userId || "");
+        requestHeaders.set("x-user-tier", validation.payload?.userTier || UserTier.FREE);
+        requestHeaders.set("x-authorized", "true");
+
+        return NextResponse.next({
+          request: {
+            headers: requestHeaders,
+          },
+        });
       } else {
         return NextResponse.json(
           { error: `Unauthorized: ${validation.reason}` },

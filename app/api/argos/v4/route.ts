@@ -14,9 +14,14 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    // Verificação de API Key para segurança da rota POST
+    // Verificação de Autorização (Middleware injeta x-authorized se validado)
+    const isAuthorized = req.headers.get("x-authorized") === "true";
     const apiKey = req.headers.get("x-api-key");
-    if (!apiKey || apiKey !== process.env.ARGOS_API_KEY) {
+    
+    // Fallback caso o middleware falhe em injetar mas a chave esteja lá
+    const isValidApiKey = apiKey && apiKey === process.env.ARGOS_API_KEY;
+
+    if (!isAuthorized && !isValidApiKey) {
       return NextResponse.json({ error: "Unauthorized: Invalid or missing API Key" }, { status: 401 });
     }
 
@@ -50,11 +55,18 @@ export async function POST(req: Request) {
 
     // Lógica de Tiers e Entrega de Valor
     let signalsToDeliver = auditResult.classifiedSignals || [];
-    let userTier: 'FREE' | 'PRO' | 'WHALE/VIP' = 'FREE';
+    let userTier: 'FREE' | 'PRO' | 'WHALE/VIP' = (req.headers.get("x-user-tier") as any) || 'FREE';
     let kellyStakes: { signalId: string, stake: number }[] = [];
 
-    if (userId) {
-      userTier = await deliveryService.getUserTier(userId);
+    // Se o middleware já identificou o tier (VIP por API Key), usamos direto.
+    // Caso contrário, ou se precisarmos validar o userId, buscamos no service.
+    const effectiveUserId = userId || req.headers.get("x-user-id");
+
+    if (effectiveUserId && userTier === 'FREE') {
+      userTier = await deliveryService.getUserTier(effectiveUserId);
+    }
+    
+    if (userTier) {
       signalsToDeliver = deliveryService.filterSignalsByTier(signalsToDeliver, userTier);
 
       if (userTier === 'WHALE/VIP') {
@@ -64,9 +76,11 @@ export async function POST(req: Request) {
           stake: deliveryService.calculateKellyCriterion(signal, bankroll)
         }));
         // Logar a entrega para usuários WHALE/VIP
-        for (const signal of signalsToDeliver) {
-          if (signal.id) {
-            await deliveryService.logSignalDelivery(userId, signal, userTier, 'API_DIRECT');
+        if (effectiveUserId) {
+          for (const signal of signalsToDeliver) {
+            if (signal.id) {
+              await deliveryService.logSignalDelivery(effectiveUserId, signal, userTier, 'API_DIRECT');
+            }
           }
         }
       }
@@ -95,17 +109,13 @@ export async function POST(req: Request) {
  */
  export async function GET(request: Request) {
   try {
-        // Bloco de segurança novo entra aqui
-        const { searchParams } = new URL(request.url);
-        const apiKey = request.headers.get("x-api-key") || 
-                       request.headers.get("Authorization")?.replace("Bearer ", "") || 
-                       searchParams.get("key");
-
+        // Bloco de segurança unificado
+        const isAuthorized = request.headers.get("x-authorized") === "true";
         const cronHeader = request.headers.get("x-vercel-cron");
-        const isValidKey = apiKey === process.env.ARGOS_API_KEY;
         const isCron = cronHeader === "1";
 
-        if (!isValidKey && !isCron) {
+        // Se não foi autorizado pelo middleware e não é um Cron da Vercel, barramos
+        if (!isAuthorized && !isCron) {
           return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         // Fim do bloco
