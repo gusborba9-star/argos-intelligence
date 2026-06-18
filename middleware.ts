@@ -22,38 +22,37 @@ export function middleware(request: NextRequest) {
       );
     }
 
-    // Validar token se presente
-    if (authHeader) {
-      const token = authHeader.replace("Bearer ", "");
-      const validation = EdgeGatekeeper.validateAuthToken(token);
-
-      if (!validation.valid) {
-        return NextResponse.json(
-          { error: `Unauthorized: ${validation.reason}` },
-          { status: 401 }
-        );
-      }
-
-      // Adicionar payload do token aos headers para uso posterior
-      const response = NextResponse.next();
-      response.headers.set("x-user-id", validation.payload?.userId || "");
-      response.headers.set("x-user-tier", validation.payload?.userTier || UserTier.FREE);
-      return response;
-    }
-
-    // Validar API Key
+    // PRIORIDADE 1: Validar API Key (Bypass para Cron Jobs e Orquestradores)
     if (apiKey) {
-      if (apiKey !== process.env.ARGOS_API_KEY) {
+      if (apiKey === process.env.ARGOS_API_KEY) {
+        // API Key válida = VIP access imediato
+        const response = NextResponse.next();
+        response.headers.set("x-user-tier", UserTier.VIP);
+        return response;
+      } else {
         return NextResponse.json(
           { error: "Unauthorized: Invalid API Key" },
           { status: 401 }
         );
       }
+    }
 
-      // API Key válida = VIP access
-      const response = NextResponse.next();
-      response.headers.set("x-user-tier", UserTier.VIP);
-      return response;
+    // PRIORIDADE 2: Validar Token Bearer (Acesso via Dashboard/App)
+    if (authHeader) {
+      const token = authHeader.replace("Bearer ", "");
+      const validation = EdgeGatekeeper.validateAuthToken(token);
+
+      if (validation.valid) {
+        const response = NextResponse.next();
+        response.headers.set("x-user-id", validation.payload?.userId || "");
+        response.headers.set("x-user-tier", validation.payload?.userTier || UserTier.FREE);
+        return response;
+      } else {
+        return NextResponse.json(
+          { error: `Unauthorized: ${validation.reason}` },
+          { status: 401 }
+        );
+      }
     }
   }
 
