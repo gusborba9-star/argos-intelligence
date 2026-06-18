@@ -250,8 +250,9 @@ export class DataIngestionService {
    * Retorna a lista de ligas prioritárias (Elite)
    */
   public getPriorityLeagues(): { id: number; name: string }[] {
-    // Lista de ligas prioritárias expandida para incluir mais opções
+    // Lista de ligas prioritárias expandida para incluir mais opções e foco atual (Copa do Mundo)
     return [
+      { id: 1, name: "World Cup" },
       { id: 71, name: "Brasileirão Série A" },
       { id: 72, name: "Brasileirão Série B" },
       { id: 2, name: "Champions League" },
@@ -264,11 +265,15 @@ export class DataIngestionService {
       { id: 128, name: "Liga Argentina" },
       { id: 4, name: "Copa Libertadores" },
       { id: 11, name: "Copa Sudamericana" },
-      { id: 1, name: "World Cup" },
       { id: 3, name: "Euro Championship" },
       { id: 5, name: "Copa America" },
-      { id: 848, name: "USL League Two" },
-      { id: 849, name: "Division di Honor" }
+      { id: 10, name: "Friendlies" },
+      { id: 15, name: "World Cup - Qualification Africa" },
+      { id: 16, name: "World Cup - Qualification Asia" },
+      { id: 17, name: "World Cup - Qualification Europe" },
+      { id: 18, name: "World Cup - Qualification Oceania" },
+      { id: 19, name: "World Cup - Qualification South America" },
+      { id: 20, name: "World Cup - Qualification CONCACAF" }
     ];
   }
 

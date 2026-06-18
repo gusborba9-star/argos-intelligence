@@ -9,7 +9,7 @@ import { MarketVertical } from "../../core/ArgosUnifiedEngine";
 export class DailyIngestionScheduler {
   private dataIngestionService: DataIngestionService;
   private batchQueueService: BatchQueueService;
-  private readonly MAX_DAILY_GAMES = 100;
+  private readonly MAX_DAILY_GAMES = 500; // Aumentado para prospecção ativa mundial
 
   constructor() {
     this.dataIngestionService = new DataIngestionService();
@@ -22,7 +22,7 @@ export class DailyIngestionScheduler {
   async scheduleDailyIngestion(): Promise<{ date: string; totalIngested: number; processedMatchIds: string[]; status: string; enqueuedMatchDetails: { id: string; home: string; away: string; league: string; date: string }[] }> {
     const today = new Date();
     const datesToFetch = [];
-    for (let i = 0; i < 3; i++) { // Próximos 3 dias
+    for (let i = 0; i < 2; i++) { // Foco em hoje e amanhã para maior precisão
         const d = new Date(today);
         d.setDate(today.getDate() + i);
         datesToFetch.push(d.toISOString().split("T")[0]);

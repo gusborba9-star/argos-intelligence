@@ -22,29 +22,38 @@ export class TelegramDispatcher {
    * Despacha sinais para os canais Free e VIP com base nas regras de negócio.
    */
   public async dispatch(signals: ArgosSignal[], regimeInfo?: any): Promise<void> {
+    console.log(`[TelegramDispatcher] Verificando ambiente: BOT_TOKEN=${this.botToken ? 'OK' : 'MISSING'}, FREE_ID=${this.freeChannelId ? 'OK' : 'MISSING'}, VIP_ID=${this.vipChannelId ? 'OK' : 'MISSING'}`);
+
     if (!this.botToken) {
-      console.warn('[TelegramDispatcher] Bot Token não configurado. Abortando envio.');
+      console.error('[TelegramDispatcher] ERRO CRÍTICO: TELEGRAM_BOT_TOKEN não configurado.');
       return;
     }
 
-    console.log(`[TelegramDispatcher] Iniciando despacho de ${signals.length} sinais.`);
+    console.log(`[TelegramDispatcher] Iniciando despacho industrial de ${signals.length} sinais.`);
 
     for (const signal of signals) {
       try {
+        const promises = [];
+
         // 1. Envio para Canal VIP (O "Filé")
-        // Foco: Lucratividade, EV+ e profundidade técnica. Todos os verticais.
         if (this.vipChannelId) {
-          await this.sendToVip(signal, regimeInfo);
+          console.log(`[TelegramDispatcher] Preparando envio VIP: ${signal.market}`);
+          promises.push(this.sendToVip(signal, regimeInfo));
+        } else {
+          console.warn('[TelegramDispatcher] Aviso: TELEGRAM_CHAT_ID (VIP) não configurado.');
         }
 
         // 2. Envio para Canal FREE (Marketing/Isca)
-        // Foco: Alta probabilidade de acerto, mesmo sem EV+. Mercados específicos.
         if (this.freeChannelId && this.isEligibleForFree(signal)) {
-          await this.sendToFree(signal);
+          console.log(`[TelegramDispatcher] Preparando envio FREE: ${signal.market}`);
+          promises.push(this.sendToFree(signal));
         }
+
+        // Aguarda todos os envios do sinal atual para garantir ordem e conclusão
+        await Promise.all(promises);
       } catch (error: any) {
-        // Resiliência: Se um sinal falhar, continua para o próximo
-        console.error(`[TelegramDispatcher] Erro ao processar sinal ${signal.market}:`, error.message);
+        console.error(`[TelegramDispatcher] Erro fatal no processamento do sinal ${signal.market}:`, error.message);
+        console.error(`[TelegramDispatcher] Stack:`, error.stack);
       }
     }
   }
@@ -97,15 +106,31 @@ export class TelegramDispatcher {
   private async sendMessage(chatId: string, text: string): Promise<void> {
     const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
     try {
-      await axios.post(url, {
+      console.log(`[TelegramDispatcher] Enviando payload para Telegram API (Chat: ${chatId})...`);
+      const response = await axios.post(url, {
         chat_id: chatId,
         text: text,
         parse_mode: 'HTML',
         disable_web_page_preview: true
-      }, { timeout: 5000 });
+      }, { 
+        timeout: 10000,
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (response.status === 200) {
+        console.log(`[TelegramDispatcher] Sucesso: Mensagem entregue ao chat ${chatId}.`);
+      } else {
+        console.error(`[TelegramDispatcher] Resposta inesperada da API (${response.status}):`, response.data);
+      }
     } catch (error: any) {
-      // Loga o erro mas não interrompe o fluxo
-      console.error(`[TelegramDispatcher] Falha no envio para ${chatId}:`, error.response?.data || error.message);
+      console.error(`[TelegramDispatcher] FALHA NO ENVIO TELEGRAM (Chat: ${chatId})`);
+      if (error.response) {
+        console.error(`[TelegramDispatcher] Erro da API:`, JSON.stringify(error.response.data, null, 2));
+        console.error(`[TelegramDispatcher] Status:`, error.response.status);
+      } else {
+        console.error(`[TelegramDispatcher] Erro de Rede/Timeout:`, error.message);
+      }
+      // Não lançamos o erro para garantir resiliência, mas o log é exaustivo
     }
   }
 

@@ -40,7 +40,7 @@ export class SignalClassifierV4 {
         confidence_score: regime.confidence,
         status: (type === SignalType.VALUE ? "OPTIMIZED" : "HEDGED") as any
       };
-    }).filter(s => s.signal_type !== SignalType.NOISE);
+    }); // Removido o filtro de NOISE para permitir prospecção ativa total
   }
 
   /**

@@ -214,10 +214,18 @@ export class ArgosOrchestratorV4 {
         }
 
         // 7. DISTRIBUIÇÃO AUTOMATIZADA (Telegram Dispatcher)
-        // Disparo assíncrono para não bloquear o retorno da API/Cron
-        this.telegramDispatcher.dispatch(classifiedSignals, regime).catch(err => {
-          console.error("[Argos v5.0] Falha crítica no despacho Telegram:", err.message);
-        });
+        console.log(`[Argos v5.0] Sinais gerados e prontos para despacho: ${classifiedSignals.length}`);
+        
+        // Disparo FORÇADO e MONITORADO
+        if (classifiedSignals.length > 0) {
+          console.log("[Argos v5.0] Acionando TelegramDispatcher...");
+          await this.telegramDispatcher.dispatch(classifiedSignals, regime).catch(err => {
+            console.error("[Argos v5.0] Falha crítica no despacho Telegram:", err.message);
+            console.error("[Argos v5.0] Detalhes do erro:", err);
+          });
+        } else {
+          console.warn("[Argos v5.0] Nenhum sinal classificado para despacho no Telegram.");
+        }
       }
 
       const executionTimeMs = Date.now() - startTime;
