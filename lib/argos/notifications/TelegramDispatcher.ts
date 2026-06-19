@@ -42,20 +42,21 @@ export class TelegramDispatcher {
       try {
         const promises = [];
 
-        // 1. Envio para Canal VIP (O "Filé")
+        // 1. Envio para Canal VIP (O "Filé"): Entrega TOTAL (Todas as verticais)
         if (this.vipChannelId) {
-          console.log(`[TelegramDispatcher] Preparando envio VIP: ${signal.market} (Prob: ${signal.probability})`);
+          // No VIP, enviamos tudo que passou pelo Classifier (VALUE ou VALIDATION)
+          console.log(`[TelegramDispatcher] Despachando para VIP: ${signal.market} [${signal.vertical}] (Prob: ${signal.probability})`);
           promises.push(this.sendToVip(signal, regimeInfo));
         } else {
           console.warn('[TelegramDispatcher] Aviso: TELEGRAM_CHAT_ID (VIP) não configurado.');
         }
 
-        // 2. Envio para Canal FREE (Marketing/Isca)
+        // 2. Envio para Canal FREE (Marketing/Isca): Filtragem Restrita (Winner + Goals)
         if (this.freeChannelId && this.isEligibleForFree(signal)) {
-          console.log(`[TelegramDispatcher] Preparando envio FREE: ${signal.market} (Prob: ${signal.probability})`);
+          console.log(`[TelegramDispatcher] Despachando para FREE: ${signal.market} [${signal.vertical}] (Prob: ${signal.probability})`);
           promises.push(this.sendToFree(signal));
         } else if (this.freeChannelId) {
-          console.log(`[TelegramDispatcher] Sinal ignorado para FREE (Baixa Prob ou Vertical Restrita): ${signal.market}`);
+          console.log(`[TelegramDispatcher] Sinal [${signal.market}] ignorado para FREE (Regras de Segmentação).`);
         }
 
         // Aguarda todos os envios do sinal atual para garantir ordem e conclusão

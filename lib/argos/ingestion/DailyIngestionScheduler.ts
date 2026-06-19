@@ -22,7 +22,7 @@ export class DailyIngestionScheduler {
   async scheduleDailyIngestion(): Promise<{ date: string; totalIngested: number; processedMatchIds: string[]; status: string; enqueuedMatchDetails: { id: string; home: string; away: string; league: string; date: string }[] }> {
     const today = new Date();
     const datesToFetch = [];
-    for (let i = 0; i < 2; i++) { // Foco em hoje e amanhã para maior precisão
+    for (let i = 0; i < 3; i++) { // Expandido: Hoje, Amanhã e Depois (Caçador de oportunidades futuras)
         const d = new Date(today);
         d.setDate(today.getDate() + i);
         datesToFetch.push(d.toISOString().split("T")[0]);

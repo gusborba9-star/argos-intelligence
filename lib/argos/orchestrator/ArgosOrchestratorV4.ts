@@ -133,16 +133,28 @@ export class ArgosOrchestratorV4 {
       regime.confidence += tuning.confidenceAdjustment;
       regime.reasoning_tags.push(`AUTO_TUNED_VAR_${tuning.suggestedVarianceMultiplier.toFixed(2)}`);
 
-      // 4. MULTI-VERTICAL SIMULATION: Processamento Paralelo (10.000 simulações/vertical)
-      const verticalsToProcess = requestedVerticals.length > 0
-        ? requestedVerticals
-        : [MarketVertical.WINNER, MarketVertical.GOALS, MarketVertical.CORNERS, MarketVertical.CARDS, MarketVertical.BTTS, MarketVertical.SHOTS, MarketVertical.HANDICAP];
+      // 4. EXAUSTÃO DE MERCADOS: Processamento Obrigatório de todas as Verticais (10.000 simulações/vertical)
+      // O Argos não para no Winner. Ele esgota as possibilidades antes de descartar o jogo.
+      const mandatoryVerticals = [
+        MarketVertical.WINNER, 
+        MarketVertical.GOALS, 
+        MarketVertical.GOALS_HT,
+        MarketVertical.CORNERS, 
+        MarketVertical.CARDS, 
+        MarketVertical.BTTS, 
+        MarketVertical.SHOTS, 
+        MarketVertical.SHOTS_ON_TARGET,
+        MarketVertical.HANDICAP
+      ];
 
-      const simulationPromises = verticalsToProcess.map(async (vertical) => {
+      console.log(`[Argos v5.0] Iniciando Exaustão de Mercados para o jogo ${matchId}...`);
+
+      const simulationPromises = mandatoryVerticals.map(async (vertical) => {
+        console.log(`[Argos v5.0] Analisando [${matchId}] | Mercado [${vertical}]...`);
         const payload: AuditPayload = {
           matchId,
           leagueId: ingestedData.leagueId,
-          requestedVerticals,
+          requestedVerticals: mandatoryVerticals,
           externalFactors: ingestedData.externalFactors,
           baseMetrics: {
             home: {
@@ -159,7 +171,9 @@ export class ArgosOrchestratorV4 {
             },
           },
         };
-        return this.processVertical(vertical, payload, regime, elapsed, currentScore);
+        const results = await this.processVertical(vertical, payload, regime, elapsed, currentScore);
+        console.log(`[Argos v5.0] Resultado [${matchId}] | Mercado [${vertical}]: ${results.length > 0 ? 'OPORTUNIDADE ENCONTRADA' : 'SEM VALOR'}`);
+        return results;
       });
 
       const simulationResults = await Promise.allSettled(simulationPromises);
