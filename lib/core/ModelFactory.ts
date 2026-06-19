@@ -153,12 +153,16 @@ export class ModelFactory {
       awayUrgency = 1.25;
     }
 
-    // 5. TENSOR DE DECISÃO MULTIMODAL
-    const finalVariance = (regime.variance_multiplier || 1.0) * importanceMultiplier * volatilityMultiplier;
+    // 5. TENSOR DE DECISÃO MULTIMODAL (Overdispersion Layer)
+    // Argos v5.0: Estabilização via Fator de Variância Tier-based
+    const tierVariance = regime.reasoning_tags?.includes("TIER_1") ? 1.05 : 1.25;
+    const finalVariance = (regime.variance_multiplier || 1.0) * importanceMultiplier * volatilityMultiplier * tierVariance;
 
     for (let i = 0; i < iterations; i++) {
-      const hLambda = metrics.homeMean * intensityFactor * homeUrgency * (1 + (Math.random() - 0.5) * (finalVariance - 1));
-      const aLambda = metrics.awayMean * intensityFactor * awayUrgency * (1 + (Math.random() - 0.5) * (finalVariance - 1));
+      // Argos v5.0: Negative Binomial Simulation (via Gamma-Poisson mixture)
+      // Substitui o Poisson simples por uma distribuição mais estável para evitar subestimação de outliers.
+      const hLambda = this.generateGamma(metrics.homeMean * intensityFactor * homeUrgency, finalVariance);
+      const aLambda = this.generateGamma(metrics.awayMean * intensityFactor * awayUrgency, finalVariance);
 
       const hAddedScore = this.poisson(hLambda);
       const aAddedScore = this.poisson(aLambda);
@@ -185,6 +189,24 @@ export class ModelFactory {
       iterations,
       expectedValue: totalScore / iterations,
     };
+  }
+
+  /**
+   * Gerador Gamma para simular Overdispersion (Negative Binomial)
+   */
+  private static generateGamma(mean: number, varianceFactor: number): number {
+    if (varianceFactor <= 1.0) return mean;
+    
+    // Simulação simplificada de Gamma: mean + ruído baseado na variância
+    const alpha = mean / (varianceFactor - 1);
+    const beta = varianceFactor - 1;
+    
+    // Aproximação de Gamma via amostragem centralizada
+    let sum = 0;
+    for (let i = 0; i < 12; i++) sum += Math.random();
+    const noise = (sum - 6) * Math.sqrt(mean * beta);
+    
+    return Math.max(0.01, mean + noise);
   }
 
   private static poisson(lambda: number): number {

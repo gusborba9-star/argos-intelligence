@@ -117,7 +117,9 @@ export class DailyIngestionScheduler {
             }
 
             // Argos v5.0: MATCH_ANALYSIS_JOB (Análise Completa Multimercado)
-            // O sistema agora esgota as possibilidades antes de descartar o jogo.
+            // Anexar metadados de densidade para o Orchestrator Gate
+            (fixture as any).operationalDensity = score.operationalDensity;
+
             const verticalsToEnqueue = Object.values(MarketVertical);
             
             console.log(`[Argos v5.0] Enfileirando JOB: ${matchId} | Reason: ${priorityReason} | Score: ${score.operationalDensity}`);

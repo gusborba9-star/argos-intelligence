@@ -35,9 +35,10 @@ export interface EnrichedFixture extends FixtureResponse {
 export interface IngestedData {
   matchId: string;
   leagueId: string;
-  home: AdjustedMetrics;
-  away: AdjustedMetrics;
+  homeHistory: FixtureResponse[];
+  awayHistory: FixtureResponse[];
   externalFactors: ExternalFactors;
+  fixture: FixtureResponse;
 }
 
 interface FixtureTeam {
@@ -79,7 +80,7 @@ interface FixtureGoals {
   away: number | null;
 }
 
-interface FixtureResponse {
+export interface FixtureResponse {
   fixture: {
     id: number;
     referee: string | null;
@@ -197,10 +198,6 @@ export class DataIngestionService {
         this.getTeamHistory(awayTeamId, 10, refresh),
       ]);
 
-      // 3. Calcular Médias Ajustadas com Decaimento Exponencial
-      const homeMetrics = this.calculateExponentialAverages(homeHistory);
-      const awayMetrics = this.calculateExponentialAverages(awayHistory);
-
       // 4. Extrair Fatores Externos
       const externalFactors: ExternalFactors = {
         refereeStrictness: this.parseRefereeStrictness(fixture.fixture.referee || ""),
@@ -213,9 +210,10 @@ export class DataIngestionService {
       const result: IngestedData = {
         matchId,
         leagueId,
-        home: homeMetrics,
-        away: awayMetrics,
+        homeHistory,
+        awayHistory,
         externalFactors,
+        fixture
       };
       await getRedisCacheInstance().cacheMatchData(matchId, result);
       return result;
@@ -395,50 +393,7 @@ export class DataIngestionService {
     return fixtures;
   }
 
-  /**
-   * Aplica Fator de Decaimento Exponencial: Jogos recentes têm peso maior
-   * Fórmula: Peso = alpha * (1 - alpha)^n, onde n é a distância do jogo atual
-   */
-  private calculateExponentialAverages(history: FixtureResponse[]): AdjustedMetrics {
-    const alpha = 0.3; // Fator de decaimento (30% de peso para o mais recente)
-    let totalWeight = 0;
 
-    const sums = { goals: 0, goalsHT: 0, corners: 0, cards: 0, shots: 0, shotsOnTarget: 0 };
-
-    if (!history || history.length === 0) {
-      console.warn("[DataIngestionService] Histórico vazio para cálculo de médias. Retornando valores padrão.");
-      return { goals: 1.5, goalsHT: 0.5, corners: 5, cards: 2, shots: 12, shotsOnTarget: 5 };
-    }
-
-    history.forEach((match, index) => {
-      const weight = Math.pow(1 - alpha, index);
-      totalWeight += weight;
-
-      // Usar os gols reais do jogo, se disponíveis
-      const homeGoals = typeof match.goals.home === 'number' ? match.goals.home : 0;
-      const awayGoals = typeof match.goals.away === 'number' ? match.goals.away : 0;
-      sums.goals += (homeGoals + awayGoals) * weight;
-
-      const homeGoalsHT = typeof match.score.halftime.home === 'number' ? match.score.halftime.home : 0;
-      const awayGoalsHT = typeof match.score.halftime.away === 'number' ? match.score.halftime.away : 0;
-      sums.goalsHT += (homeGoalsHT + awayGoalsHT) * weight;
-
-      // TODO: Substituir simulações por dados reais de estatísticas (corners, cards, shots, shotsOnTarget)
-      sums.corners += 5 * weight; 
-      sums.cards += 2 * weight; 
-      sums.shots += 12 * weight; 
-      sums.shotsOnTarget += 5 * weight; 
-    });
-
-    return {
-      goals: totalWeight > 0 ? sums.goals / totalWeight : 1.5,
-      goalsHT: totalWeight > 0 ? sums.goalsHT / totalWeight : 0.5,
-      corners: totalWeight > 0 ? sums.corners / totalWeight : 5,
-      cards: totalWeight > 0 ? sums.cards / totalWeight : 2,
-      shots: totalWeight > 0 ? sums.shots / totalWeight : 12,
-      shotsOnTarget: totalWeight > 0 ? sums.shotsOnTarget / totalWeight : 5,
-    };
-  }
 
   private parseRefereeStrictness(refereeName: string): number {
     if (!refereeName) return 1.0;

@@ -7,25 +7,14 @@ export class DataIngestionServiceMock extends DataIngestionService {
   }
 
   async ingest(matchId: string, refresh: boolean = false): Promise<IngestedData> {
-    // Simula uma resposta de ingestão de dados
-        const homeMetrics: AdjustedMetrics = {
-      goals: 1.5,
-      goalsHT: 0.5, // Adicionado
-      corners: 6,
-      cards: 2,
-      shots: 12,
-      shotsOnTarget: 5,
+    // Simula uma resposta de ingestão de dados (RAW)
+    const mockFixture: any = {
+      fixture: { id: parseInt(matchId), date: new Date().toISOString() },
+      league: { id: 123, name: "Mock League" },
+      teams: { home: { name: "Home" }, away: { name: "Away" } },
+      goals: { home: 1, away: 0 },
+      score: { halftime: { home: 0, away: 0 } }
     };
-
-    const awayMetrics: AdjustedMetrics = {
-      goals: 1.0,
-      goalsHT: 0.3, // Adicionado
-      corners: 4,
-      cards: 1,
-      shots: 10,
-      shotsOnTarget: 4,
-    };
-
 
     const externalFactors: ExternalFactors = {
       refereeStrictness: 1.0,
@@ -37,10 +26,11 @@ export class DataIngestionServiceMock extends DataIngestionService {
 
     return {
       matchId,
-      leagueId: "123", // ID de liga mock
-      home: homeMetrics,
-      away: awayMetrics,
+      leagueId: "123",
+      homeHistory: [mockFixture],
+      awayHistory: [mockFixture],
       externalFactors,
+      fixture: mockFixture
     };
   }
 

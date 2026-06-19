@@ -4,6 +4,7 @@ import { ContextualFactorsEngine } from "../core/ContextualFactorsEngine";
 import { SignalSnapshotService, SignalSnapshot } from "./SignalSnapshotService";
 import { NotificationService } from "./notifications/NotificationService";
 import { DataIngestionService } from "../core/DataIngestionService";
+import { FeatureEngine } from "../core/FeatureEngine";
 import { DailyIngestionScheduler } from "./ingestion/DailyIngestionScheduler";
 import dotenv from "dotenv";
 
@@ -50,8 +51,11 @@ async function runProductionAnalysis() {
             console.log(`[DEBUG] Iniciando ingestão para o jogo ${match.id}`);
             const ingested = await ingestionService.ingest(match.id.toString(), true); // Forçar refresh para a análise detalhada
             console.log(`[DEBUG] Ingestão concluída para o jogo ${match.id}`);
-            // Os detalhes do jogo (home, away, league, date) já estão no objeto `match` via scheduler.
             
+            // Argos v5.0: Feature Engineering Layer
+            const homeMetrics = FeatureEngine.calculateExponentialAverages(ingested.homeHistory);
+            const awayMetrics = FeatureEngine.calculateExponentialAverages(ingested.awayHistory);
+
             // Fatores Contextuais Reais (Baseados nos dados da API e contexto da liga)
             const isWorldCup = match.league.includes("World Cup");
             
@@ -77,23 +81,21 @@ async function runProductionAnalysis() {
             const multiplier = ContextualFactorsEngine.calculateTotalContextualMultiplier(context);
             
             // Construção do MatchContextInput com todos os mercados
-            // Usando dados reais da API onde disponível, e valores padrão/simulados para outros mercados
-            // A API Free geralmente não fornece odds em tempo real para todos os mercados, então as odds são simuladas
             const analysisInput = {
                 matchId: match.id.toString(),
                 winnerMatrix: {
-                    home: { label: "Home", probability: (ingested.home.goals + ingested.away.goals > 0 ? ingested.home.goals / (ingested.home.goals + ingested.away.goals) : 0.5) * multiplier, impliedOdds: 1.85 },
+                    home: { label: "Home", probability: (homeMetrics.goals + awayMetrics.goals > 0 ? homeMetrics.goals / (homeMetrics.goals + awayMetrics.goals) : 0.5) * multiplier, impliedOdds: 1.85 },
                     draw: { label: "Draw", probability: 0.25, impliedOdds: 3.40 },
-                    away: { label: "Away", probability: (ingested.home.goals + ingested.away.goals > 0 ? ingested.away.goals / (ingested.home.goals + ingested.away.goals) : 0.5) / multiplier, impliedOdds: 4.20 }
+                    away: { label: "Away", probability: (homeMetrics.goals + awayMetrics.goals > 0 ? awayMetrics.goals / (homeMetrics.goals + awayMetrics.goals) : 0.5) / multiplier, impliedOdds: 4.20 }
                 },
                 goalsMatrix: {
-                    over15: { label: "Over 1.5", probability: (ingested.home.goals + ingested.away.goals) / 3 * multiplier, impliedOdds: 1.45 },
-                    over25: { label: "Over 2.5", probability: (ingested.home.goals + ingested.away.goals) / 4 * multiplier, impliedOdds: 2.10 },
-                    under45: { label: "Under 4.5", probability: 1 - ((ingested.home.goals + ingested.away.goals) / 6 * multiplier), impliedOdds: 1.25 }
+                    over15: { label: "Over 1.5", probability: (homeMetrics.goals + awayMetrics.goals) / 3 * multiplier, impliedOdds: 1.45 },
+                    over25: { label: "Over 2.5", probability: (homeMetrics.goals + awayMetrics.goals) / 4 * multiplier, impliedOdds: 2.10 },
+                    under45: { label: "Under 4.5", probability: 1 - ((homeMetrics.goals + awayMetrics.goals) / 6 * multiplier), impliedOdds: 1.25 }
                 },
                 goalsHTMatrix: {
-                    over05: { label: "HT Over 0.5", probability: (ingested.home.goalsHT + ingested.away.goalsHT) / 1.5 * multiplier, impliedOdds: 1.55 },
-                    under15: { label: "HT Under 1.5", probability: 1 - ((ingested.home.goalsHT + ingested.away.goalsHT) / 2.5 * multiplier), impliedOdds: 1.40 }
+                    over05: { label: "HT Over 0.5", probability: (homeMetrics.goalsHT + awayMetrics.goalsHT) / 1.5 * multiplier, impliedOdds: 1.55 },
+                    under15: { label: "HT Under 1.5", probability: 1 - ((homeMetrics.goalsHT + awayMetrics.goalsHT) / 2.5 * multiplier), impliedOdds: 1.40 }
                 },
                 cardsMatrix: {
                     over45: { label: "Over 4.5 Cards", probability: (ingested.externalFactors.refereeStrictness * 0.4) * multiplier, impliedOdds: 1.90 },
@@ -104,10 +106,10 @@ async function runProductionAnalysis() {
                     under95: { label: "Under 9.5 Corners", probability: 0.45, impliedOdds: 2.00 } // Exemplo de Under
                 },
                 shotsMatrix: {
-                    over105: { label: "Over 10.5 Shots", probability: (ingested.home.shots + ingested.away.shots) / 20 * multiplier, impliedOdds: 2.20 } // Usando dados ingeridos
+                    over105: { label: "Over 10.5 Shots", probability: (homeMetrics.shots + awayMetrics.shots) / 20 * multiplier, impliedOdds: 2.20 } // Usando dados ingeridos
                 },
                 shotsOnTargetMatrix: {
-                    over55: { label: "Over 5.5 Shots on Target", probability: (ingested.home.shotsOnTarget + ingested.away.shotsOnTarget) / 10 * multiplier, impliedOdds: 2.00 } // Usando dados ingeridos
+                    over55: { label: "Over 5.5 Shots on Target", probability: (homeMetrics.shotsOnTarget + awayMetrics.shotsOnTarget) / 10 * multiplier, impliedOdds: 2.00 } // Usando dados ingeridos
                 },
                 foulsMatrix: {
                     over205: { label: "Over 20.5 Fouls", probability: 0.60 * multiplier, impliedOdds: 1.80 } // Simulado

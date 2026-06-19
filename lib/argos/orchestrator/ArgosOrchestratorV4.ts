@@ -8,6 +8,7 @@ import { ArgosSignal } from "@/lib/core/contracts/SignalContract";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 import { AutoTuningEngine, TuningResult } from "@/lib/core/AutoTuningEngine";
 import { DataIngestionService, IngestedData } from "@/lib/core/DataIngestionService";
+import { FeatureEngine } from "@/lib/core/FeatureEngine";
 import { AnomalyDetectionService } from "@/lib/argos/auditor/AnomalyDetectionService";
 import { RegimeProfile, MarketRegime } from "@/lib/argos/regime/RegimeSchema";
 import { TelegramDispatcher } from "@/lib/argos/notifications/TelegramDispatcher";
@@ -149,32 +150,63 @@ export class ArgosOrchestratorV4 {
         MarketVertical.HANDICAP
       ];
 
-      console.log(`[Argos v5.0] Iniciando Exaustão de Mercados para o jogo ${matchId}...`);
+      // 4. GATE DE EXECUÇÃO (Argos v5.0 Final Architecture)
+      // O Orchestrator obedece a um único gate externo: operationalDensity.
+      // Se o job não veio com metadados de densidade, recalculamos ou usamos default seguro.
+      const operationalDensity = (ingestedData.fixture as any).operationalDensity || 75; // Default HIGH para jobs diretos
+      
+      let executionMode: "FULL" | "REDUCED" | "SKIP" = "SKIP";
+      if (operationalDensity >= 75) executionMode = "FULL";
+      else if (operationalDensity >= 55) executionMode = "REDUCED";
 
-      const simulationPromises = mandatoryVerticals.map(async (vertical) => {
+      if (executionMode === "SKIP") {
+        console.log(`[Argos v5.0] GATE: SKIP TOTAL para jogo ${matchId} (Densidade: ${operationalDensity})`);
+        return {
+          matchId,
+          status: "SUCCESS",
+          executionTimeMs: Date.now() - startTime,
+          error: "DENSITY_SKIP"
+        };
+      }
+
+      // 5. FILTRAGEM DE VERTICAIS (Execution Mode)
+      // Nunca rodar exaustão completa sem validação de densidade.
+      let verticalsToProcess = mandatoryVerticals;
+      if (executionMode === "REDUCED") {
+        console.log(`[Argos v5.0] GATE: REDUCED_VERTICAL_SET para jogo ${matchId}`);
+        verticalsToProcess = [MarketVertical.WINNER, MarketVertical.GOALS, MarketVertical.GOALS_HT];
+      }
+
+      // 6. FEATURE ENGINEERING (Camada Isolada)
+      // Ingestão retornou RAW. Agora transformamos em features para o motor.
+      const homeMetrics = FeatureEngine.calculateExponentialAverages(ingestedData.homeHistory);
+      const awayMetrics = FeatureEngine.calculateExponentialAverages(ingestedData.awayHistory);
+
+      console.log(`[Argos v5.0] Iniciando Exaustão Inteligente [${executionMode}] para o jogo ${matchId}...`);
+
+      const simulationPromises = verticalsToProcess.map(async (vertical) => {
         console.log(`[Argos v5.0] Analisando [${matchId}] | Mercado [${vertical}]...`);
         const payload: AuditPayload = {
           matchId,
           leagueId: ingestedData.leagueId,
-          requestedVerticals: mandatoryVerticals,
+          requestedVerticals: verticalsToProcess,
           externalFactors: ingestedData.externalFactors,
           baseMetrics: {
             home: {
-              goals: ingestedData.home.goals,
-              corners: ingestedData.home.corners,
-              cards: ingestedData.home.cards,
-              shots: ingestedData.home.shots,
+              goals: homeMetrics.goals,
+              corners: homeMetrics.corners,
+              cards: homeMetrics.cards,
+              shots: homeMetrics.shots,
             },
             away: {
-              goals: ingestedData.away.goals,
-              corners: ingestedData.away.corners,
-              cards: ingestedData.away.cards,
-              shots: ingestedData.away.shots,
+              goals: awayMetrics.goals,
+              corners: awayMetrics.corners,
+              cards: awayMetrics.cards,
+              shots: awayMetrics.shots,
             },
           },
         };
         const results = await this.processVertical(vertical, payload, regime, elapsed, currentScore);
-        console.log(`[Argos v5.0] Resultado [${matchId}] | Mercado [${vertical}]: ${results.length > 0 ? 'OPORTUNIDADE ENCONTRADA' : 'SEM VALOR'}`);
         return results;
       });
 

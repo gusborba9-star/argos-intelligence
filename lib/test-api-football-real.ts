@@ -4,6 +4,7 @@
 // ============================================================
 
 import { DataIngestionService } from "./core/DataIngestionService";
+import { FeatureEngine } from "./core/FeatureEngine";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -24,11 +25,13 @@ async function testRealApiFootball() {
     console.log(`\n🚀 Iniciando ingestão completa para o jogo LIVE ID: ${targetMatchId}...`);
     
     const ingestedData = await ingestionService.ingest(targetMatchId, true);
+    const homeMetrics = FeatureEngine.calculateExponentialAverages(ingestedData.homeHistory);
+    const awayMetrics = FeatureEngine.calculateExponentialAverages(ingestedData.awayHistory);
     
     console.log(`✅ Ingestão Concluída com Sucesso!`);
-    console.log(`📊 Métricas Ingeridas:`);
-    console.log(`   - Home (xG): ${ingestedData.home.goals.toFixed(2)}`);
-    console.log(`   - Away (xG): ${ingestedData.away.goals.toFixed(2)}`);
+    console.log(`📊 Métricas Ingeridas (via FeatureEngine):`);
+    console.log(`   - Home (xG): ${homeMetrics.goals.toFixed(2)}`);
+    console.log(`   - Away (xG): ${awayMetrics.goals.toFixed(2)}`);
     console.log(`   - Referee Strictness: ${ingestedData.externalFactors.refereeStrictness}`);
     console.log(`   - League ID: ${ingestedData.leagueId}`);
     
