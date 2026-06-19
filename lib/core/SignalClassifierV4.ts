@@ -15,32 +15,49 @@ export enum SignalType {
 export interface ClassifiedSignal extends ArgosSignal {
   signal_type: SignalType;
   confidence_score: number;
+  tier: "FREE" | "VIP" | "NONE";
 }
 
 export class SignalClassifierV4 {
   /**
    * Classifica uma oportunidade de mercado usando a Tripla Classificação
    */
+  /**
+   * Argos v5.0: Camada de Classificação de Entrega (Free vs VIP)
+   * O motor é único, a diferença está na seletividade da entrega.
+   */
   static classify(signals: ArgosSignal[], regime: RegimeProfile): ClassifiedSignal[] {
     return signals.map(s => {
       let type = SignalType.NOISE;
+      let tier: "FREE" | "VIP" | "NONE" = "NONE";
       
-      // 1. VALUE SIGNAL: EV Positivo
-      if (s.expectedValue > 0) {
+      // 1. Lógica de Valor/Validação
+      if (s.expectedValue > 0.05) { // Edge mínimo para VALUE
         type = SignalType.VALUE;
-      } 
-      // 2. VALIDATION SIGNAL: Alta probabilidade (ajustada ou base) mesmo com EV negativo
-      else if (s.probability >= 0.70 || (s.adjustedProbability && s.adjustedProbability >= 0.65)) {
+      } else if (s.probability >= 0.70) {
         type = SignalType.VALIDATION;
+      }
+
+      // 2. Lógica de Tier (Argos v5.0)
+      // VIP: EV+ e Alta Confiança em qualquer vertical
+      if (type === SignalType.VALUE && regime.confidence >= 0.7) {
+        tier = "VIP";
+      }
+      
+      // FREE: Alta Probabilidade, Máxima Clareza, até 2 verticais específicas (Gols/Match Odds)
+      const isFreeVertical = ["GOALS", "MATCH_ODDS"].includes(s.vertical);
+      if (tier === "NONE" && isFreeVertical && (s.probability >= 0.75 || type === SignalType.VALUE)) {
+        tier = "FREE";
       }
 
       return {
         ...s,
         signal_type: type,
         confidence_score: regime.confidence,
+        tier: tier,
         status: (type === SignalType.VALUE ? "OPTIMIZED" : "HEDGED") as any
       };
-    }).filter(s => s.signal_type !== SignalType.NOISE); // Restaurado filtro para garantir apenas sinais de alta qualidade para despacho
+    }).filter(s => s.tier !== "NONE"); 
   }
 
   /**

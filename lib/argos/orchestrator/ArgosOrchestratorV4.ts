@@ -135,6 +135,8 @@ export class ArgosOrchestratorV4 {
 
       // 4. EXAUSTÃO DE MERCADOS: Processamento Obrigatório de todas as Verticais (10.000 simulações/vertical)
       // O Argos não para no Winner. Ele esgota as possibilidades antes de descartar o jogo.
+      // Argos v5.0: EXAUSTÃO DE MERCADOS
+      // O Argos analisa todas as famílias de mercado antes de descartar a partida.
       const mandatoryVerticals = [
         MarketVertical.WINNER, 
         MarketVertical.GOALS, 

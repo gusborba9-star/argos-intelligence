@@ -70,7 +70,8 @@ async function runProductionAnalysis() {
                 consecutiveWins: 0,
                 consecutiveLosses: 0,
                 pressureFactor: isWorldCup ? 1.25 : 1.0,
-                crowdEffect: 1.05
+                crowdEffect: 1.05,
+                expectedEdge: 0
             };
 
             const multiplier = ContextualFactorsEngine.calculateTotalContextualMultiplier(context);

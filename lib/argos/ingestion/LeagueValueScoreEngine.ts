@@ -1,6 +1,3 @@
-import { MarketMetrics, ModelFactory, SimulationResult } from "@/lib/core/ModelFactory";
-import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
-
 export interface LeagueValueInput {
   fixture: any;
   leagueStats: LeagueProfile;
@@ -14,123 +11,89 @@ export interface LeagueValueInput {
 export interface LeagueProfile {
   id: number;
   name: string;
-  tier: "Tier 1" | "Tier 2" | "Tier 3" | "Tier 4"; // Adicionado Tier 4 para ligas não reconhecidas
-  historicalLiquidity: number; // Volume histórico de apostas
-  oddsDispersion: number; // Dispersão de odds
+  tier: "Tier 1" | "Tier 2" | "Tier 3" | "Tier 4";
+  historicalLiquidity: number; 
+  oddsDispersion: number; 
   avgGoals: number;
   avgCorners: number;
   avgCards: number;
-  historicalEVPlus: number; // Histórico de EV+
+  historicalEVPlus: number; 
 }
 
 export interface LeagueValueScore {
   matchId: string;
   leagueId: number;
-  valueScore: number; // 0-100
-  liquidityScore: number; // 0-100
-  volatilityScore: number; // 0-100
+  
+  // Argos v5.0: Foco em Densidade de Oportunidade (CPU Worthiness)
+  operationalDensity: number; // 0-100 (Vale gastar processamento?)
+  liquidityScore: number;    // 0-100
+  dataQualityScore: number;  // 0-100
+  
   priorityTier: "HIGH" | "MEDIUM" | "LOW" | "DROP";
   recommendedAction: "QUEUE_FULL" | "QUEUE_REDUCED" | "SKIP" | "IGNORE";
-  expectedEdgeDensity: number; // densidade esperada de EV+
 }
 
+/**
+ * LEAGUE VALUE SCORE ENGINE v5.0 — DETERMINISTIC OPERATIONAL FILTER
+ * 
+ * Responsabilidade: Decidir se um jogo merece CPU/Análise.
+ * NÃO prevê EV. NÃO prevê resultados.
+ */
 export class LeagueValueScoreEngine {
-  private static readonly MAX_VALUE_SCORE = 100;
-  private static readonly MIN_SCORE_TO_QUEUE = 55; // Hard filter
-  private static readonly MIN_KICKOFF_MINUTES = 30; // Hard filter
+  private static readonly MIN_DENSITY_TO_QUEUE = 45; 
+  private static readonly MIN_KICKOFF_MINUTES = 45; // Evitar jogos em cima da hora
 
-  /**
-   * Avalia um fixture e retorna seu LeagueValueScore.
-   * Este é um motor puramente matemático e determinístico.
-   */
   public static evaluate(input: LeagueValueInput): LeagueValueScore {
-    const { fixture, leagueStats, marketContext, timeToKickoffMinutes } = input;
+    const { fixture, leagueStats, timeToKickoffMinutes } = input;
 
-    // 1. Regras de corte (hard filters) - Eliminação agressiva
-    if (!fixture || !fixture.fixture || !fixture.teams || !fixture.league) {
-      return this.createDropScore(fixture?.fixture?.id, fixture?.league?.id, "SKIP", "Fixture incompleto");
+    // 1. HARD FILTERS (Pre-Filter Barato)
+    if (!fixture?.fixture?.id || !fixture?.teams?.home?.name || !fixture?.league?.name) {
+      return this.createDropScore(fixture?.fixture?.id, fixture?.league?.id, "Fixture incompleto");
     }
+
     if (timeToKickoffMinutes < this.MIN_KICKOFF_MINUTES) {
-      return this.createDropScore(fixture.fixture.id, fixture.league.id, "SKIP", "Kickoff muito próximo");
-    }
-    if (leagueStats.tier === "Tier 4" && leagueStats.historicalLiquidity < 10000) { // Exemplo de liquidez mínima
-      return this.createDropScore(fixture.fixture.id, fixture.league.id, "SKIP", "Liga não reconhecida e baixa liquidez");
+      return this.createDropScore(fixture.fixture.id, fixture.league.id, "Kickoff muito próximo ou já iniciado");
     }
 
-    // A. Força da liga (peso estrutural)
-    let leagueStrength = 0;
-    switch (leagueStats.tier) {
-      case "Tier 1":
-        leagueStrength = 1.0;
-        break;
-      case "Tier 2":
-        leagueStrength = 0.7;
-        break;
-      case "Tier 3":
-        leagueStrength = 0.4;
-        break;
-      default:
-        leagueStrength = 0.1; // Ligas não reconhecidas ou de baixo tier
-    }
+    // 2. CÁLCULO DE DENSIDADE OPERACIONAL
+    
+    // A. Peso da Competição (Importância Estrutural)
+    let competitionWeight = 0.2;
+    if (leagueStats.tier === "Tier 1") competitionWeight = 1.0;
+    else if (leagueStats.tier === "Tier 2") competitionWeight = 0.7;
+    else if (leagueStats.tier === "Tier 3") competitionWeight = 0.4;
 
-    // B. Liquidez de mercado (proxy de eficiência)
-    const liquidityScore = Math.min(100, leagueStats.historicalLiquidity / 100000 * 100); // Normaliza para 0-100
-    const marketEfficiency = 1 - (leagueStats.oddsDispersion / 100); // Quanto menor a dispersão, maior a eficiência
+    // B. Liquidez Estimada (Proxy de disponibilidade de mercados e limites)
+    const liquidityScore = Math.min(100, (leagueStats.historicalLiquidity / 1000000) * 100);
 
-    // C. Tempo até início (CRÍTICO)
+    // C. Qualidade de Dados (Baseado no Tier e histórico)
+    const dataQualityScore = leagueStats.tier === "Tier 4" ? 30 : 90;
+
+    // D. Janela de Tempo (Opportunity Window)
     let timingScore = 0;
-    if (timeToKickoffMinutes >= 60 && timeToKickoffMinutes <= 360) { // 1h a 6h
-      timingScore = 1.0;
-    } else if (timeToKickoffMinutes > 360 && timeToKickoffMinutes <= 1440) { // 6h a 24h
-      timingScore = 0.7;
-    } else if (timeToKickoffMinutes > 1440) { // > 24h
-      timingScore = 0.4;
-    } else { // < 60 min (já filtrado acima, mas para segurança)
-      timingScore = 0.1;
-    }
+    if (timeToKickoffMinutes >= 60 && timeToKickoffMinutes <= 480) timingScore = 100; // 1h a 8h: Janela Ideal
+    else if (timeToKickoffMinutes > 480 && timeToKickoffMinutes <= 1440) timingScore = 70; // 8h a 24h: Bom
+    else if (timeToKickoffMinutes > 1440) timingScore = 40; // > 24h: Cedo demais
+    else timingScore = 20; // < 60min: Tarde demais
 
-    // D. Desbalanceamento estrutural (base para EV multi-vertical)
-    // Simulação simplificada para fins de exemplo
-    const teamStrengthIndex = fixture.teamStrengthIndex || 1.0; // Assumindo que vem do input
-    const bookmakerSpread = fixture.bookmakerSpread || 0.0; // Assumindo que vem do input
-    const historicalVariance = fixture.historicalVariance || 0.0; // Assumindo que vem do input
+    // 3. SCORE FINAL (Determinístico)
+    const operationalDensity = (
+      (competitionWeight * 40) +
+      (liquidityScore * 0.25) +
+      (dataQualityScore * 0.20) +
+      (timingScore * 0.15)
+    );
 
-    const structuralImbalance = (teamStrengthIndex * 0.4) + (Math.abs(bookmakerSpread) * 0.3) + (historicalVariance * 0.3);
+    let priorityTier: LeagueValueScore["priorityTier"] = "DROP";
+    let recommendedAction: LeagueValueScore["recommendedAction"] = "IGNORE";
 
-    // E. Contexto global de calendário (já tratado na LeagueProfile via globalContextScore)
-    const globalContextScore = fixture.globalContextScore || 1.0; // Assumindo que vem do input
-
-    // 3.3 Score final (determinístico)
-    let valueScore = (
-      (0.30 * leagueStrength) +
-      (0.25 * (liquidityScore / 100)) + // Normalizado
-      (0.20 * structuralImbalance) +
-      (0.15 * timingScore) +
-      (0.10 * marketEfficiency)
-    ) * 100; // Multiplica por 100 para ter 0-100
-
-    valueScore = Math.min(this.MAX_VALUE_SCORE, Math.max(0, valueScore)); // Garante que esteja entre 0 e 100
-
-    // Volatility Score (simplificado para exemplo)
-    const volatilityScore = Math.min(100, (historicalVariance * 10) + (leagueStats.oddsDispersion * 0.5));
-
-    // Expected Edge Density (simplificado para exemplo, será mais preciso com EODM)
-    // Por enquanto, uma função do valueScore e historicalEVPlus
-    const expectedEdgeDensity = (valueScore / 100) * leagueStats.historicalEVPlus * globalContextScore;
-
-    let priorityTier: LeagueValueScore["priorityTier"];
-    let recommendedAction: LeagueValueScore["recommendedAction"];
-
-    if (valueScore < this.MIN_SCORE_TO_QUEUE) {
-      priorityTier = "DROP";
-      recommendedAction = "IGNORE";
-    } else if (valueScore >= 80) {
+    if (operationalDensity >= 75) {
       priorityTier = "HIGH";
       recommendedAction = "QUEUE_FULL";
-    } else if (valueScore >= 65) {
+    } else if (operationalDensity >= 55) {
       priorityTier = "MEDIUM";
       recommendedAction = "QUEUE_REDUCED";
-    } else {
+    } else if (operationalDensity >= this.MIN_DENSITY_TO_QUEUE) {
       priorityTier = "LOW";
       recommendedAction = "SKIP";
     }
@@ -138,26 +101,24 @@ export class LeagueValueScoreEngine {
     return {
       matchId: fixture.fixture.id.toString(),
       leagueId: fixture.league.id,
-      valueScore: parseFloat(valueScore.toFixed(2)),
+      operationalDensity: parseFloat(operationalDensity.toFixed(2)),
       liquidityScore: parseFloat(liquidityScore.toFixed(2)),
-      volatilityScore: parseFloat(volatilityScore.toFixed(2)),
+      dataQualityScore: parseFloat(dataQualityScore.toFixed(2)),
       priorityTier,
       recommendedAction,
-      expectedEdgeDensity: parseFloat(expectedEdgeDensity.toFixed(4)),
     };
   }
 
-  private static createDropScore(matchId: string | undefined, leagueId: number | undefined, action: LeagueValueScore["recommendedAction"], reason: string): LeagueValueScore {
-    console.log(`[LeagueValueScoreEngine] DROP Fixture ${matchId} (${leagueId}): ${reason}`);
+  private static createDropScore(matchId: any, leagueId: any, reason: string): LeagueValueScore {
+    console.log(`[Argos v5.0] DROP Fixture ${matchId}: ${reason}`);
     return {
-      matchId: matchId ? matchId.toString() : "unknown",
+      matchId: matchId?.toString() || "0",
       leagueId: leagueId || 0,
-      valueScore: 0,
+      operationalDensity: 0,
       liquidityScore: 0,
-      volatilityScore: 100, // Alta volatilidade para itens descartados
+      dataQualityScore: 0,
       priorityTier: "DROP",
-      recommendedAction: action,
-      expectedEdgeDensity: 0,
+      recommendedAction: "IGNORE",
     };
   }
 }

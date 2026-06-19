@@ -22,7 +22,8 @@ async function runDeepAnalysis() {
         consecutiveWins: 2,
         consecutiveLosses: 0,
         pressureFactor: 1.05,
-        crowdEffect: 1.1
+        crowdEffect: 1.1,
+        expectedEdge: 0
     };
 
     // JOGO 2: COPA DO MUNDO - Portugal x RD Congo (17/06/2026)
@@ -42,7 +43,8 @@ async function runDeepAnalysis() {
         consecutiveWins: 4,
         consecutiveLosses: 0,
         pressureFactor: 1.2,
-        crowdEffect: 1.0
+        crowdEffect: 1.0,
+        expectedEdge: 0
     };
 
     // JOGO 3: PLAYOFF LIGA PORTUGAL (Decisão) - Farense x Belenenses (Final Playoff)
@@ -62,7 +64,8 @@ async function runDeepAnalysis() {
         consecutiveWins: 0,
         consecutiveLosses: 3,
         pressureFactor: 1.25,
-        crowdEffect: 1.1
+        crowdEffect: 1.1,
+        expectedEdge: 0
     };
 
     const jogos = [

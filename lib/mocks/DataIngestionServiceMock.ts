@@ -32,6 +32,7 @@ export class DataIngestionServiceMock extends DataIngestionService {
       weatherCondition: "CLEAR",
       motivationLevel: "NORMAL",
       isDerby: false,
+      expectedEdge: 0,
     };
 
     return {
@@ -44,7 +45,7 @@ export class DataIngestionServiceMock extends DataIngestionService {
   }
 
   // Mockar outros métodos se necessário
-  public getPriorityLeagues(): { id: number; name: string }[] {
+  public getPriorityLeagues(): any[] {
     return [{ id: 123, name: "Mock League" }];
   }
 

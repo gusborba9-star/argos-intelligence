@@ -36,8 +36,10 @@ export class ModelFactory {
   private static readonly DEFAULT_ITERATIONS = 10000;
 
   /**
-   * Calcula a Densidade de Oportunidade Esperada (EODM) para um fixture.
-   * Este modelo atua como um "market-selection engine" antes da simulação Monte Carlo.
+   * Argos v5.0: EXPECTED OPPORTUNITY DENSITY MODEL (EODM)
+   * 
+   * Responsabilidade: Medir a densidade operacional e o potencial de CPU do fixture.
+   * Atua como o "Market-Selection Engine" principal.
    */
   static calculateExpectedOpportunityDensity(
     fixture: any,
@@ -45,33 +47,20 @@ export class ModelFactory {
     marketContext: { saturation: number; calendarPressure: number },
     timeToKickoffMinutes: number
   ): ExpectedOpportunityDensityModel {
-    // Implementação simplificada do EODM. Detalhes podem ser expandidos.
-    // O objetivo é ligar os filtros do LeagueValueScoreEngine com a densidade de oportunidade.
-
-    const valueScore = LeagueValueScoreEngine.evaluate({
+    const score = LeagueValueScoreEngine.evaluate({
       fixture,
       leagueStats,
       marketContext,
       timeToKickoffMinutes,
-    }).valueScore; // Reutiliza a lógica de pontuação de valor da liga
+    });
 
-    // Fatores adicionais para EODM
-    const marketLiquidity = leagueStats.historicalLiquidity; // Direto das estatísticas da liga
-    const volatility = leagueStats.oddsDispersion; // Direto das estatísticas da liga
-
-    // Combinação para o Opportunity Score
-    // Ajustar pesos conforme a importância de cada fator
-    const opportunityScore = (
-      (valueScore / 100 * 0.4) + // Peso do valor da liga
-      (marketLiquidity / 1500000 * 0.3) + // Peso da liquidez (normalizado por um valor máximo)
-      ((10 - volatility) / 10 * 0.3) // Peso inverso da volatilidade (normalizado por um valor máximo)
-    ) * 100; // Escala para 0-100
-
-    // Expected Edge (EV+) - Pode ser uma função do historicalEVPlus da liga e do opportunityScore
-    const expectedEdge = leagueStats.historicalEVPlus * (opportunityScore / 100);
+    // O EODM agora foca na densidade de mercados e qualidade operacional
+    const opportunityScore = score.operationalDensity;
+    const marketLiquidity = score.liquidityScore;
+    const volatility = score.dataQualityScore;
 
     return {
-      expectedEdge: parseFloat(expectedEdge.toFixed(4)),
+      expectedEdge: 0, // Argos v5.0: EV não é previsto aqui.
       marketLiquidity: parseFloat(marketLiquidity.toFixed(2)),
       volatility: parseFloat(volatility.toFixed(2)),
       opportunityScore: parseFloat(opportunityScore.toFixed(2)),
@@ -91,19 +80,15 @@ export class ModelFactory {
     elapsedTime: number = 0,
     currentScore: { home: number; away: number } = { home: 0, away: 0 }
   ): SimulationResult {
-    // Calcular multiplicador contextual total
+    // Argos v5.0: REMOVIDO ajuste de EV (expectedEdge) das médias de gols.
+    // O Monte Carlo deve ser um modelo preditivo puro de probabilidades, 
+    // não deve ser enviesado por uma expectativa de valor financeiro externa.
     const contextualMultiplier = ContextualFactorsEngine.calculateTotalContextualMultiplier(contextualFactors);
 
-    // Incorporar expectedEdge do EODM na simulação de Monte Carlo
-    // Isso pode ser feito ajustando as médias (homeMean, awayMean) ou a variância
-    // Para este exemplo, vamos ajustar as médias com base no expectedEdge
-    const edgeAdjustment = 1 + contextualFactors.expectedEdge; // Se expectedEdge for 0.05, ajuste é 1.05
-
-    
-    // Aplicar multiplicador contextual aos métricas
+    // Aplicar multiplicador contextual aos métricas (Fatores reais de jogo)
     const adjustedMetrics: MarketMetrics = {
-      homeMean: metrics.homeMean * contextualMultiplier * edgeAdjustment,
-      awayMean: metrics.awayMean * contextualMultiplier * edgeAdjustment,
+      homeMean: metrics.homeMean * contextualMultiplier,
+      awayMean: metrics.awayMean * contextualMultiplier,
       dispersion: metrics.dispersion,
     };
 

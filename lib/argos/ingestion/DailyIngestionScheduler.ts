@@ -1,5 +1,5 @@
 import { DataIngestionService } from "@/lib/core/DataIngestionService";
-import { LeagueValueScoreEngine, LeagueValueInput, LeagueProfile } from "./LeagueValueScoreEngine";
+import { LeagueValueScoreEngine, LeagueValueInput, LeagueValueScore, LeagueProfile } from "./LeagueValueScoreEngine";
 import { BatchQueueService } from "@/lib/core/BatchQueueService";
 import { MarketVertical } from "../../core/ArgosUnifiedEngine";
 
@@ -36,27 +36,17 @@ export class DailyIngestionScheduler {
     console.log(`[Argos v5.0] Iniciando curadoria diária para as datas: ${datesToFetch.join(", ")}...`);
 
     // 1. PRIORIDADE TIER 1: Ligas de Elite e Alto Valor
-        // 1. Geração de Candidatos: Coletar todos os fixtures potenciais sem filtragem inicial agressiva
+        // Argos v5.0: PIPELINE ADAPTATIVO (Descoberta Automática)
+    // 1. Geração de Candidatos: Buscar todos os fixtures disponíveis para as datas alvo.
     const allPotentialFixtures: any[] = [];
-    const priorityLeagues = this.dataIngestionService.getPriorityLeagues();
-
     const fixturePromises: Promise<any[]>[] = [];
+
     for (const date of datesToFetch) {
-        // Buscar ligas prioritárias
-        for (const league of priorityLeagues) {
-            fixturePromises.push(
-                this.dataIngestionService.getFixturesByLeague(league.id, date)
-                    .catch(err => {
-                        console.error(`[Argos v5.0] Erro ao buscar liga ${league.name} para ${date}:`, err.message);
-                        return [];
-                    })
-            );
-        }
-        // Buscar ligas diversas para preenchimento inicial (antes da filtragem inteligente)
+        console.log(`[Argos v5.0] Descobrindo competições ativas para ${date}...`);
         fixturePromises.push(
             this.dataIngestionService.getFixturesAnyLeague(date)
                 .catch(err => {
-                    console.error(`[Argos v5.0] Erro ao buscar jogos de qualquer liga para ${date}:`, err.message);
+                    console.error(`[Argos v5.0] Erro na descoberta automática para ${date}:`, err.message);
                     return [];
                 })
         );
@@ -80,23 +70,19 @@ export class DailyIngestionScheduler {
         }
 
         const timeToKickoffMinutes = (new Date(fixture.fixture.date).getTime() - today.getTime()) / (1000 * 60);
-        const leagueStats: LeagueProfile = this.dataIngestionService.getLeagueProfile(fixture.league.id) || {
-            id: fixture.league.id,
-            name: fixture.league.name,
-            tier: "Tier 4",
-            historicalLiquidity: 50000,
-            oddsDispersion: 5,
-            avgGoals: 2.5,
-            avgCorners: 10,
-            avgCards: 3,
-            historicalEVPlus: 0.02,
-        };
+        // Argos v5.0: Perfil de Liga Dinâmico (Descoberta)
+        const leagueStats: LeagueProfile = this.dataIngestionService.getLeagueProfile(fixture.league.id, fixture.league.name);
 
         const marketContext = {
             saturation: 0.5, // Mock
             calendarPressure: 0.3, // Mock
         };
 
+        // Argos v5.0: PRE-FILTER BARATO
+        // 1. Kickoff futuro e tempo adequado
+        if (timeToKickoffMinutes < 45 || timeToKickoffMinutes > 2880) continue; // Entre 45min e 48h
+        
+        // 2. Dados mínimos e Competição válida (Tratado no LeagueValueScoreEngine)
         const evaluationInput: LeagueValueInput = {
             fixture,
             leagueStats,
@@ -106,13 +92,14 @@ export class DailyIngestionScheduler {
 
         const score = LeagueValueScoreEngine.evaluate(evaluationInput);
 
-        if (score.priorityTier !== "DROP" && score.valueScore >= this.MIN_SCORE_TO_QUEUE) {
+        // 3. Decisão baseada em Densidade Operacional (Vale gastar CPU?)
+        if (score.priorityTier !== "DROP" && score.operationalDensity >= this.MIN_SCORE_TO_QUEUE) {
             rankedFixtures.push({ fixture, score });
         }
     }
 
-    // 3. Ordenar e selecionar os melhores jogos
-    rankedFixtures.sort((a, b) => b.score.valueScore - a.score.valueScore);
+    // 3. Ordenar por Densidade Operacional (Vale a pena analisar?)
+    rankedFixtures.sort((a, b) => b.score.operationalDensity - a.score.operationalDensity);
 
     const topFixturesToEnqueue = rankedFixtures.slice(0, this.MAX_DAILY_GAMES);
 
@@ -130,10 +117,10 @@ export class DailyIngestionScheduler {
             let verticalsToEnqueue = Object.values(MarketVertical);
             if (score.recommendedAction === "QUEUE_REDUCED") {
                 // Lógica para selecionar mercados de alta eficiência
-                verticalsToEnqueue = [MarketVertical.OVER_UNDER, MarketVertical.MATCH_ODDS]; // Exemplo
+                verticalsToEnqueue = [MarketVertical.GOALS, MarketVertical.WINNER]; 
             } else if (score.recommendedAction === "SKIP") {
                 // Lógica para 1-2 verticais filtradas
-                verticalsToEnqueue = [MarketVertical.MATCH_ODDS]; // Exemplo
+                verticalsToEnqueue = [MarketVertical.WINNER]; 
             }
 
             await this.batchQueueService.enqueue(matchId, verticalsToEnqueue);

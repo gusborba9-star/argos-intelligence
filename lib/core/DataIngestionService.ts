@@ -1,6 +1,7 @@
 import axios, { AxiosResponse } from "axios";
 import { getRedisCacheInstance } from "@/lib/core/RedisCache";
 import { circuitBreakerPool } from "@/lib/core/CircuitBreaker";
+import { LeagueProfile } from "@/lib/argos/ingestion/LeagueValueScoreEngine";
 
 // ============================================================
 // DATA INGESTION SERVICE v4.5 — EXPONENTIAL INTELLIGENCE
@@ -21,6 +22,7 @@ export interface ExternalFactors {
   weatherCondition: "CLEAR" | "RAIN" | "EXTREME_HEAT";
   motivationLevel: "NORMAL" | "HIGH" | "LOW";
   isDerby: boolean;
+  expectedEdge: number;
 }
 
 export interface EnrichedFixture extends FixtureResponse {
@@ -205,6 +207,7 @@ export class DataIngestionService {
         weatherCondition: "CLEAR", // TODO: Implementar lógica real de clima
         motivationLevel: "NORMAL", // TODO: Implementar lógica real de motivação
         isDerby: false, // TODO: Implementar lógica real de derby
+        expectedEdge: 0,
       };
 
       const result: IngestedData = {
@@ -254,29 +257,13 @@ export class DataIngestionService {
   }
 
   /**
-   * Retorna a lista de ligas prioritárias (Elite)
+   * Argos v5.0: REMOVIDO LISTA FIXA DE LIGAS.
+   * Agora o sistema descobre competições ativas via API de fixtures futuros.
    */
   public getPriorityLeagues(): LeagueProfile[] {
-    // Lista de ligas prioritárias (Tier 1) - Foco em Qualidade e Liquidez
-    return [
-      { id: 1, name: "World Cup", tier: "Tier 1", historicalLiquidity: 1000000, oddsDispersion: 2, avgGoals: 2.8, avgCorners: 11, avgCards: 4, historicalEVPlus: 0.05 },
-      { id: 71, name: "Brasileirão Série A", tier: "Tier 1", historicalLiquidity: 800000, oddsDispersion: 3, avgGoals: 2.4, avgCorners: 10, avgCards: 5, historicalEVPlus: 0.03 },
-      { id: 72, name: "Brasileirão Série B", tier: "Tier 2", historicalLiquidity: 400000, oddsDispersion: 4, avgGoals: 2.2, avgCorners: 9, avgCards: 5, historicalEVPlus: 0.02 },
-      { id: 666, name: "Copa do Brasil", tier: "Tier 1", historicalLiquidity: 700000, oddsDispersion: 3, avgGoals: 2.6, avgCorners: 10, avgCards: 4, historicalEVPlus: 0.04 },
-      { id: 2, name: "Champions League", tier: "Tier 1", historicalLiquidity: 1200000, oddsDispersion: 1.5, avgGoals: 2.9, avgCorners: 12, avgCards: 3, historicalEVPlus: 0.06 },
-      { id: 39, name: "Premier League", tier: "Tier 1", historicalLiquidity: 1500000, oddsDispersion: 1.8, avgGoals: 2.7, avgCorners: 11, avgCards: 3.5, historicalEVPlus: 0.055 },
-      { id: 78, name: "Bundesliga", tier: "Tier 1", historicalLiquidity: 900000, oddsDispersion: 2.5, avgGoals: 3.0, avgCorners: 10.5, avgCards: 3.8, historicalEVPlus: 0.045 },
-      { id: 140, name: "La Liga", tier: "Tier 1", historicalLiquidity: 1100000, oddsDispersion: 2.2, avgGoals: 2.5, avgCorners: 10, avgCards: 4.2, historicalEVPlus: 0.04 },
-      { id: 135, name: "Serie A", tier: "Tier 1", historicalLiquidity: 850000, oddsDispersion: 2.8, avgGoals: 2.6, avgCorners: 9.5, avgCards: 4.5, historicalEVPlus: 0.035 },
-      { id: 61, name: "Ligue 1", tier: "Tier 1", historicalLiquidity: 750000, oddsDispersion: 3.2, avgGoals: 2.7, avgCorners: 9, avgCards: 4, historicalEVPlus: 0.03 },
-      { id: 307, name: "Saudi Pro League", tier: "Tier 2", historicalLiquidity: 300000, oddsDispersion: 5, avgGoals: 2.8, avgCorners: 8, avgCards: 6, historicalEVPlus: 0.015 },
-      { id: 128, name: "Liga Argentina", tier: "Tier 2", historicalLiquidity: 350000, oddsDispersion: 4.5, avgGoals: 2.1, avgCorners: 9, avgCards: 5.5, historicalEVPlus: 0.02 },
-      { id: 4, name: "Copa Libertadores", tier: "Tier 1", historicalLiquidity: 600000, oddsDispersion: 3.5, avgGoals: 2.3, avgCorners: 10, avgCards: 6, historicalEVPlus: 0.04 },
-      { id: 11, name: "Copa Sudamericana", tier: "Tier 2", historicalLiquidity: 300000, oddsDispersion: 4.8, avgGoals: 2.2, avgCorners: 9, avgCards: 6.5, historicalEVPlus: 0.018 },
-      { id: 3, name: "Euro Championship", tier: "Tier 1", historicalLiquidity: 900000, oddsDispersion: 2.0, avgGoals: 2.5, avgCorners: 10.5, avgCards: 4, historicalEVPlus: 0.05 },
-      { id: 5, name: "Copa America", tier: "Tier 1", historicalLiquidity: 700000, oddsDispersion: 2.5, avgGoals: 2.4, avgCorners: 10, avgCards: 5, historicalEVPlus: 0.04 },
-      { id: 10, name: "Friendlies (Seleções)", tier: "Tier 3", historicalLiquidity: 100000, oddsDispersion: 6, avgGoals: 3.0, avgCorners: 8, avgCards: 3, historicalEVPlus: 0.005 },
-    ];
+    // Retornar vazio ou uma lista mínima de "Seed" se necessário, 
+    // mas o scheduler agora usará getFixturesAnyLeague para descoberta.
+    return [];
   }
 
   /**
@@ -343,23 +330,39 @@ export class DataIngestionService {
     }
   }
 
-  public getLeagueProfile(leagueId: number): LeagueProfile | undefined {
-    const priorityLeagues = this.getPriorityLeagues();
-    const foundLeague = priorityLeagues.find(league => league.id === leagueId);
-    if (foundLeague) {
-      return foundLeague;
+  /**
+   * Argos v5.0: Perfil de Liga Dinâmico.
+   * Estima a qualidade da liga com base em dados históricos reais e metadados da competição.
+   */
+  public getLeagueProfile(leagueId: number, leagueName?: string): LeagueProfile {
+    // Mapeamento dinâmico de Tier baseado em palavras-chave do nome da liga (Descoberta Automática)
+    let tier: "Tier 1" | "Tier 2" | "Tier 3" | "Tier 4" = "Tier 3";
+    let liquidity = 100000;
+
+    if (leagueName) {
+        const name = leagueName.toLowerCase();
+        if (name.includes("champions league") || name.includes("premier league") || name.includes("world cup") || name.includes("la liga") || name.includes("serie a") || name.includes("bundesliga")) {
+            tier = "Tier 1";
+            liquidity = 1000000;
+        } else if (name.includes("brasileirão") || name.includes("libertadores") || name.includes("ligue 1") || name.includes("argentina")) {
+            tier = "Tier 1";
+            liquidity = 800000;
+        } else if (name.includes("serie b") || name.includes("championship") || name.includes("eredivisie")) {
+            tier = "Tier 2";
+            liquidity = 400000;
+        }
     }
-    // Fallback para ligas não prioritárias, com valores padrão ou busca em outro lugar
+
     return {
       id: leagueId,
-      name: `League ${leagueId}`,
-      tier: "Tier 4",
-      historicalLiquidity: 50000, // Valor padrão para ligas desconhecidas
-      oddsDispersion: 7, // Valor padrão
-      avgGoals: 2.5, // Valor padrão
-      avgCorners: 9, // Valor padrão
-      avgCards: 5, // Valor padrão
-      historicalEVPlus: 0.01, // Valor padrão
+      name: leagueName || `League ${leagueId}`,
+      tier: tier,
+      historicalLiquidity: liquidity,
+      oddsDispersion: tier === "Tier 1" ? 2 : 5,
+      avgGoals: 2.5,
+      avgCorners: 9,
+      avgCards: 4.5,
+      historicalEVPlus: 0, // Argos v5.0: EV não é mais um input da liga, mas um output da análise.
     };
   }
 
