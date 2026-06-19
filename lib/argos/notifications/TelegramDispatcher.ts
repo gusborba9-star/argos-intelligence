@@ -37,7 +37,7 @@ export class TelegramDispatcher {
 
         // 1. Envio para Canal VIP (O "Filé")
         if (this.vipChannelId) {
-          console.log(`[TelegramDispatcher] Preparando envio VIP: ${signal.market}`);
+          console.log(`[TelegramDispatcher] Preparando envio VIP: ${signal.market} (Prob: ${signal.probability})`);
           promises.push(this.sendToVip(signal, regimeInfo));
         } else {
           console.warn('[TelegramDispatcher] Aviso: TELEGRAM_CHAT_ID (VIP) não configurado.');
@@ -45,8 +45,10 @@ export class TelegramDispatcher {
 
         // 2. Envio para Canal FREE (Marketing/Isca)
         if (this.freeChannelId && this.isEligibleForFree(signal)) {
-          console.log(`[TelegramDispatcher] Preparando envio FREE: ${signal.market}`);
+          console.log(`[TelegramDispatcher] Preparando envio FREE: ${signal.market} (Prob: ${signal.probability})`);
           promises.push(this.sendToFree(signal));
+        } else if (this.freeChannelId) {
+          console.log(`[TelegramDispatcher] Sinal ignorado para FREE (Baixa Prob ou Vertical Restrita): ${signal.market}`);
         }
 
         // Aguarda todos os envios do sinal atual para garantir ordem e conclusão
@@ -65,8 +67,8 @@ export class TelegramDispatcher {
     const vertical = signal.vertical.toUpperCase();
     const market = signal.market.toUpperCase();
 
-    // Regra 1: Alta Probabilidade (Isca) - Mínimo 65% para Free
-    if (signal.probability < 0.65) return false;
+    // Regra 1: Alta Probabilidade (Isca) - Mínimo 55% para Free (Mais agressivo para marketing)
+    if (signal.probability < 0.55) return false;
 
     // Regra 2: Mercados Permitidos
     // WINNER (Casa, Empate, Fora)

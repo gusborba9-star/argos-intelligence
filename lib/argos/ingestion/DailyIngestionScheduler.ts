@@ -9,7 +9,7 @@ import { MarketVertical } from "../../core/ArgosUnifiedEngine";
 export class DailyIngestionScheduler {
   private dataIngestionService: DataIngestionService;
   private batchQueueService: BatchQueueService;
-  private readonly MAX_DAILY_GAMES = 500; // Aumentado para prospecção ativa mundial
+  private readonly MAX_DAILY_GAMES = 100; // Cota otimizada para ligas de alto valor
 
   constructor() {
     this.dataIngestionService = new DataIngestionService();
@@ -33,10 +33,9 @@ export class DailyIngestionScheduler {
 
     console.log(`[Argos v5.0] Iniciando curadoria diária para as datas: ${datesToFetch.join(", ")}...`);
 
-    // 1. PRIORIDADE ELITE: Buscar jogos das ligas de maior liquidez
+    // 1. PRIORIDADE TIER 1: Ligas de Elite e Alto Valor
     const priorityLeagues = this.dataIngestionService.getPriorityLeagues();
     
-    // Execução paralela para buscar fixtures das ligas prioritárias
     const fixturePromises: Promise<any[]>[] = [];
     for (const date of datesToFetch) {
         for (const league of priorityLeagues) {

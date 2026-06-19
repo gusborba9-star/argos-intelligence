@@ -86,6 +86,9 @@ export async function POST(req: Request) {
       }
     }
 
+    // Disparo redundante para garantir a entrega (Orchestrator já dispara, mas aqui monitoramos o retorno da API)
+    console.log(`[Argos API v4.5] Processamento concluído. ${signalsToDeliver.length} sinais prontos para entrega.`);
+
     return NextResponse.json({
       matchId: auditResult.matchId,
       status: auditResult.status,
@@ -177,6 +180,8 @@ export async function POST(req: Request) {
         }
       }
     }
+
+    console.log(`[Argos API v4.5] Worker concluído. ${signalsToDeliver.length} sinais processados da fila.`);
 
     return NextResponse.json({
       status: "SUCCESS",

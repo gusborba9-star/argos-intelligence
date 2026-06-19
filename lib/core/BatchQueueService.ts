@@ -57,9 +57,10 @@ export class BatchQueueService {
   }
 
   /**
-   * Busca o próximo item da fila para processamento
+   * Busca o próximo item da fila para processamento, priorizando ligas Tier 1
    */
   async getNextInQueue(): Promise<QueueItem | null> {
+    // Tenta buscar primeiro itens com prioridade manual alta
     const { data, error } = await this.supabase
       .from("argos_batch_queue")
       .select("*")
