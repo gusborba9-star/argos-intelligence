@@ -10,6 +10,7 @@ import { AutoTuningEngine, TuningResult } from "@/lib/core/AutoTuningEngine";
 import { DataIngestionService, IngestedData } from "@/lib/core/DataIngestionService";
 import { FeatureEngine } from "@/lib/core/FeatureEngine";
 import { LeagueValueScoreEngine } from "@/lib/argos/ingestion/LeagueValueScoreEngine";
+import { MarketSelectorEngine } from "@/lib/core/MarketSelectorEngine";
 import { AnomalyDetectionService } from "@/lib/argos/auditor/AnomalyDetectionService";
 import { RegimeProfile, MarketRegime } from "@/lib/argos/regime/RegimeSchema";
 import { TelegramDispatcher } from "@/lib/argos/notifications/TelegramDispatcher";
@@ -180,13 +181,21 @@ export class ArgosOrchestratorV4 {
         };
       }
 
-      // 5. EXAUSTÃO SELETIVA DINÂMICA (Argos v5.0)
-      // REDUCED_SET agora é derivado de liquidez/qualidade, não hardcoded.
-      let verticalsToProcess = mandatoryVerticals;
-      if (executionMode === "REDUCED") {
-        console.log(`[Argos v5.0] GATE ÚNICO: REDUCED_VERTICAL_SET (Dynamic top-K) para jogo ${matchId}`);
-        // Selecionar as top-3 verticais com maior probabilidade de liquidez/dados para esta liga específica
-        verticalsToProcess = this.getTopKMarketsByLiquidity(leagueProfile, 3);
+      // 5. SELEÇÃO DE MERCADOS (MarketSelectorEngine — Única Camada de Decisão de Mercado)
+      const verticalsToProcess = MarketSelectorEngine.selectMarkets(
+        mandatoryVerticals,
+        executionMode,
+        leagueProfile
+      );
+
+      if (verticalsToProcess.length === 0) {
+        console.log(`[Argos v5.0] GATE ÚNICO: Nenhum mercado selecionado para jogo ${matchId} no modo ${executionMode}`);
+        return {
+          matchId,
+          status: "SUCCESS",
+          executionTimeMs: Date.now() - startTime,
+          error: "NO_MARKETS_SELECTED"
+        };
       }
 
       // 6. CONTRATO FORMAL DE DADOS: RawData -> FeatureVector (Camada Isolada)
@@ -307,23 +316,6 @@ export class ArgosOrchestratorV4 {
         executionTimeMs: Date.now() - startTime,
       };
     }
-  }
-
-  /**
-   * Determina dinamicamente os melhores mercados baseado no perfil da liga
-   */
-  private getTopKMarketsByLiquidity(profile: any, k: number): MarketVertical[] {
-    // Lógica de priorização dinâmica:
-    // Tier 1 -> Foca em Winner/Goals/Handicap
-    // Tier 2/3 -> Foca em Goals/Corners/BTTS onde a ineficiência é maior
-    const priorityMap: Record<string, MarketVertical[]> = {
-      "Tier 1": [MarketVertical.WINNER, MarketVertical.GOALS, MarketVertical.HANDICAP, MarketVertical.GOALS_HT],
-      "Tier 2": [MarketVertical.GOALS, MarketVertical.CORNERS, MarketVertical.BTTS, MarketVertical.WINNER],
-      "Tier 3": [MarketVertical.GOALS, MarketVertical.WINNER, MarketVertical.GOALS_HT]
-    };
-
-    const base = priorityMap[profile.tier] || priorityMap["Tier 3"];
-    return base.slice(0, k);
   }
 
   /**
