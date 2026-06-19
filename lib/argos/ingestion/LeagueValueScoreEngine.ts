@@ -18,6 +18,7 @@ export interface LeagueProfile {
   avgCorners: number;
   avgCards: number;
   historicalEVPlus: number; 
+  confidenceScore?: number; // Argos v5.0: Regra de não fingir informação
 }
 
 export interface LeagueValueScore {
@@ -76,12 +77,29 @@ export class LeagueValueScoreEngine {
     else if (timeToKickoffMinutes > 1440) timingScore = 40; // > 24h: Cedo demais
     else timingScore = 20; // < 60min: Tarde demais
 
-    // 3. SCORE FINAL (Determinístico)
+    // 3. SCORE FINAL (Determinístico) — Argos v5.0 Final Architecture
+    // Pesos exatos do documento:
+    // League Quality: 20%
+    // Data Confidence: 25%
+    // Market Availability: 20%
+    // Fixture Importance: 15%
+    // Time Window: 10%
+    // Historical Stability: 10%
+    
+    const leagueQuality = competitionWeight * 100;
+    const dataConfidence = dataQualityScore;
+    const marketAvailability = liquidityScore; // Proxy
+    const fixtureImportance = competitionWeight * 100; // Proxy
+    const timeWindow = timingScore;
+    const historicalStability = leagueStats.tier === "Tier 1" ? 100 : 50; // Proxy
+
     const operationalDensity = (
-      (competitionWeight * 40) +
-      (liquidityScore * 0.25) +
-      (dataQualityScore * 0.20) +
-      (timingScore * 0.15)
+      (leagueQuality * 0.20) +
+      (dataConfidence * 0.25) +
+      (marketAvailability * 0.20) +
+      (fixtureImportance * 0.15) +
+      (timeWindow * 0.10) +
+      (historicalStability * 0.10)
     );
 
     let priorityTier: LeagueValueScore["priorityTier"] = "DROP";

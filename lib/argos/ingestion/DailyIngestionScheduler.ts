@@ -62,7 +62,7 @@ export class DailyIngestionScheduler {
     console.log(`[Argos v5.0] Total de ${allPotentialFixtures.length} fixtures potenciais coletados.`);
 
     // 2. Avaliação e Filtragem com LeagueValueScoreEngine
-    const rankedFixtures: { fixture: any; score: LeagueValueScore }[] = [];
+    const rankedFixtures: { fixture: any; score: LeagueValueScore; priorityReason?: string }[] = [];
     for (const fixture of allPotentialFixtures) {
         if (!fixture || !fixture.fixture || !fixture.teams || !fixture.league) {
             console.warn(`[Argos v5.0] Fixture incompleta ou inválida encontrada, pulando: ${JSON.stringify(fixture)}`);
@@ -94,18 +94,20 @@ export class DailyIngestionScheduler {
 
         // 3. Decisão baseada em Densidade Operacional (Vale gastar CPU?)
         if (score.priorityTier !== "DROP" && score.operationalDensity >= this.MIN_SCORE_TO_QUEUE) {
-            rankedFixtures.push({ fixture, score });
+            const priorityReason = score.operationalDensity > 80 ? "High liquidity + strong data" : "Active competition + data coverage";
+            rankedFixtures.push({ fixture, score, priorityReason });
         }
     }
 
-    // 3. Ordenar por Densidade Operacional (Vale a pena analisar?)
+    // 3. OPPORTUNITY PRIORITY QUEUE (Argos v5.0)
+    // Ordenar por score de densidade operacional decrescente
     rankedFixtures.sort((a, b) => b.score.operationalDensity - a.score.operationalDensity);
 
     const topFixturesToEnqueue = rankedFixtures.slice(0, this.MAX_DAILY_GAMES);
 
-    console.log(`[Argos v5.0] ${topFixturesToEnqueue.length} jogos selecionados para enfileiramento após avaliação.`);
+    console.log(`[Argos v5.0] ${topFixturesToEnqueue.length} jogos selecionados via Opportunity Priority Queue.`);
 
-    for (const { fixture, score } of topFixturesToEnqueue) {
+    for (const { fixture, score, priorityReason } of topFixturesToEnqueue) {
         const matchId = fixture.fixture.id.toString();
         if (!processedMatchIds.has(matchId)) {
             const alreadyQueued = await this.batchQueueService.isAlreadyEnqueued(matchId);
@@ -114,14 +116,11 @@ export class DailyIngestionScheduler {
                 continue;
             }
 
-            let verticalsToEnqueue = Object.values(MarketVertical);
-            if (score.recommendedAction === "QUEUE_REDUCED") {
-                // Lógica para selecionar mercados de alta eficiência
-                verticalsToEnqueue = [MarketVertical.GOALS, MarketVertical.WINNER]; 
-            } else if (score.recommendedAction === "SKIP") {
-                // Lógica para 1-2 verticais filtradas
-                verticalsToEnqueue = [MarketVertical.WINNER]; 
-            }
+            // Argos v5.0: MATCH_ANALYSIS_JOB (Análise Completa Multimercado)
+            // O sistema agora esgota as possibilidades antes de descartar o jogo.
+            const verticalsToEnqueue = Object.values(MarketVertical);
+            
+            console.log(`[Argos v5.0] Enfileirando JOB: ${matchId} | Reason: ${priorityReason} | Score: ${score.operationalDensity}`);
 
             await this.batchQueueService.enqueue(matchId, verticalsToEnqueue);
             processedMatchIds.add(matchId);

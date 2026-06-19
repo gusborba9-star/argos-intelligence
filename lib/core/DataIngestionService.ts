@@ -353,6 +353,11 @@ export class DataIngestionService {
         }
     }
 
+    // Argos v5.0: Dynamic League Profiling
+    // Quando não existe dado ou a liga é desconhecida, usamos confiança baixa (0.35)
+    // conforme regra fundamental do documento.
+    const isUnknown = tier === "Tier 3" && !leagueName;
+
     return {
       id: leagueId,
       name: leagueName || `League ${leagueId}`,
@@ -362,7 +367,8 @@ export class DataIngestionService {
       avgGoals: 2.5,
       avgCorners: 9,
       avgCards: 4.5,
-      historicalEVPlus: 0, // Argos v5.0: EV não é mais um input da liga, mas um output da análise.
+      historicalEVPlus: 0,
+      confidenceScore: isUnknown ? 0.35 : 0.85, // Regra: Não fingir informação
     };
   }
 

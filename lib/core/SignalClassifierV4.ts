@@ -38,15 +38,20 @@ export class SignalClassifierV4 {
         type = SignalType.VALIDATION;
       }
 
-      // 2. Lógica de Tier (Argos v5.0)
-      // VIP: EV+ e Alta Confiança em qualquer vertical
-      if (type === SignalType.VALUE && regime.confidence >= 0.7) {
+      // 2. Lógica de Tier (Argos v5.0) — Delivery Layer
+      
+      // VIP: Filé (Alta Probabilidade + EV+ + PROFUNDIDADE)
+      const isVipThreshold = s.probability >= 0.65 && s.expectedValue > 0.05 && regime.confidence >= 0.7;
+      if (isVipThreshold) {
         tier = "VIP";
       }
       
-      // FREE: Alta Probabilidade, Máxima Clareza, até 2 verticais específicas (Gols/Match Odds)
-      const isFreeVertical = ["GOALS", "MATCH_ODDS"].includes(s.vertical);
-      if (tier === "NONE" && isFreeVertical && (s.probability >= 0.75 || type === SignalType.VALUE)) {
+      // FREE: Validação Pública (Alta Probabilidade + Máxima Clareza)
+      // Regra: Máximo 2 verticais (Gols/Match Odds) e foco em taxa de acerto percebida.
+      const isFreeVertical = ["GOALS", "WINNER"].includes(s.vertical);
+      const isFreeThreshold = s.probability >= 0.75; // Foco em assertividade
+      
+      if (tier === "NONE" && isFreeVertical && isFreeThreshold) {
         tier = "FREE";
       }
 
