@@ -23,6 +23,13 @@ export interface ExternalFactors {
   isDerby: boolean;
 }
 
+export interface EnrichedFixture extends FixtureResponse {
+  teamStrengthIndex?: number;
+  bookmakerSpread?: number;
+  historicalVariance?: number;
+  globalContextScore?: number;
+}
+
 export interface IngestedData {
   matchId: string;
   leagueId: string;
@@ -249,26 +256,26 @@ export class DataIngestionService {
   /**
    * Retorna a lista de ligas prioritárias (Elite)
    */
-  public getPriorityLeagues(): { id: number; name: string }[] {
+  public getPriorityLeagues(): LeagueProfile[] {
     // Lista de ligas prioritárias (Tier 1) - Foco em Qualidade e Liquidez
     return [
-      { id: 1, name: "World Cup" },
-      { id: 71, name: "Brasileirão Série A" },
-      { id: 72, name: "Brasileirão Série B" },
-      { id: 666, name: "Copa do Brasil" }, // Exemplo de ID
-      { id: 2, name: "Champions League" },
-      { id: 39, name: "Premier League" },
-      { id: 78, name: "Bundesliga" },
-      { id: 140, name: "La Liga" },
-      { id: 135, name: "Serie A" },
-      { id: 61, name: "Ligue 1" },
-      { id: 307, name: "Saudi Pro League" },
-      { id: 128, name: "Liga Argentina" },
-      { id: 4, name: "Copa Libertadores" },
-      { id: 11, name: "Copa Sudamericana" },
-      { id: 3, name: "Euro Championship" },
-      { id: 5, name: "Copa America" },
-      { id: 10, name: "Friendlies (Seleções)" }
+      { id: 1, name: "World Cup", tier: "Tier 1", historicalLiquidity: 1000000, oddsDispersion: 2, avgGoals: 2.8, avgCorners: 11, avgCards: 4, historicalEVPlus: 0.05 },
+      { id: 71, name: "Brasileirão Série A", tier: "Tier 1", historicalLiquidity: 800000, oddsDispersion: 3, avgGoals: 2.4, avgCorners: 10, avgCards: 5, historicalEVPlus: 0.03 },
+      { id: 72, name: "Brasileirão Série B", tier: "Tier 2", historicalLiquidity: 400000, oddsDispersion: 4, avgGoals: 2.2, avgCorners: 9, avgCards: 5, historicalEVPlus: 0.02 },
+      { id: 666, name: "Copa do Brasil", tier: "Tier 1", historicalLiquidity: 700000, oddsDispersion: 3, avgGoals: 2.6, avgCorners: 10, avgCards: 4, historicalEVPlus: 0.04 },
+      { id: 2, name: "Champions League", tier: "Tier 1", historicalLiquidity: 1200000, oddsDispersion: 1.5, avgGoals: 2.9, avgCorners: 12, avgCards: 3, historicalEVPlus: 0.06 },
+      { id: 39, name: "Premier League", tier: "Tier 1", historicalLiquidity: 1500000, oddsDispersion: 1.8, avgGoals: 2.7, avgCorners: 11, avgCards: 3.5, historicalEVPlus: 0.055 },
+      { id: 78, name: "Bundesliga", tier: "Tier 1", historicalLiquidity: 900000, oddsDispersion: 2.5, avgGoals: 3.0, avgCorners: 10.5, avgCards: 3.8, historicalEVPlus: 0.045 },
+      { id: 140, name: "La Liga", tier: "Tier 1", historicalLiquidity: 1100000, oddsDispersion: 2.2, avgGoals: 2.5, avgCorners: 10, avgCards: 4.2, historicalEVPlus: 0.04 },
+      { id: 135, name: "Serie A", tier: "Tier 1", historicalLiquidity: 850000, oddsDispersion: 2.8, avgGoals: 2.6, avgCorners: 9.5, avgCards: 4.5, historicalEVPlus: 0.035 },
+      { id: 61, name: "Ligue 1", tier: "Tier 1", historicalLiquidity: 750000, oddsDispersion: 3.2, avgGoals: 2.7, avgCorners: 9, avgCards: 4, historicalEVPlus: 0.03 },
+      { id: 307, name: "Saudi Pro League", tier: "Tier 2", historicalLiquidity: 300000, oddsDispersion: 5, avgGoals: 2.8, avgCorners: 8, avgCards: 6, historicalEVPlus: 0.015 },
+      { id: 128, name: "Liga Argentina", tier: "Tier 2", historicalLiquidity: 350000, oddsDispersion: 4.5, avgGoals: 2.1, avgCorners: 9, avgCards: 5.5, historicalEVPlus: 0.02 },
+      { id: 4, name: "Copa Libertadores", tier: "Tier 1", historicalLiquidity: 600000, oddsDispersion: 3.5, avgGoals: 2.3, avgCorners: 10, avgCards: 6, historicalEVPlus: 0.04 },
+      { id: 11, name: "Copa Sudamericana", tier: "Tier 2", historicalLiquidity: 300000, oddsDispersion: 4.8, avgGoals: 2.2, avgCorners: 9, avgCards: 6.5, historicalEVPlus: 0.018 },
+      { id: 3, name: "Euro Championship", tier: "Tier 1", historicalLiquidity: 900000, oddsDispersion: 2.0, avgGoals: 2.5, avgCorners: 10.5, avgCards: 4, historicalEVPlus: 0.05 },
+      { id: 5, name: "Copa America", tier: "Tier 1", historicalLiquidity: 700000, oddsDispersion: 2.5, avgGoals: 2.4, avgCorners: 10, avgCards: 5, historicalEVPlus: 0.04 },
+      { id: 10, name: "Friendlies (Seleções)", tier: "Tier 3", historicalLiquidity: 100000, oddsDispersion: 6, avgGoals: 3.0, avgCorners: 8, avgCards: 3, historicalEVPlus: 0.005 },
     ];
   }
 
@@ -334,6 +341,26 @@ export class DataIngestionService {
       console.error(`[DataIngestionService] Erro ao buscar jogos de qualquer liga para ${date}:`, error);
       return [];
     }
+  }
+
+  public getLeagueProfile(leagueId: number): LeagueProfile | undefined {
+    const priorityLeagues = this.getPriorityLeagues();
+    const foundLeague = priorityLeagues.find(league => league.id === leagueId);
+    if (foundLeague) {
+      return foundLeague;
+    }
+    // Fallback para ligas não prioritárias, com valores padrão ou busca em outro lugar
+    return {
+      id: leagueId,
+      name: `League ${leagueId}`,
+      tier: "Tier 4",
+      historicalLiquidity: 50000, // Valor padrão para ligas desconhecidas
+      oddsDispersion: 7, // Valor padrão
+      avgGoals: 2.5, // Valor padrão
+      avgCorners: 9, // Valor padrão
+      avgCards: 5, // Valor padrão
+      historicalEVPlus: 0.01, // Valor padrão
+    };
   }
 
   public async getFixturesByLeague(leagueId: number, date: string, refresh: boolean = false): Promise<FixtureResponse[]> {

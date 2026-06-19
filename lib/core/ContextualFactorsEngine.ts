@@ -30,6 +30,7 @@ export interface ContextualFactors {
   // Fatores de Pressão Psicológica
   pressureFactor: number; // 0.8 - 1.2 (pressão psicológica)
   crowdEffect: number; // 0.9 - 1.1 (efeito da torcida)
+  expectedEdge: number; // Expected Opportunity Density Model (EODM) - 0 a 1
 }
 
 export class ContextualFactorsEngine {

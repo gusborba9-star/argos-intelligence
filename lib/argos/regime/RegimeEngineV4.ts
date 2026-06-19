@@ -11,6 +11,7 @@ export interface ExternalFactors {
   weatherCondition: 'CLEAR' | 'RAIN' | 'EXTREME_HEAT';
   motivationLevel: 'NORMAL' | 'HIGH' | 'LOW'; // Final, Rebaixamento, Amistoso
   isDerby: boolean;
+  expectedEdge: number; // Expected Opportunity Density Model (EODM) - 0 a 1
 }
 
 export class RegimeEngineV4 {
