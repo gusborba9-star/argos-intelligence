@@ -11,11 +11,12 @@ export function middleware(request: NextRequest) {
 
   // Rotas que requerem autenticação
   if (pathname.startsWith("/api/argos")) {
-    // Extrair token de autorização do header
+    // Extrair token de autorização do header ou query param
     const authHeader = request.headers.get("authorization");
-    const apiKey = request.headers.get("x-api-key");
+    const apiKey = request.headers.get("x-api-key") || request.nextUrl.searchParams.get("apiKey");
 
     if (!authHeader && !apiKey) {
+      console.warn(`[Middleware] Acesso negado em ${pathname}: Nenhuma credencial fornecida.`);
       return NextResponse.json(
         { error: "Unauthorized: Missing authentication" },
         { status: 401 }
