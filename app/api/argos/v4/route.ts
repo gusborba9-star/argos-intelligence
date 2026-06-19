@@ -22,6 +22,11 @@ export async function POST(req: Request) {
     const isValidApiKey = apiKey && apiKey === process.env.ARGOS_API_KEY;
 
     if (!isAuthorized && !isValidApiKey) {
+      console.error("[Argos API v4.5] Acesso negado no POST. Headers:", {
+        authorized: isAuthorized,
+        apiKeyPresent: !!apiKey,
+        userAgent: req.headers.get("user-agent")
+      });
       return NextResponse.json({ error: "Unauthorized: Invalid or missing API Key" }, { status: 401 });
     }
 
@@ -110,18 +115,25 @@ export async function POST(req: Request) {
 /**
  * Endpoint GET para processar o próximo item da fila (Worker Trigger)
  */
- export async function GET(request: Request) {
-  try {
-        // Bloco de segurança unificado
-        const isAuthorized = request.headers.get("x-authorized") === "true";
-        const cronHeader = request.headers.get("x-vercel-cron");
-        const isCron = cronHeader === "1";
-
-        // Se não foi autorizado pelo middleware e não é um Cron da Vercel, barramos
-        if (!isAuthorized && !isCron) {
-          return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        // Fim do bloco
+	 export async function GET(request: Request) {
+	  try {
+	        // Bloco de segurança unificado (Middleware injeta x-authorized se API Key bater)
+	        const isAuthorized = request.headers.get("x-authorized") === "true";
+	        const cronHeader = request.headers.get("x-vercel-cron");
+	        const isVercelCron = cronHeader === "1";
+	        const authSource = request.headers.get("x-auth-source");
+	
+	        console.log(`[Argos API v4.5] GET Request recebido. Auth: ${isAuthorized}, Source: ${authSource}, VercelCron: ${isVercelCron}`);
+	
+	        // Se não foi autorizado pelo middleware e não é um Cron da Vercel, barramos
+	        if (!isAuthorized && !isVercelCron) {
+	          console.error("[Argos API v4.5] Acesso negado no GET. Headers:", {
+	            authorized: isAuthorized,
+	            vercelCron: isVercelCron,
+	            userAgent: request.headers.get("user-agent")
+	          });
+	          return NextResponse.json({ error: "Unauthorized: Access Denied" }, { status: 401 });
+	        }
 
     const queueService = new BatchQueueService();
     const nextItem = await queueService.getNextInQueue();

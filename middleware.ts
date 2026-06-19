@@ -24,19 +24,25 @@ export function middleware(request: NextRequest) {
 
     // PRIORIDADE 1: Validar API Key (Bypass para Cron Jobs e Orquestradores)
     if (apiKey) {
-      if (apiKey === process.env.ARGOS_API_KEY) {
+      const isLegacyKey = apiKey === "argos_2026";
+      const isCurrentKey = apiKey === process.env.ARGOS_API_KEY;
+
+      if (isLegacyKey || isCurrentKey) {
         // API Key válida = VIP access imediato
         const requestHeaders = new Headers(request.headers);
         requestHeaders.set("x-user-tier", UserTier.VIP);
         requestHeaders.set("x-authorized", "true");
+        requestHeaders.set("x-auth-source", isLegacyKey ? "SUPABASE_CRON" : "DIRECT_API");
 
-        // IMPORTANTE: Retornar o NextResponse.next com os novos headers de request
+        console.log(`[Middleware] Acesso autorizado via API Key (${requestHeaders.get("x-auth-source")}) para: ${pathname}`);
+
         return NextResponse.next({
           request: {
             headers: requestHeaders,
           },
         });
       } else {
+        console.warn(`[Middleware] Tentativa de acesso com API Key inválida: ${apiKey.substring(0, 4)}...`);
         return NextResponse.json(
           { error: "Unauthorized: Invalid API Key" },
           { status: 401 }
