@@ -3,6 +3,7 @@ import { ArgosOrchestratorV4 } from "@/lib/argos/orchestrator/ArgosOrchestratorV
 import { BatchQueueService } from "@/lib/core/BatchQueueService";
 import { ValueDeliveryService } from "@/lib/argos/delivery/ValueDeliveryService";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
+import { TelegramDispatcher } from "@/lib/argos/notifications/TelegramDispatcher";
 
 // ============================================================
 // ARGOS API v4.5 — ZERO-TOUCH & BATCH ENDPOINT
@@ -93,6 +94,14 @@ export async function POST(req: Request) {
 
     // Disparo redundante para garantir a entrega (Orchestrator já dispara, mas aqui monitoramos o retorno da API)
     console.log(`[Argos API v4.5] Processamento concluído. ${signalsToDeliver.length} sinais prontos para entrega.`);
+
+    // Integração com Telegram
+    if (signalsToDeliver.length > 0) {
+      const telegramDispatcher = new TelegramDispatcher();
+      await telegramDispatcher.dispatch(signalsToDeliver, auditResult.regime).catch(err => {
+        console.error("[Argos API v4.5] Erro ao despachar para Telegram (POST):", err.message);
+      });
+    }
 
     return NextResponse.json({
       matchId: auditResult.matchId,
@@ -194,6 +203,14 @@ export async function POST(req: Request) {
     }
 
     console.log(`[Argos API v4.5] Worker concluído. ${signalsToDeliver.length} sinais processados da fila.`);
+
+    // Integração com Telegram (Worker)
+    if (signalsToDeliver.length > 0) {
+      const telegramDispatcher = new TelegramDispatcher();
+      await telegramDispatcher.dispatch(signalsToDeliver, auditResult.regime).catch(err => {
+        console.error("[Argos API v4.5] Erro ao despachar para Telegram (GET/Worker):", err.message);
+      });
+    }
 
     return NextResponse.json({
       status: "SUCCESS",
