@@ -31,13 +31,33 @@ export class BatchQueueService {
       .insert({
         match_id: matchId,
         requested_verticals: verticals,
-        user_id: userId, // Persiste o userId na fila
+        user_id: userId,
         status: "QUEUED"
       })
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === "23505") {
+        console.log(`[BatchQueueService] Match ${matchId} já existe na fila.`);
+
+        const { data: existing, error: fetchError } = await this.supabase
+          .from("argos_batch_queue")
+          .select("id")
+          .eq("match_id", matchId)
+          .limit(1)
+          .single();
+
+        if (fetchError || !existing) {
+          throw fetchError || new Error("Registro duplicado não encontrado.");
+        }
+
+        return existing.id;
+      }
+
+      throw error;
+    }
+
     return data.id;
   }
 
