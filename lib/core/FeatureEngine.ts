@@ -1,7 +1,7 @@
 import { FixtureResponse, AdjustedMetrics } from "./DataIngestionService";
 
 /**
- * FEATURE ENGINE v5.0
+ * FEATURE ENGINE v5.1
  * Responsável exclusiva por transformar dados RAW em features estatísticas.
  * Isola a inteligência da camada de transporte/ingestão.
  */
@@ -25,7 +25,7 @@ export class FeatureEngine {
       homeMetrics,
       awayMetrics,
       externalFactors: rawData.externalFactors,
-      leagueProfile: rawData.fixture.league
+      leagueProfile: this.normalizeLeagueProfile(rawData.fixture.league)
     };
   }
 
@@ -47,7 +47,6 @@ export class FeatureEngine {
       const weight = Math.pow(1 - alpha, index);
       totalWeight += weight;
 
-      // Usar os gols reais do jogo, se disponíveis
       const homeGoals = typeof match.goals.home === 'number' ? match.goals.home : 0;
       const awayGoals = typeof match.goals.away === 'number' ? match.goals.away : 0;
       sums.goals += (homeGoals + awayGoals) * weight;
@@ -70,6 +69,26 @@ export class FeatureEngine {
       cards: totalWeight > 0 ? sums.cards / totalWeight : 2,
       shots: totalWeight > 0 ? sums.shots / totalWeight : 12,
       shotsOnTarget: totalWeight > 0 ? sums.shotsOnTarget / totalWeight : 5,
+    };
+  }
+
+  /**
+   * Normalização de contrato de liga para garantir consistência do pipeline
+   */
+  private static normalizeLeagueProfile(league: any) {
+    const rawTier = league?.tier || league?.level || league?.rank;
+
+    const normalizedTier =
+      rawTier === 1 || rawTier === "1" || rawTier === "Tier 1"
+        ? "Tier 1"
+        : rawTier === 2 || rawTier === "2" || rawTier === "Tier 2"
+        ? "Tier 2"
+        : "Tier 3";
+
+    return {
+      tier: normalizedTier,
+      country: league?.country ?? null,
+      name: league?.name ?? null
     };
   }
 }
