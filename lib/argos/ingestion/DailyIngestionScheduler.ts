@@ -61,70 +61,36 @@ export class DailyIngestionScheduler {
 
     console.log(`[Argos v5.0] Total de ${allPotentialFixtures.length} fixtures potenciais coletados.`);
 
-    // 2. Avaliação e Filtragem com LeagueValueScoreEngine
-    const rankedFixtures: { fixture: any; score: LeagueValueScore; priorityReason?: string }[] = [];
+    // 2. DESCOBERTA PURA (Argos v5.0 — Zero-Filter Discovery)
+    // O Scheduler não decide mais o que é "bom". Ele apenas descobre o que existe.
+    // Toda a inteligência de filtragem foi movida para o Gate Único no Orchestrator.
+    const discoveredFixtures: any[] = [];
     for (const fixture of allPotentialFixtures) {
-        if (!fixture || !fixture.fixture || !fixture.teams || !fixture.league) {
-            console.warn(`[Argos v5.0] Fixture incompleta ou inválida encontrada, pulando: ${JSON.stringify(fixture)}`);
-            continue;
-        }
+        if (!fixture || !fixture.fixture || !fixture.teams || !fixture.league) continue;
 
+        const matchId = fixture.fixture.id.toString();
+        if (processedMatchIds.has(matchId)) continue;
+
+        // Deduplicação Técnica e Pre-Filter de Janela de Tempo (Regra de Produção)
         const timeToKickoffMinutes = (new Date(fixture.fixture.date).getTime() - today.getTime()) / (1000 * 60);
-        // Argos v5.0: Perfil de Liga Dinâmico (Descoberta)
-        const leagueStats: LeagueProfile = this.dataIngestionService.getLeagueProfile(fixture.league.id, fixture.league.name);
+        if (timeToKickoffMinutes < 45 || timeToKickoffMinutes > 2880) continue; 
 
-        const marketContext = {
-            saturation: 0.5, // Mock
-            calendarPressure: 0.3, // Mock
-        };
-
-        // Argos v5.0: PRE-FILTER BARATO
-        // 1. Kickoff futuro e tempo adequado
-        if (timeToKickoffMinutes < 45 || timeToKickoffMinutes > 2880) continue; // Entre 45min e 48h
-        
-        // 2. Dados mínimos e Competição válida (Tratado no LeagueValueScoreEngine)
-        const evaluationInput: LeagueValueInput = {
-            fixture,
-            leagueStats,
-            marketContext,
-            timeToKickoffMinutes,
-        };
-
-        const score = LeagueValueScoreEngine.evaluate(evaluationInput);
-
-        // 3. Decisão baseada em Densidade Operacional (Vale gastar CPU?)
-        if (score.priorityTier !== "DROP" && score.operationalDensity >= this.MIN_SCORE_TO_QUEUE) {
-            const priorityReason = score.operationalDensity > 80 ? "High liquidity + strong data" : "Active competition + data coverage";
-            rankedFixtures.push({ fixture, score, priorityReason });
-        }
+        discoveredFixtures.push(fixture);
+        processedMatchIds.add(matchId);
     }
 
-    // 3. OPPORTUNITY PRIORITY QUEUE (Argos v5.0)
-    // Ordenar por score de densidade operacional decrescente
-    rankedFixtures.sort((a, b) => b.score.operationalDensity - a.score.operationalDensity);
+    console.log(`[Argos v5.0] ${discoveredFixtures.length} jogos descobertos e prontos para enfileiramento.`);
 
-    const topFixturesToEnqueue = rankedFixtures.slice(0, this.MAX_DAILY_GAMES);
+    // Limitar à cota diária para evitar explosão de fila, mas sem filtrar por qualidade aqui.
+    const finalFixtures = discoveredFixtures.slice(0, this.MAX_DAILY_GAMES);
 
-    console.log(`[Argos v5.0] ${topFixturesToEnqueue.length} jogos selecionados via Opportunity Priority Queue.`);
-
-    for (const { fixture, score, priorityReason } of topFixturesToEnqueue) {
+    for (const fixture of finalFixtures) {
         const matchId = fixture.fixture.id.toString();
-        if (!processedMatchIds.has(matchId)) {
-            const alreadyQueued = await this.batchQueueService.isAlreadyEnqueued(matchId);
-            if (alreadyQueued) {
-                console.log(`[Argos v5.0] Jogo ${matchId} já está na fila. Pulando.`);
-                continue;
-            }
+        const alreadyQueued = await this.batchQueueService.isAlreadyEnqueued(matchId);
+        if (alreadyQueued) continue;
 
-            // Argos v5.0: MATCH_ANALYSIS_JOB (Análise Completa Multimercado)
-            // Anexar metadados de densidade para o Orchestrator Gate
-            (fixture as any).operationalDensity = score.operationalDensity;
-
-            const verticalsToEnqueue = Object.values(MarketVertical);
-            
-            console.log(`[Argos v5.0] Enfileirando JOB: ${matchId} | Reason: ${priorityReason} | Score: ${score.operationalDensity}`);
-
-            await this.batchQueueService.enqueue(matchId, verticalsToEnqueue);
+        // Enfileirar para análise completa. O Orchestrator decidirá a profundidade via operationalDensity.
+        await this.batchQueueService.enqueue(matchId, Object.values(MarketVertical));
             processedMatchIds.add(matchId);
             enqueuedMatchDetails.push({
                 id: matchId,
@@ -134,7 +100,6 @@ export class DailyIngestionScheduler {
                 date: fixture.fixture.date
             });
             ingestedCount++;
-        }
     }
 
     console.log(`[Argos v5.0] Curadoria inteligente concluída: ${ingestedCount} jogos enfileirados.`);

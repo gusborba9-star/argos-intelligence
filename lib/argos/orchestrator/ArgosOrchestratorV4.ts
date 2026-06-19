@@ -9,6 +9,7 @@ import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 import { AutoTuningEngine, TuningResult } from "@/lib/core/AutoTuningEngine";
 import { DataIngestionService, IngestedData } from "@/lib/core/DataIngestionService";
 import { FeatureEngine } from "@/lib/core/FeatureEngine";
+import { LeagueValueScoreEngine } from "@/lib/argos/ingestion/LeagueValueScoreEngine";
 import { AnomalyDetectionService } from "@/lib/argos/auditor/AnomalyDetectionService";
 import { RegimeProfile, MarketRegime } from "@/lib/argos/regime/RegimeSchema";
 import { TelegramDispatcher } from "@/lib/argos/notifications/TelegramDispatcher";
@@ -150,17 +151,27 @@ export class ArgosOrchestratorV4 {
         MarketVertical.HANDICAP
       ];
 
-      // 4. GATE DE EXECUÇÃO (Argos v5.0 Final Architecture)
-      // O Orchestrator obedece a um único gate externo: operationalDensity.
-      // Se o job não veio com metadados de densidade, recalculamos ou usamos default seguro.
-      const operationalDensity = (ingestedData.fixture as any).operationalDensity || 75; // Default HIGH para jobs diretos
+      // 4. GATE ÚNICO DE EXECUÇÃO (Argos v5.0 — Final Architecture)
+      // O Orchestrator é o único ponto de decisão. O Scheduler apenas enfileira RAW.
+      const today = new Date();
+      const timeToKickoffMinutes = (new Date(ingestedData.fixture.fixture.date).getTime() - today.getTime()) / (1000 * 60);
+      const leagueProfile = this.ingestionService.getLeagueProfile(ingestedData.fixture.league.id, ingestedData.fixture.league.name);
+      
+      const score = LeagueValueScoreEngine.evaluate({
+        fixture: ingestedData.fixture,
+        leagueStats: leagueProfile,
+        marketContext: { saturation: 0.5, calendarPressure: 0.3 },
+        timeToKickoffMinutes
+      });
+
+      const operationalDensity = score.operationalDensity;
       
       let executionMode: "FULL" | "REDUCED" | "SKIP" = "SKIP";
       if (operationalDensity >= 75) executionMode = "FULL";
       else if (operationalDensity >= 55) executionMode = "REDUCED";
 
       if (executionMode === "SKIP") {
-        console.log(`[Argos v5.0] GATE: SKIP TOTAL para jogo ${matchId} (Densidade: ${operationalDensity})`);
+        console.log(`[Argos v5.0] GATE ÚNICO: SKIP TOTAL para jogo ${matchId} (Densidade: ${operationalDensity})`);
         return {
           matchId,
           status: "SUCCESS",
@@ -169,18 +180,17 @@ export class ArgosOrchestratorV4 {
         };
       }
 
-      // 5. FILTRAGEM DE VERTICAIS (Execution Mode)
-      // Nunca rodar exaustão completa sem validação de densidade.
+      // 5. EXAUSTÃO SELETIVA DINÂMICA (Argos v5.0)
+      // REDUCED_SET agora é derivado de liquidez/qualidade, não hardcoded.
       let verticalsToProcess = mandatoryVerticals;
       if (executionMode === "REDUCED") {
-        console.log(`[Argos v5.0] GATE: REDUCED_VERTICAL_SET para jogo ${matchId}`);
-        verticalsToProcess = [MarketVertical.WINNER, MarketVertical.GOALS, MarketVertical.GOALS_HT];
+        console.log(`[Argos v5.0] GATE ÚNICO: REDUCED_VERTICAL_SET (Dynamic top-K) para jogo ${matchId}`);
+        // Selecionar as top-3 verticais com maior probabilidade de liquidez/dados para esta liga específica
+        verticalsToProcess = this.getTopKMarketsByLiquidity(leagueProfile, 3);
       }
 
-      // 6. FEATURE ENGINEERING (Camada Isolada)
-      // Ingestão retornou RAW. Agora transformamos em features para o motor.
-      const homeMetrics = FeatureEngine.calculateExponentialAverages(ingestedData.homeHistory);
-      const awayMetrics = FeatureEngine.calculateExponentialAverages(ingestedData.awayHistory);
+      // 6. CONTRATO FORMAL DE DADOS: RawData -> FeatureVector (Camada Isolada)
+      const features = FeatureEngine.generateFeatureVector(ingestedData);
 
       console.log(`[Argos v5.0] Iniciando Exaustão Inteligente [${executionMode}] para o jogo ${matchId}...`);
 
@@ -190,19 +200,19 @@ export class ArgosOrchestratorV4 {
           matchId,
           leagueId: ingestedData.leagueId,
           requestedVerticals: verticalsToProcess,
-          externalFactors: ingestedData.externalFactors,
+          externalFactors: features.externalFactors,
           baseMetrics: {
             home: {
-              goals: homeMetrics.goals,
-              corners: homeMetrics.corners,
-              cards: homeMetrics.cards,
-              shots: homeMetrics.shots,
+              goals: features.homeMetrics.goals,
+              corners: features.homeMetrics.corners,
+              cards: features.homeMetrics.cards,
+              shots: features.homeMetrics.shots,
             },
             away: {
-              goals: awayMetrics.goals,
-              corners: awayMetrics.corners,
-              cards: awayMetrics.cards,
-              shots: awayMetrics.shots,
+              goals: features.awayMetrics.goals,
+              corners: features.awayMetrics.corners,
+              cards: features.awayMetrics.cards,
+              shots: features.awayMetrics.shots,
             },
           },
         };
@@ -297,6 +307,23 @@ export class ArgosOrchestratorV4 {
         executionTimeMs: Date.now() - startTime,
       };
     }
+  }
+
+  /**
+   * Determina dinamicamente os melhores mercados baseado no perfil da liga
+   */
+  private getTopKMarketsByLiquidity(profile: any, k: number): MarketVertical[] {
+    // Lógica de priorização dinâmica:
+    // Tier 1 -> Foca em Winner/Goals/Handicap
+    // Tier 2/3 -> Foca em Goals/Corners/BTTS onde a ineficiência é maior
+    const priorityMap: Record<string, MarketVertical[]> = {
+      "Tier 1": [MarketVertical.WINNER, MarketVertical.GOALS, MarketVertical.HANDICAP, MarketVertical.GOALS_HT],
+      "Tier 2": [MarketVertical.GOALS, MarketVertical.CORNERS, MarketVertical.BTTS, MarketVertical.WINNER],
+      "Tier 3": [MarketVertical.GOALS, MarketVertical.WINNER, MarketVertical.GOALS_HT]
+    };
+
+    const base = priorityMap[profile.tier] || priorityMap["Tier 3"];
+    return base.slice(0, k);
   }
 
   /**

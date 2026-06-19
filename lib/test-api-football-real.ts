@@ -25,14 +25,13 @@ async function testRealApiFootball() {
     console.log(`\n🚀 Iniciando ingestão completa para o jogo LIVE ID: ${targetMatchId}...`);
     
     const ingestedData = await ingestionService.ingest(targetMatchId, true);
-    const homeMetrics = FeatureEngine.calculateExponentialAverages(ingestedData.homeHistory);
-    const awayMetrics = FeatureEngine.calculateExponentialAverages(ingestedData.awayHistory);
+    const features = FeatureEngine.generateFeatureVector(ingestedData);
     
     console.log(`✅ Ingestão Concluída com Sucesso!`);
     console.log(`📊 Métricas Ingeridas (via FeatureEngine):`);
-    console.log(`   - Home (xG): ${homeMetrics.goals.toFixed(2)}`);
-    console.log(`   - Away (xG): ${awayMetrics.goals.toFixed(2)}`);
-    console.log(`   - Referee Strictness: ${ingestedData.externalFactors.refereeStrictness}`);
+    console.log(`   - Home (xG): ${features.homeMetrics.goals.toFixed(2)}`);
+    console.log(`   - Away (xG): ${features.awayMetrics.goals.toFixed(2)}`);
+    console.log(`   - Referee Strictness: ${features.externalFactors.refereeStrictness}`);
     console.log(`   - League ID: ${ingestedData.leagueId}`);
     
     console.log(`\n✅ Teste de API Football Real Finalizado.`);

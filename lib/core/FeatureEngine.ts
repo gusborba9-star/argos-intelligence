@@ -5,12 +5,35 @@ import { FixtureResponse, AdjustedMetrics } from "./DataIngestionService";
  * Responsável exclusiva por transformar dados RAW em features estatísticas.
  * Isola a inteligência da camada de transporte/ingestão.
  */
+export interface FeatureVector {
+  homeMetrics: AdjustedMetrics;
+  awayMetrics: AdjustedMetrics;
+  externalFactors: any;
+  leagueProfile: any;
+}
+
 export class FeatureEngine {
+  /**
+   * CONTRATO FORMAL: RawData -> FeatureVector
+   * Transforma dados brutos de ingestão em um vetor de features normalizado.
+   */
+  public static generateFeatureVector(rawData: any): FeatureVector {
+    const homeMetrics = this.calculateExponentialAverages(rawData.homeHistory);
+    const awayMetrics = this.calculateExponentialAverages(rawData.awayHistory);
+    
+    return {
+      homeMetrics,
+      awayMetrics,
+      externalFactors: rawData.externalFactors,
+      leagueProfile: rawData.fixture.league
+    };
+  }
+
   /**
    * Aplica Fator de Decaimento Exponencial: Jogos recentes têm peso maior
    * Fórmula: Peso = alpha * (1 - alpha)^n, onde n é a distância do jogo atual
    */
-  public static calculateExponentialAverages(history: FixtureResponse[]): AdjustedMetrics {
+  private static calculateExponentialAverages(history: FixtureResponse[]): AdjustedMetrics {
     const alpha = 0.3; // Fator de decaimento (30% de peso para o mais recente)
     let totalWeight = 0;
 

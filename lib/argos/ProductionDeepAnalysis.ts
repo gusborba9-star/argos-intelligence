@@ -52,9 +52,10 @@ async function runProductionAnalysis() {
             const ingested = await ingestionService.ingest(match.id.toString(), true); // Forçar refresh para a análise detalhada
             console.log(`[DEBUG] Ingestão concluída para o jogo ${match.id}`);
             
-            // Argos v5.0: Feature Engineering Layer
-            const homeMetrics = FeatureEngine.calculateExponentialAverages(ingested.homeHistory);
-            const awayMetrics = FeatureEngine.calculateExponentialAverages(ingested.awayHistory);
+            // Argos v5.0: Feature Engineering Layer (Formal Contract)
+            const features = FeatureEngine.generateFeatureVector(ingested);
+            const homeMetrics = features.homeMetrics;
+            const awayMetrics = features.awayMetrics;
 
             // Fatores Contextuais Reais (Baseados nos dados da API e contexto da liga)
             const isWorldCup = match.league.includes("World Cup");
@@ -67,7 +68,7 @@ async function runProductionAnalysis() {
                 startingLineupStrength: 1.0,
                 headToHeadWinRate: 0.5,
                 homeAdvantageMultiplier: isWorldCup ? 1.0 : 1.1,
-                weatherCondition: ingested.externalFactors.weatherCondition.toLowerCase() as any,
+                weatherCondition: features.externalFactors.weatherCondition.toLowerCase() as any,
                 weatherImpactFactor: 1.0,
                 humidity: 50,
                 recentFormFactor: 1.0,
@@ -98,8 +99,8 @@ async function runProductionAnalysis() {
                     under15: { label: "HT Under 1.5", probability: 1 - ((homeMetrics.goalsHT + awayMetrics.goalsHT) / 2.5 * multiplier), impliedOdds: 1.40 }
                 },
                 cardsMatrix: {
-                    over45: { label: "Over 4.5 Cards", probability: (ingested.externalFactors.refereeStrictness * 0.4) * multiplier, impliedOdds: 1.90 },
-                    under45: { label: "Under 4.5 Cards", probability: 1 - ((ingested.externalFactors.refereeStrictness * 0.4) * multiplier), impliedOdds: 1.80 } // Exemplo de Under
+                    over45: { label: "Over 4.5 Cards", probability: (features.externalFactors.refereeStrictness * 0.4) * multiplier, impliedOdds: 1.90 },
+                    under45: { label: "Under 4.5 Cards", probability: 1 - ((features.externalFactors.refereeStrictness * 0.4) * multiplier), impliedOdds: 1.80 } // Exemplo de Under
                 },
                 cornersMatrix: {
                     over95: { label: "Over 9.5 Corners", probability: 0.55, impliedOdds: 1.85 },
