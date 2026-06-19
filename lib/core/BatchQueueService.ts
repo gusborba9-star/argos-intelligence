@@ -45,15 +45,19 @@ export class BatchQueueService {
    * Verifica se um jogo já está na fila com status QUEUED ou PROCESSING
    */
   async isAlreadyEnqueued(matchId: string): Promise<boolean> {
-    const { data, error } = await this.supabase
-      .from("argos_batch_queue")
-      .select("id")
-      .eq("match_id", matchId)
-      .in("status", ["QUEUED", "PROCESSING"])
-      .maybeSingle();
+  const { data, error } = await this.supabase
+    .from("argos_batch_queue")
+    .select("id")
+    .eq("match_id", matchId)
+    .in("status", ["QUEUED", "PROCESSING"])
+    .limit(1);
 
-    if (error) return false;
-    return !!data;
+  if (error) {
+    console.error("[BatchQueueService] Erro verificando duplicidade:", error.message);
+    return false;
+  }
+
+  return !!data && data.length > 0;
   }
 
   /**
