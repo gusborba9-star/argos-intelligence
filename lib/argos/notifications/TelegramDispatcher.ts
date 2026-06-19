@@ -15,7 +15,14 @@ export class TelegramDispatcher {
   constructor() {
     this.botToken = process.env.TELEGRAM_BOT_TOKEN || '';
     this.freeChannelId = process.env.TELEGRAM_FREE_CHANNEL_ID || '';
-    this.vipChannelId = process.env.TELEGRAM_CHAT_ID || ''; // Conforme solicitado: TELEGRAM_CHAT_ID para VIP
+    this.vipChannelId = process.env.TELEGRAM_CHAT_ID || ''; 
+    
+    // Log de inicialização industrial
+    if (this.botToken) {
+      console.log(`[TelegramDispatcher] Inicializado. Token: ${this.botToken.substring(0, 5)}... VIP: ${this.vipChannelId}, FREE: ${this.freeChannelId}`);
+    } else {
+      console.error("[TelegramDispatcher] Falha na inicialização: TELEGRAM_BOT_TOKEN ausente.");
+    }
   }
 
   /**
