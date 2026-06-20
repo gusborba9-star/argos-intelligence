@@ -158,89 +158,55 @@ export async function POST(req: Request) {
       await scheduler.scheduleDailyIngestion().catch(err => console.error("Erro na ingestão:", err.message));
     }
 
-    const nextItem = await queueService.getNextInQueue();
-    if (!nextItem) {
-      return NextResponse.json({ message: "Fila vazia. Nenhum jogo para processar." });
-    }
+    // Argos v5.0 Syndicate-Level: Processamento em Lote (até 3 jogos por chamada)
+    const processedResults = [];
+    const MAX_PROCESS_PER_CALL = 3;
+    
+    for (let i = 0; i < MAX_PROCESS_PER_CALL; i++) {
+      const nextItem = await queueService.getNextInQueue();
+      if (!nextItem) break;
 
-    const orchestrator = new ResilientOrchestratorV5();
-    const deliveryService = new ValueDeliveryService();
-    const requestedVerticals: MarketVertical[] = (nextItem.requestedVerticals || []).map((v: string) => v as MarketVertical);
-    const auditResult = await orchestrator.runZeroTouchAuditWithResilience(nextItem.matchId, requestedVerticals);
+      const orchestrator = new ResilientOrchestratorV5();
+      const requestedVerticals: MarketVertical[] = (nextItem.requestedVerticals || []).map((v: string) => v as MarketVertical);
+      
+      const auditResult = await orchestrator.runZeroTouchAuditWithResilience(nextItem.matchId, requestedVerticals);
 
-    if (auditResult.status === "FAILED") {
-      // Se falhar, marcamos como FAILED mas não retornamos 500 para não travar o worker
-      await queueService.updateStatus(nextItem.id, QueueStatus.FAILED, auditResult.error);
-      return NextResponse.json({ 
-        status: "SKIPPED", 
-        matchId: nextItem.matchId, 
-        reason: auditResult.error 
-      }, { status: 200 });
-    }
-
-    if (auditResult.error === "NOT_FOUND") {
-      // Caso específico de fixture não encontrada: Marcar como REJECTED
-      await queueService.updateStatus(nextItem.id, QueueStatus.REJECTED, "Fixture not found in API");
-      return NextResponse.json({ 
-        status: "REJECTED", 
-        matchId: nextItem.matchId, 
-        reason: "Fixture not found" 
-      }, { status: 200 });
-    }
-
-    if (auditResult.error === "DENSITY_SKIP") {
-      // Caso específico de densidade operacional baixa: Marcar como REJECTED
-      await queueService.updateStatus(nextItem.id, QueueStatus.REJECTED, "Low operational density");
-      return NextResponse.json({ 
-        status: "REJECTED", 
-        matchId: nextItem.matchId, 
-        reason: "Low operational density" 
-      }, { status: 200 });
-    }
-
-    // Marcar como COMPLETED após sucesso
-    await queueService.updateStatus(nextItem.id, QueueStatus.COMPLETED);
-
-    let signalsToDeliver = auditResult.classifiedSignals || [];
-    let userTier: 'FREE' | 'PRO' | 'WHALE/VIP' = 'FREE';
-    let kellyStakes: { signalId: string, stake: number }[] = [];
-
-    if (nextItem.userId) {
-      userTier = await deliveryService.getUserTier(nextItem.userId);
-      signalsToDeliver = deliveryService.filterSignalsByTier(signalsToDeliver, userTier);
-
-      if (userTier === 'WHALE/VIP') {
-        const bankroll = 1000; // Exemplo: 1000 unidades de banca para cálculo de Kelly
-        kellyStakes = signalsToDeliver.map(signal => ({
-          signalId: signal.id || '',
-          stake: deliveryService.calculateKellyCriterion(signal, bankroll)
-        }));
-        // Logar a entrega para usuários WHALE/VIP
-        for (const signal of signalsToDeliver) {
-          if (signal.id) {
-            await deliveryService.logSignalDelivery(nextItem.userId, signal, userTier, 'QUEUE_WORKER');
-          }
-        }
+      if (auditResult.status === "FAILED") {
+        await queueService.updateStatus(nextItem.id, QueueStatus.FAILED, auditResult.error);
+        processedResults.push({ matchId: nextItem.matchId, status: "FAILED", error: auditResult.error });
+        continue;
       }
-    }
 
-    console.log(`[Argos API v4.5] Worker concluído. ${signalsToDeliver.length} sinais processados da fila.`);
+      if (auditResult.error === "NOT_FOUND" || auditResult.error === "DENSITY_SKIP") {
+        await queueService.updateStatus(nextItem.id, QueueStatus.REJECTED, auditResult.error);
+        processedResults.push({ matchId: nextItem.matchId, status: "REJECTED", reason: auditResult.error });
+        continue;
+      }
 
-    // Integração com Telegram (Worker)
-    if (signalsToDeliver.length > 0) {
-      const telegramDispatcher = new TelegramDispatcher();
-      await telegramDispatcher.dispatch(signalsToDeliver, auditResult.regime).catch(err => {
-        console.error("[Argos API v4.5] Erro ao despachar para Telegram (GET/Worker):", err.message);
+      // Sucesso: Marcar como COMPLETED
+      await queueService.updateStatus(nextItem.id, QueueStatus.COMPLETED);
+
+      let signalsToDeliver = auditResult.classifiedSignals || [];
+      
+      // Disparo para Telegram (Individual para cada jogo processado)
+      if (signalsToDeliver.length > 0) {
+        const telegramDispatcher = new TelegramDispatcher();
+        await telegramDispatcher.dispatch(signalsToDeliver, auditResult.regime).catch(err => {
+          console.error(`[Argos API v4.5] Erro Telegram [${nextItem.matchId}]:`, err.message);
+        });
+      }
+
+      processedResults.push({
+        matchId: nextItem.matchId,
+        status: "SUCCESS",
+        signalsCount: signalsToDeliver.length
       });
     }
 
     return NextResponse.json({
-      status: "SUCCESS",
-      matchId: nextItem.matchId,
-      regime: auditResult.regime,
-      signals: signalsToDeliver,
-      userTier,
-      kellyStakes: kellyStakes.filter(ks => ks.stake > 0)
+      status: "BATCH_PROCESSED",
+      totalProcessed: processedResults.length,
+      results: processedResults
     });
 
 
