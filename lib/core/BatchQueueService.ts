@@ -1,3 +1,4 @@
+import { MarketVertical } from "./ArgosUnifiedEngine";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 
 // ============================================================
@@ -10,7 +11,7 @@ export type QueueStatus = "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED";
 export interface QueueItem {
   id: string;
   matchId: string;
-  requestedVerticals: string[];
+  requestedVerticals: MarketVertical[];
   userId?: string; // Adicionado para rastreamento de usuário
   status: QueueStatus;
 }
@@ -26,14 +27,17 @@ export class BatchQueueService {
    * Adiciona um jogo à fila de processamento
    */
   async enqueue(matchId: string, verticals: string[], userId?: string): Promise<string> {
+    const safeVerticals = (verticals || []).filter(v =>
+  Object.values(MarketVertical).includes(v as MarketVertical)
+);
     const { data, error } = await this.supabase
       .from("argos_batch_queue")
       .insert({
-        match_id: matchId,
-        requested_verticals: verticals,
-        user_id: userId,
-        status: "QUEUED"
-      })
+  match_id: matchId,
+  requested_verticals: safeVerticals,
+  user_id: userId,
+  status: "QUEUED"
+})
       .select()
       .single();
 
