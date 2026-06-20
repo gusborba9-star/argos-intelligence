@@ -79,9 +79,11 @@ export class LeagueValueScoreEngine {
       competitionWeight = 0.4;
     }
 
-    // Se for Copa do Mundo ou Champions League, a prioridade é absoluta
-    if ([1, 2].includes(fixture.league.id)) {
-      competitionWeight = 2.0;
+    // Argos v5.0 Syndicate-Level: Consciência de Cenário Dinâmica
+    // Se for Copa do Mundo (1), Champions (2), ou Libertadores (11), a prioridade é absoluta.
+    // O sistema se adapta ao "Cenário Atual" priorizando esses eventos de magnitude máxima.
+    if ([1, 2, 11].includes(fixture.league.id)) {
+      competitionWeight = 2.5; // Peso extremo para garantir que esses jogos nunca sejam ignorados
     }
 
     // B. Liquidez Estimada (Proxy de disponibilidade de mercados e limites)
