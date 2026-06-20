@@ -90,7 +90,7 @@ export class DailyIngestionScheduler {
         if (alreadyQueued) continue;
 
         // Enfileirar para análise completa. O Orchestrator decidirá a profundidade via operationalDensity.
-        await this.batchQueueService.enqueue(matchId, Object.values(MarketVertical));
+        await this.batchQueueService.enqueue(matchId, []);
             processedMatchIds.add(matchId);
             enqueuedMatchDetails.push({
                 id: matchId,
