@@ -1,6 +1,6 @@
 import { DataIngestionService } from "@/lib/core/DataIngestionService";
 import { LeagueValueScoreEngine, LeagueValueInput, LeagueValueScore, LeagueProfile } from "./LeagueValueScoreEngine";
-import { BatchQueueService } from "@/lib/core/BatchQueueService";
+import { BatchQueueService, QueueStatus } from "@/lib/core/BatchQueueService";
 import { MarketVertical } from "../../core/ArgosUnifiedEngine";
 import { FixtureValidator, ValidationStatus } from "@/lib/core/ArgosValidation";
 
