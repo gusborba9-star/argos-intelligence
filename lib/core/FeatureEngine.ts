@@ -55,11 +55,25 @@ export class FeatureEngine {
       const awayGoalsHT = typeof match.score.halftime.away === 'number' ? match.score.halftime.away : 0;
       sums.goalsHT += (homeGoalsHT + awayGoalsHT) * weight;
 
-      // TODO: Substituir simulações por dados reais de estatísticas (corners, cards, shots, shotsOnTarget)
-      sums.corners += 5 * weight; 
-      sums.cards += 2 * weight; 
-      sums.shots += 12 * weight; 
-      sums.shotsOnTarget += 5 * weight; 
+      // Argos v5.0: Integração de estatísticas reais (se disponíveis no objeto da API-Football)
+      // Nota: FixtureResponse precisa ser estendido se a API retornar statistics embutido no histórico
+      const stats = (match as any).statistics;
+      if (stats && Array.isArray(stats)) {
+        const getVal = (type: string) => {
+          const s = stats.find(i => i.type === type);
+          return typeof s?.value === 'number' ? s.value : parseInt(s?.value || '0');
+        };
+        sums.corners += getVal("Corner Kicks") * weight;
+        sums.cards += (getVal("Yellow Cards") + getVal("Red Cards")) * weight;
+        sums.shots += getVal("Total Shots") * weight;
+        sums.shotsOnTarget += getVal("Shots on Goal") * weight;
+      } else {
+        // Fallback conservador se não houver estatísticas no histórico
+        sums.corners += 4.5 * weight; 
+        sums.cards += 1.8 * weight; 
+        sums.shots += 10 * weight; 
+        sums.shotsOnTarget += 3.5 * weight; 
+      }
     });
 
     return {

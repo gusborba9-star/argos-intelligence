@@ -48,10 +48,13 @@ export async function POST(req: Request) {
       // Como o input pode ter várias verticais, enfileiramos uma vez com market_family="ALL_MARKETS"
       // e o Orchestrator lidará com a expansão se necessário.
       const queueId = await queueService.enqueue(matchId, "ALL_MARKETS", requestedVerticals, userId);
+      
+      // Resposta otimizada para Cron/Batch
       return NextResponse.json({ 
         status: "QUEUED", 
         queueId,
-        message: "O jogo foi adicionado à fila de processamento industrial com chave única operacional." 
+        matchId,
+        timestamp: new Date().toISOString()
       });
     }
 
@@ -149,15 +152,17 @@ export async function POST(req: Request) {
 
     const queueService = new BatchQueueService();
 
-const shouldRunIngestion = Date.now() % 4 === 0;
+    // Argos v5.0: Ingestão controlada via Cron Header ou Probabilidade (25%)
+    const cronHeader = request.headers.get("x-vercel-cron");
+    const shouldRunIngestion = cronHeader === "1" || Math.random() < 0.25;
 
-if (shouldRunIngestion) {
-  const scheduler = new DailyIngestionScheduler();
-  await scheduler.scheduleDailyIngestion();
-  await new Promise((r) => setTimeout(r, 800));
-}
+    if (shouldRunIngestion) {
+      console.log("[Argos API v4.5] Iniciando Ingestão Diária via Worker...");
+      const scheduler = new DailyIngestionScheduler();
+      await scheduler.scheduleDailyIngestion().catch(err => console.error("Erro na ingestão:", err.message));
+    }
 
-const nextItem = await queueService.getNextInQueue();
+    const nextItem = await queueService.getNextInQueue();
     if (!nextItem) {
       return NextResponse.json({ message: "Fila vazia. Nenhum jogo para processar." });
     }

@@ -239,12 +239,15 @@ export class ArgosOrchestratorV4 {
       // 7. OPPORTUNITY RANKING (Os mercados competem)
       let classifiedSignals = SignalClassifierV4.classify(rawSignals, regime);
       
-      // Ordenar por Edge e Probabilidade para o ranking
+      // Argos v5.0: Ranking Multimodal (Edge + Probabilidade + Confiança)
       classifiedSignals = classifiedSignals.sort((a, b) => {
-        const edgeA = a.expectedValue || 0;
-        const edgeB = b.expectedValue || 0;
-        return edgeB - edgeA || b.probability - a.probability;
+        const scoreA = (a.expectedValue || 0) * 0.6 + a.probability * 0.4;
+        const scoreB = (b.expectedValue || 0) * 0.6 + b.probability * 0.4;
+        return scoreB - scoreA;
       });
+
+      // Limitar a no máximo 5 melhores oportunidades por jogo para evitar ruído
+      classifiedSignals = classifiedSignals.slice(0, 5);
 
       // 8. DETECÇÃO DE ANOMALIAS: Comparar com odds de mercado e emitir alertas
       if (marketOdds && classifiedSignals.length > 0) {
@@ -337,7 +340,7 @@ export class ArgosOrchestratorV4 {
         const winnerSim: SimulationResult = ModelFactory.runMonteCarlo(
           { homeMean: payload.baseMetrics.home.goals || 1.2, awayMean: payload.baseMetrics.away.goals || 1.0 },
           regime,
-          10000, // 10.000 iterações
+          10000, // Argos v5.0: 10.000 iterações para precisão industrial
           "GOALS",
           elapsed,
           currentScore

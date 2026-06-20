@@ -175,18 +175,20 @@ export class DataIngestionService {
     try {
       // 1. Buscar detalhes do jogo (Ligas, Times, Árbitro) com Circuit Breaker
       const fixtureResponse: AxiosResponse<{ response: FixtureResponse[] }> = await circuitBreakerPool.get("FootballAPI")!.execute(async () => {
-        // Incrementa o contador APENAS se a requisição for realmente para a API externa
         await this.incrementRequestCount();
         return await axios.get(
           `${this.baseUrl}/fixtures?id=${matchId}`,
-          { headers: { "x-apisports-key": this.apiKey } }
+          { 
+            headers: { "x-apisports-key": this.apiKey },
+            timeout: 15000 // Timeout de 15s para evitar travamento na Vercel
+          }
         );
       });
 
-      const fixture = fixtureResponse.data.response[0];
-      if (!fixture) {
-        throw new Error(`Fixture ${matchId} not found`);
+      if (!fixtureResponse.data || !fixtureResponse.data.response || fixtureResponse.data.response.length === 0) {
+        throw new Error(`Fixture ${matchId} not found in API-Football response`);
       }
+      const fixture = fixtureResponse.data.response[0];
 
       const leagueId = fixture.league.id.toString();
       const homeTeamId = fixture.teams.home.id;
