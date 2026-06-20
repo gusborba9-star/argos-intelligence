@@ -58,11 +58,31 @@ export class LeagueValueScoreEngine {
 
     // 2. CÁLCULO DE DENSIDADE OPERACIONAL
     
-    // A. Peso da Competição (Importância Estrutural)
+    // A. Peso da Competição (Importância Estrutural — Argos v5.0 Elite Adaptation)
     let competitionWeight = 0.2;
-    if (leagueStats.tier === "Tier 1") competitionWeight = 1.0;
-    else if (leagueStats.tier === "Tier 2") competitionWeight = 0.7;
-    else if (leagueStats.tier === "Tier 3") competitionWeight = 0.4;
+    
+    // Lista de Ligas de Elite (Sempre Prioridade Máxima)
+    const eliteLeagues = [
+      13, 61, 78, 94, 140, // Premier League, Ligue 1, Bundesliga, Primeira Liga, La Liga
+      71, 72, 73, // Brasileirão A, B, Copa do Brasil
+      2, 3, 11, 15, // Champions, Europa League, Libertadores, Sul-Americana
+      1 // World Cup (Copa do Mundo)
+    ];
+
+    if (eliteLeagues.includes(fixture.league.id)) {
+      competitionWeight = 1.2; // Bônus de Elite
+    } else if (leagueStats.tier === "Tier 1") {
+      competitionWeight = 1.0;
+    } else if (leagueStats.tier === "Tier 2") {
+      competitionWeight = 0.7;
+    } else if (leagueStats.tier === "Tier 3") {
+      competitionWeight = 0.4;
+    }
+
+    // Se for Copa do Mundo ou Champions League, a prioridade é absoluta
+    if ([1, 2].includes(fixture.league.id)) {
+      competitionWeight = 2.0;
+    }
 
     // B. Liquidez Estimada (Proxy de disponibilidade de mercados e limites)
     const liquidityScore = Math.min(100, (leagueStats.historicalLiquidity / 1000000) * 100);

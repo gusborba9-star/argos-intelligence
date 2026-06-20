@@ -165,6 +165,7 @@ export class ArgosOrchestratorV4 {
       }
 
       // 5. MARKET ENGINES (Decisão de Nível de Mercado)
+      // Argos v5.0: EXHAUSTIVE Multi-Market Scanning
       const mandatoryVerticals = [
         MarketVertical.WINNER, 
         MarketVertical.GOALS, 

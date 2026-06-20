@@ -179,17 +179,18 @@ export class TelegramDispatcher {
   private formatFreeMessage(signal: ArgosSignal): string {
     const prob = (signal.probability * 100).toFixed(2);
     
-    return `📊 <b>ARGOS FREE | ALTA ASSERTIVIDADE</b>
+    return `🔥 <b>ARGOS FREE | ASSERTIVIDADE MÁXIMA</b>
 ──────────────────────
-🏟️ <b>MERCADO:</b> <code>${signal.market.toUpperCase()}</code>
-📈 <b>VERTICAL:</b> <code>${signal.vertical.replace('_', ' ')}</code>
+🏟️ <b>JOGO:</b> <code>${signal.market.toUpperCase()}</code>
+🎯 <b>ENTRADA:</b> <code>${signal.vertical.replace('_', ' ')}</code>
 ──────────────────────
-🎯 <b>PROBABILIDADE:</b> <code>${prob}%</code>
-🛡️ <b>STATUS:</b> <code>${signal.status}</code>
+✅ <b>CONFIANÇA:</b> <code>${prob}%</code>
+🛡️ <b>FILTRO:</b> <code>HARD REJECT PASSED</code>
 ──────────────────────
-🚀 <b>QUER O "FILÉ" COM EV+ E ANÁLISE COMPLETA?</b>
-👉 <b>ACESSE O VIP:</b> <a href="${this.VIP_LINK}">CLIQUE AQUI PARA ENTRAR</a>
+🚀 <b>ESTA É UMA AMOSTRA DA NOSSA INTELIGÊNCIA.</b>
+💎 <b>QUER O FILÉ COM EV+ E MULTI-MERCADOS?</b>
+👉 <b>VIP:</b> <a href="${this.VIP_LINK}">CLIQUE AQUI PARA ENTRAR</a>
 ──────────────────────
-<i>Argos v5.0 | Nexus Intelligence</i>`.trim();
+<i>Argos v5.0 | Industrial Performance</i>`.trim();
   }
 }

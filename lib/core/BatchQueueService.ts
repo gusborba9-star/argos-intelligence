@@ -83,13 +83,15 @@ export class BatchQueueService {
 
   /**
    * Verifica se um jogo já está na fila com status QUEUED ou PROCESSING
+   * Argos v5.0: Agora verifica se já foi processado hoje para evitar re-análise desnecessária.
    */
-    async isAlreadyEnqueued(uniqueKey: string): Promise<boolean> {
+    async isAlreadyEnqueued(matchId: string, marketFamily: string = "ALL_MARKETS"): Promise<boolean> {
+    const uniqueKey = `${matchId}_${marketFamily}`;
     const { data, error } = await this.supabase
       .from("argos_batch_queue")
-      .select("id")
+      .select("id, status, created_at")
       .eq("unique_key", uniqueKey)
-      .in("status", [QueueStatus.QUEUED, QueueStatus.PROCESSING])
+      .order("created_at", { ascending: false })
       .limit(1);
 
     if (error) {
@@ -97,7 +99,13 @@ export class BatchQueueService {
       return false;
     }
 
-    return !!data && data.length > 0;
+    if (!data || data.length === 0) return false;
+
+    const lastEntry = data[0];
+    const isRecent = (new Date().getTime() - new Date(lastEntry.created_at).getTime()) < (12 * 60 * 60 * 1000); // 12 horas
+
+    // Se estiver na fila, processando ou se foi completado recentemente, ignoramos
+    return [QueueStatus.QUEUED, QueueStatus.PROCESSING, QueueStatus.COMPLETED].includes(lastEntry.status) && isRecent;
   }
 
   /**

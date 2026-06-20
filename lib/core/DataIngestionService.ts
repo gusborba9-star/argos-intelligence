@@ -145,12 +145,23 @@ export class DataIngestionService {
     }
   }
 
+  public async getRequestCount(): Promise<number> {
+    const today = new Date().toISOString().split("T")[0];
+    const cacheKey = `dailyRequestCount-${today}`;
+    const count = await getRedisCacheInstance().get<number>(cacheKey);
+    return count || 0;
+  }
+
   private async incrementRequestCount(): Promise<void> {
-    this.loadRequestCount();
-    if (this.dailyRequestCount >= this.MAX_DAILY_REQUESTS) {
-      throw new Error("Limite diário de requisições da API Football atingido (100/dia).");
+    const today = new Date().toISOString().split("T")[0];
+    const cacheKey = `dailyRequestCount-${today}`;
+    const currentCount = await this.getRequestCount();
+    
+    if (currentCount >= this.MAX_DAILY_REQUESTS) {
+      throw new Error(`Limite diário de 100 requisições atingido (${currentCount}).`);
     }
-    this.dailyRequestCount++;
+    
+    await getRedisCacheInstance().set(cacheKey, currentCount + 1, 86400); // Expira em 24h
   }
 
   // Métodos de cache movidos para RedisCache

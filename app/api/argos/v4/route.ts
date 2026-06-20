@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ArgosOrchestratorV4 } from "@/lib/argos/orchestrator/ArgosOrchestratorV4";
-import { BatchQueueService } from "@/lib/core/BatchQueueService";
+import { BatchQueueService, QueueStatus } from "@/lib/core/BatchQueueService";
 import { ValueDeliveryService } from "@/lib/argos/delivery/ValueDeliveryService";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 import { TelegramDispatcher } from "@/lib/argos/notifications/TelegramDispatcher";
@@ -134,27 +134,26 @@ export async function POST(req: Request) {
 	  try {
 	        // Bloco de segurança unificado (Middleware injeta x-authorized se API Key bater)
 	        const isAuthorized = request.headers.get("x-authorized") === "true";
-	        const cronHeader = request.headers.get("x-vercel-cron");
-	        const isVercelCron = cronHeader === "1";
-	        const authSource = request.headers.get("x-auth-source");
-	
-	        console.log(`[Argos API v4.5] GET Request recebido. Auth: ${isAuthorized}, Source: ${authSource}, VercelCron: ${isVercelCron}`);
-	
-	        // Se não foi autorizado pelo middleware e não é um Cron da Vercel, barramos
-	        if (!isAuthorized && !isVercelCron) {
-	          console.error("[Argos API v4.5] Acesso negado no GET. Headers:", {
-	            authorized: isAuthorized,
-	            vercelCron: isVercelCron,
-	            userAgent: request.headers.get("user-agent")
-	          });
-	          return NextResponse.json({ error: "Unauthorized: Access Denied" }, { status: 401 });
-	        }
+        const vercelCronHeader = request.headers.get("x-vercel-cron");
+        const isVercelCron = vercelCronHeader === "1";
+        const authSource = request.headers.get("x-auth-source");
+
+        console.log(`[Argos API v4.5] GET Request recebido. Auth: ${isAuthorized}, Source: ${authSource}, VercelCron: ${isVercelCron}`);
+
+        // Se não foi autorizado pelo middleware e não é um Cron da Vercel, barramos
+        if (!isAuthorized && !isVercelCron) {
+          console.error("[Argos API v4.5] Acesso negado no GET. Headers:", {
+            authorized: isAuthorized,
+            vercelCron: isVercelCron,
+            userAgent: request.headers.get("user-agent")
+          });
+          return NextResponse.json({ error: "Unauthorized: Access Denied" }, { status: 401 });
+        }
 
     const queueService = new BatchQueueService();
 
     // Argos v5.0: Ingestão controlada via Cron Header ou Probabilidade (25%)
-    const cronHeader = request.headers.get("x-vercel-cron");
-    const shouldRunIngestion = cronHeader === "1" || Math.random() < 0.25;
+    const shouldRunIngestion = isVercelCron || Math.random() < 0.25;
 
     if (shouldRunIngestion) {
       console.log("[Argos API v4.5] Iniciando Ingestão Diária via Worker...");

@@ -91,8 +91,16 @@ export class DailyIngestionScheduler {
 
     console.log(`[Argos v5.0] ${discoveredFixtures.length} jogos descobertos e prontos para enfileiramento.`);
 
-    // Limitar à cota diária para evitar explosão de fila, mas sem filtrar por qualidade aqui.
-    const finalFixtures = discoveredFixtures.slice(0, this.MAX_DAILY_GAMES);
+    // Argos v5.0: Priorização de Ligas de Elite (Copa do Mundo, Champions, Libertadores, Brasileirão A/B, etc.)
+    const eliteLeagues = [1, 2, 3, 11, 13, 15, 61, 71, 72, 73, 78, 94, 140];
+    const prioritizedFixtures = discoveredFixtures.sort((a, b) => {
+        const isAElite = eliteLeagues.includes(a.league.id) ? 1 : 0;
+        const isBElite = eliteLeagues.includes(b.league.id) ? 1 : 0;
+        return isBElite - isAElite;
+    });
+
+    // Limitar à cota diária (100 jogos) para evitar explosão de fila e respeitar limites de API
+    const finalFixtures = prioritizedFixtures.slice(0, this.MAX_DAILY_GAMES);
 
     for (const fixture of finalFixtures) {
         const matchId = fixture.fixture.id.toString();
@@ -104,7 +112,7 @@ export class DailyIngestionScheduler {
         // O segundo argumento (verticals) será usado para a chave única operacional, mas por enquanto é vazio.
                 // Enfileirar para análise completa. O Orchestrator decidirá a profundidade via operationalDensity.
         // Por enquanto, enfileiramos com um marketFamily genérico. O Orchestrator irá expandir.
-        await this.batchQueueService.enqueue(matchId, "ALL_MARKETS", [], undefined, ValidationStatus.VALIDATED);
+        await this.batchQueueService.enqueue(matchId, "ALL_MARKETS", [], undefined, QueueStatus.VALIDATED);
             processedMatchIds.add(matchId);
             enqueuedMatchDetails.push({
                 id: matchId,
