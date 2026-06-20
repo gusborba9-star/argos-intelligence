@@ -160,13 +160,9 @@ export class ArgosOrchestratorV4 {
       else if (operationalDensity >= 55) executionMode = "REDUCED";
 
       if (executionMode === "SKIP" && !isElite) {
-        console.log(`[Argos v5.0] MATCH ENGINE: SKIP TOTAL para jogo ${matchId} (Densidade: ${operationalDensity})`);
-        return {
-          matchId,
-          status: "SUCCESS",
-          executionTimeMs: Date.now() - startTime,
-          error: "DENSITY_SKIP"
-        };
+        // Argos v5.0 Syndicate-Level: Em vez de desistir do jogo, tentamos pelo menos os mercados de Gols (xG) que são mais resilientes.
+        console.log(`[Argos v5.0] MATCH ENGINE: Densidade Baixa (${operationalDensity}). Forçando MODO REDUCED em vez de SKIP.`);
+        executionMode = "REDUCED";
       }
       
       // Forçar modo FULL para Elite independente da densidade para varredura exaustiva

@@ -167,9 +167,23 @@ export async function POST(req: Request) {
       if (!nextItem) break;
 
       const orchestrator = new ResilientOrchestratorV5();
-      const requestedVerticals: MarketVertical[] = (nextItem.requestedVerticals || []).map((v: string) => v as MarketVertical);
+      // Argos v5.0 Syndicate-Level: MODO EXAUSTÃO BRUTAL
+      // Ignoramos as verticais da fila e forçamos a varredura completa em todos os mercados possíveis.
+      const exhaustiveVerticals: MarketVertical[] = [
+        MarketVertical.WINNER,
+        MarketVertical.GOALS,
+        MarketVertical.GOALS_HT,
+        MarketVertical.CORNERS,
+        MarketVertical.CARDS,
+        MarketVertical.BTTS,
+        MarketVertical.HANDICAP,
+        MarketVertical.SHOTS,
+        MarketVertical.SHOTS_ON_TARGET
+      ];
+
+      console.log(`[Argos v5.0] Orquestrador executando análise exaustiva para: ${nextItem.matchId} | Verticals: ${exhaustiveVerticals.join(", ")}`);
       
-      const auditResult = await orchestrator.runZeroTouchAuditWithResilience(nextItem.matchId, requestedVerticals);
+      const auditResult = await orchestrator.runZeroTouchAuditWithResilience(nextItem.matchId, exhaustiveVerticals);
 
       if (auditResult.status === "FAILED") {
         await queueService.updateStatus(nextItem.id, QueueStatus.FAILED, auditResult.error);
