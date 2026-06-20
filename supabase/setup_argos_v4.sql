@@ -126,8 +126,10 @@ $$;
 CREATE TABLE IF NOT EXISTS argos_batch_queue (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     match_id TEXT NOT NULL,
+    market_family TEXT NOT NULL,
+    unique_key TEXT NOT NULL,
     requested_verticals TEXT[] NOT NULL,
-    status TEXT NOT NULL DEFAULT 'QUEUED', -- QUEUED, PROCESSING, COMPLETED, FAILED
+    status TEXT NOT NULL DEFAULT 'DISCOVERED', -- DISCOVERED, VALIDATED, QUEUED, PROCESSING, COMPLETED, FAILED, REJECTED
     priority INTEGER DEFAULT 1,
     error_message TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -136,5 +138,31 @@ CREATE TABLE IF NOT EXISTS argos_batch_queue (
 
 -- Indexação para busca rápida por status e prioridade
 CREATE INDEX IF NOT EXISTS argos_batch_queue_status_priority_idx ON argos_batch_queue (status, priority);
+CREATE UNIQUE INDEX IF NOT EXISTS argos_batch_queue_unique_key_idx ON argos_batch_queue (unique_key);
 
 -- Fim do script de configuração do Argos v4.5
+
+-- 7. Função RPC: get_next_queue_item (para Processamento em Lote v4.5)
+-- Busca o próximo item da fila e marca como PROCESSING de forma atômica.
+CREATE OR REPLACE FUNCTION get_next_queue_item()
+RETURNS SETOF argos_batch_queue AS $$
+DECLARE
+    next_item_id UUID;
+BEGIN
+    -- Tenta encontrar o próximo item QUEUED e dar update para PROCESSING
+    SELECT id INTO next_item_id
+    FROM argos_batch_queue
+    WHERE status = 'QUEUED'
+    ORDER BY priority DESC, created_at ASC
+    LIMIT 1
+    FOR UPDATE SKIP LOCKED; -- Lock de linha para evitar que outros workers peguem o mesmo item
+
+    IF next_item_id IS NOT NULL THEN
+        RETURN QUERY
+        UPDATE argos_batch_queue
+        SET status = 'PROCESSING', updated_at = NOW()
+        WHERE id = next_item_id
+        RETURNING *;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;

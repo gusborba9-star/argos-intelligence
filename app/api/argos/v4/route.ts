@@ -44,11 +44,14 @@ export async function POST(req: Request) {
     // MODO BATCH: Adiciona à fila e retorna imediatamente (Ideal para auditorias massivas na Vercel)
     if (mode === "BATCH") {
       const queueService = new BatchQueueService();
-      const queueId = await queueService.enqueue(matchId, requestedVerticals, userId);
+      // O modo BATCH via API agora também usa a chave única operacional
+      // Como o input pode ter várias verticais, enfileiramos uma vez com market_family="ALL_MARKETS"
+      // e o Orchestrator lidará com a expansão se necessário.
+      const queueId = await queueService.enqueue(matchId, "ALL_MARKETS", requestedVerticals, userId);
       return NextResponse.json({ 
         status: "QUEUED", 
         queueId,
-        message: "O jogo foi adicionado à fila de processamento industrial." 
+        message: "O jogo foi adicionado à fila de processamento industrial com chave única operacional." 
       });
     }
 
@@ -166,7 +169,7 @@ const nextItem = await queueService.getNextInQueue();
 
     if (auditResult.status === "FAILED") {
       // Se falhar, marcamos como FAILED mas não retornamos 500 para não travar o worker
-      await queueService.updateStatus(nextItem.id, "FAILED", auditResult.error);
+      await queueService.updateStatus(nextItem.id, QueueStatus.FAILED, auditResult.error);
       return NextResponse.json({ 
         status: "SKIPPED", 
         matchId: nextItem.matchId, 
@@ -175,17 +178,27 @@ const nextItem = await queueService.getNextInQueue();
     }
 
     if (auditResult.error === "NOT_FOUND") {
-      // Caso específico de fixture não encontrada: Marcar como COMPLETED (ou SKIPPED) para sair da fila
-      await queueService.updateStatus(nextItem.id, "COMPLETED", "Fixture not found in API");
+      // Caso específico de fixture não encontrada: Marcar como REJECTED
+      await queueService.updateStatus(nextItem.id, QueueStatus.REJECTED, "Fixture not found in API");
       return NextResponse.json({ 
-        status: "SKIPPED", 
+        status: "REJECTED", 
         matchId: nextItem.matchId, 
         reason: "Fixture not found" 
       }, { status: 200 });
     }
 
+    if (auditResult.error === "DENSITY_SKIP") {
+      // Caso específico de densidade operacional baixa: Marcar como REJECTED
+      await queueService.updateStatus(nextItem.id, QueueStatus.REJECTED, "Low operational density");
+      return NextResponse.json({ 
+        status: "REJECTED", 
+        matchId: nextItem.matchId, 
+        reason: "Low operational density" 
+      }, { status: 200 });
+    }
+
     // Marcar como COMPLETED após sucesso
-    await queueService.updateStatus(nextItem.id, "COMPLETED");
+    await queueService.updateStatus(nextItem.id, QueueStatus.COMPLETED);
 
     let signalsToDeliver = auditResult.classifiedSignals || [];
     let userTier: 'FREE' | 'PRO' | 'WHALE/VIP' = 'FREE';

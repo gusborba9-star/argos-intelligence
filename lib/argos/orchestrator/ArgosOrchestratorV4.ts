@@ -136,24 +136,7 @@ export class ArgosOrchestratorV4 {
       regime.confidence += tuning.confidenceAdjustment;
       regime.reasoning_tags.push(`AUTO_TUNED_VAR_${tuning.suggestedVarianceMultiplier.toFixed(2)}`);
 
-      // 4. EXAUSTÃO DE MERCADOS: Processamento Obrigatório de todas as Verticais (10.000 simulações/vertical)
-      // O Argos não para no Winner. Ele esgota as possibilidades antes de descartar o jogo.
-      // Argos v5.0: EXAUSTÃO DE MERCADOS
-      // O Argos analisa todas as famílias de mercado antes de descartar a partida.
-      const mandatoryVerticals = [
-        MarketVertical.WINNER, 
-        MarketVertical.GOALS, 
-        MarketVertical.GOALS_HT,
-        MarketVertical.CORNERS, 
-        MarketVertical.CARDS, 
-        MarketVertical.BTTS, 
-        MarketVertical.SHOTS, 
-        MarketVertical.SHOTS_ON_TARGET,
-        MarketVertical.HANDICAP
-      ];
-
-      // 4. GATE ÚNICO DE EXECUÇÃO (Argos v5.0 — Final Architecture)
-      // O Orchestrator é o único ponto de decisão. O Scheduler apenas enfileira RAW.
+      // 4. MATCH ENGINE (Decisão de Nível de Jogo)
       const today = new Date();
       const timeToKickoffMinutes = (new Date(ingestedData.fixture.fixture.date).getTime() - today.getTime()) / (1000 * 60);
       const leagueProfile = this.ingestionService.getLeagueProfile(ingestedData.fixture.league.id, ingestedData.fixture.league.name);
@@ -172,7 +155,7 @@ export class ArgosOrchestratorV4 {
       else if (operationalDensity >= 55) executionMode = "REDUCED";
 
       if (executionMode === "SKIP") {
-        console.log(`[Argos v5.0] GATE ÚNICO: SKIP TOTAL para jogo ${matchId} (Densidade: ${operationalDensity})`);
+        console.log(`[Argos v5.0] MATCH ENGINE: SKIP TOTAL para jogo ${matchId} (Densidade: ${operationalDensity})`);
         return {
           matchId,
           status: "SUCCESS",
@@ -181,7 +164,19 @@ export class ArgosOrchestratorV4 {
         };
       }
 
-      // 5. SELEÇÃO DE MERCADOS (MarketSelectorEngine — Única Camada de Decisão de Mercado)
+      // 5. MARKET ENGINES (Decisão de Nível de Mercado)
+      const mandatoryVerticals = [
+        MarketVertical.WINNER, 
+        MarketVertical.GOALS, 
+        MarketVertical.GOALS_HT,
+        MarketVertical.CORNERS, 
+        MarketVertical.CARDS, 
+        MarketVertical.BTTS, 
+        MarketVertical.SHOTS, 
+        MarketVertical.SHOTS_ON_TARGET,
+        MarketVertical.HANDICAP
+      ];
+
       const verticalsToProcess = MarketSelectorEngine.selectMarkets(
         mandatoryVerticals,
         executionMode,
@@ -189,7 +184,7 @@ export class ArgosOrchestratorV4 {
       );
 
       if (verticalsToProcess.length === 0) {
-        console.log(`[Argos v5.0] GATE ÚNICO: Nenhum mercado selecionado para jogo ${matchId} no modo ${executionMode}`);
+        console.log(`[Argos v5.0] MARKET ENGINES: Nenhum mercado selecionado para jogo ${matchId} no modo ${executionMode}`);
         return {
           matchId,
           status: "SUCCESS",
@@ -241,10 +236,17 @@ export class ArgosOrchestratorV4 {
         }
       });
 
-      // 5. CLASSIFICAÇÃO E PERSISTÊNCIA EM LOTE
+      // 7. OPPORTUNITY RANKING (Os mercados competem)
       let classifiedSignals = SignalClassifierV4.classify(rawSignals, regime);
+      
+      // Ordenar por Edge e Probabilidade para o ranking
+      classifiedSignals = classifiedSignals.sort((a, b) => {
+        const edgeA = a.expectedValue || 0;
+        const edgeB = b.expectedValue || 0;
+        return edgeB - edgeA || b.probability - a.probability;
+      });
 
-      // 6. DETECÇÃO DE ANOMALIAS: Comparar com odds de mercado e emitir alertas
+      // 8. DETECÇÃO DE ANOMALIAS: Comparar com odds de mercado e emitir alertas
       if (marketOdds && classifiedSignals.length > 0) {
         const anomalyAlerts = this.anomalyDetector.detectAnomalies(classifiedSignals, marketOdds);
         anomalyAlerts.forEach((alert) => console.warn(alert));

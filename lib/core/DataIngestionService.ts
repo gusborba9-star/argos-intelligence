@@ -338,17 +338,45 @@ export class DataIngestionService {
     let liquidity = 100000;
 
     if (leagueName) {
-        const name = leagueName.toLowerCase();
-        if (name.includes("champions league") || name.includes("premier league") || name.includes("world cup") || name.includes("la liga") || name.includes("serie a") || name.includes("bundesliga")) {
-            tier = "Tier 1";
-            liquidity = 1000000;
-        } else if (name.includes("brasileirão") || name.includes("libertadores") || name.includes("ligue 1") || name.includes("argentina")) {
-            tier = "Tier 1";
-            liquidity = 800000;
-        } else if (name.includes("serie b") || name.includes("championship") || name.includes("eredivisie")) {
-            tier = "Tier 2";
-            liquidity = 400000;
-        }
+      const name = leagueName.toLowerCase();
+      // Ligas Prioritárias (Tier 1)
+      if (
+        name.includes("champions league") ||
+        name.includes("premier league") ||
+        name.includes("la liga") ||
+        name.includes("brasileirão serie a") ||
+        name.includes("brasileirão serie b") ||
+        name.includes("copa do brasil") ||
+        name.includes("bundesliga") ||
+        name.includes("libertadores") ||
+        name.includes("world cup") ||
+        name.includes("serie a")
+      ) {
+        tier = "Tier 1";
+        liquidity = 1000000;
+      } else if (name.includes("ligue 1") || name.includes("argentina") || name.includes("portugal")) {
+        tier = "Tier 1";
+        liquidity = 800000;
+      } else if (name.includes("championship") || name.includes("eredivisie") || name.includes("copa sudamericana")) {
+        tier = "Tier 2";
+        liquidity = 400000;
+      }
+
+      // Excluir competições obscuras ou sem dados (Tier 4)
+      if (
+        name.includes("u19") ||
+        name.includes("u20") ||
+        name.includes("u21") ||
+        name.includes("u23") ||
+        name.includes("women") ||
+        name.includes("youth") ||
+        name.includes("reserve") ||
+        name.includes("friendly") ||
+        name.includes("exhibition")
+      ) {
+        tier = "Tier 4";
+        liquidity = 0;
+      }
     }
 
     // Argos v5.0: Dynamic League Profiling

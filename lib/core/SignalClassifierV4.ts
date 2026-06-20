@@ -31,34 +31,33 @@ export class SignalClassifierV4 {
       let type = SignalType.NOISE;
       let tier: "FREE" | "VIP" | "NONE" = "NONE";
       
-      // 1. Lógica de Valor/Validação
-      if (s.expectedValue > 0.05) { // Edge mínimo para VALUE
-        type = SignalType.VALUE;
-      } else if (s.probability >= 0.70) {
-        type = SignalType.VALIDATION;
-      }
+      const prob = s.probability;
+      const ev = s.expectedValue || 0;
+      const conf = regime.confidence;
 
-      // 2. Lógica de Tier (Argos v5.0) — Delivery Layer
+      // 9. CAMADA FINAL DE QUALIDADE DO SINAL
+      // Validar: probabilidade mínima, edge mínimo, confiança, ausência de anomalia
+
+      // VIP: Todos os sinais aprovados, probabilidade extrema, edge, ev+, mercado, justificativa
+      // Requisitos VIP: Probabilidade >= 65%, Edge (EV) > 5%, Confiança do Regime >= 70%
+      const isVipThreshold = prob >= 0.65 && ev > 0.05 && conf >= 0.70;
       
-      // VIP: Filé (Alta Probabilidade + EV+ + PROFUNDIDADE)
-      const isVipThreshold = s.probability >= 0.65 && s.expectedValue > 0.05 && regime.confidence >= 0.7;
+      // FREE: Alta assertividade, maior confiança, mesmo sem Ev+, várias oportunidades diárias
+      // Requisitos FREE: Probabilidade >= 80%, Confiança do Regime >= 80% (Foco em Green)
+      const isFreeThreshold = prob >= 0.80 && conf >= 0.80;
+
       if (isVipThreshold) {
+        type = SignalType.VALUE;
         tier = "VIP";
-      }
-      
-      // FREE: Validação Pública (Alta Probabilidade + Máxima Clareza)
-      // Regra: Máximo 2 verticais (Gols/Match Odds) e foco em taxa de acerto percebida.
-      const isFreeVertical = ["GOALS", "WINNER"].includes(s.vertical);
-      const isFreeThreshold = s.probability >= 0.75; // Foco em assertividade
-      
-      if (tier === "NONE" && isFreeVertical && isFreeThreshold) {
+      } else if (isFreeThreshold) {
+        type = SignalType.VALIDATION;
         tier = "FREE";
       }
 
       return {
         ...s,
         signal_type: type,
-        confidence_score: regime.confidence,
+        confidence_score: conf,
         tier: tier,
         status: (type === SignalType.VALUE ? "OPTIMIZED" : "HEDGED") as any
       };

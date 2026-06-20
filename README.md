@@ -45,15 +45,14 @@ argos-intelligence/
 *   **Simulação de Dispersão**: Monte Carlo com 1.500 iterações por jogo.
 *   **Tripla Classificação**: VALUE, VALIDATION e NOISE para máxima assertividade.
 
-## 🗺️ Roadmap Checklist - NIS v5.0 (Nexus Intelligence System)
+## 🗺️ Roadmap Checklist - NIS v5.0 (Nexus Intelligence System — Industrial Edition)
 
-- [x] **Refatoração do Motor de Análise**: Implementação de varredura total de mercados (One-Shot).
-- [x] **Ajuste de Sensibilidade de Gols**: Algoritmo ajustado para capturar oportunidades a partir de Over 1.5.
-- [x] **Inclusão de Novos Mercados**: Adicionado suporte para análise de Gols no Primeiro Tempo (HT).
-- [x] **SignalSnapshot Service**: Implementação de cache inteligente (Upstash) com threshold de reprocessamento de 3%.
-- [x] **Roteamento Estratégico de Canais**: 
-    - [x] **Canal Free**: Configurado para mercados de alta assertividade (Winner, Goals Over 1.5/Under 4.5, HT).
-    - [x] **Canal VIP**: Configurado para fluxo integral de mercados com base em EV+.
-- [x] **Nexus Ultra Design System**: Mensagens formatadas com tipografia premium e CTAs de conversão.
-- [x] **Ativação de Notificações Reais**: Implementação do `TelegramDispatcher.ts` com distribuição automatizada Free/VIP.
+- [x] **Hard Reject & Validation Layer**: Implementação de filtro obrigatório antes de qualquer processamento (ArgosValidation).
+- [x] **Fila de Estados Industrial**: Estados claros: DISCOVERED, VALIDATED, QUEUED, PROCESSING, COMPLETED, FAILED, REJECTED.
+- [x] **Idempotência Real**: Lock de processamento atômico via Supabase RPC e Unique Operational Key (fixture_id + market_family).
+- [x] **Curadoria de Ligas de Elite**: Priorização automática de Champions, Premier League, Brasileirão A/B, etc., e exclusão de ligas obscuras.
+- [x] **Orchestrator Refatorado**: Separação clara entre Match Engine (decisão de jogo) e Market Engines (decisão de mercado).
+- [x] **Opportunity Ranking**: Mercados competem entre si, priorizando o maior Edge e Probabilidade.
+- [x] **Camada Final de Qualidade**: Thresholds rigorosos para VIP (EV+ e Probabilidade) e Free (Assertividade Extrema).
+- [x] **TelegramDispatcher v5.0**: Separação física e lógica definitiva entre canais Free e VIP.
 - [ ] **Monitoramento de ROI**: Integração com PaymentGateway (Efí) para acompanhamento de conversões.

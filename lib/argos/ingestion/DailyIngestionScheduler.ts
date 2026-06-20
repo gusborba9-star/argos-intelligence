@@ -2,6 +2,7 @@ import { DataIngestionService } from "@/lib/core/DataIngestionService";
 import { LeagueValueScoreEngine, LeagueValueInput, LeagueValueScore, LeagueProfile } from "./LeagueValueScoreEngine";
 import { BatchQueueService } from "@/lib/core/BatchQueueService";
 import { MarketVertical } from "../../core/ArgosUnifiedEngine";
+import { FixtureValidator, ValidationStatus } from "@/lib/core/ArgosValidation";
 
 /**
  * DAILY INGESTION SCHEDULER v5.0
@@ -73,7 +74,16 @@ export class DailyIngestionScheduler {
 
         // Deduplicação Técnica e Pre-Filter de Janela de Tempo (Regra de Produção)
         const timeToKickoffMinutes = (new Date(fixture.fixture.date).getTime() - today.getTime()) / (1000 * 60);
-        if (timeToKickoffMinutes < 45 || timeToKickoffMinutes > 2880) continue; 
+                const validationResult = FixtureValidator.validate(fixture, today);
+        if (validationResult.status !== ValidationStatus.VALIDATED) {
+          console.log(`[Argos v5.0] Jogo ${matchId} rejeitado por: ${validationResult.reason} (${validationResult.status})`);
+          processedMatchIds.add(matchId); // Adiciona ao set para evitar reprocessamento
+          continue;
+        }
+
+        // Deduplicação Técnica e Pre-Filter de Janela de Tempo (Regra de Produção)
+        // A janela de tempo agora é validada pelo FixtureValidator
+        // if (timeToKickoffMinutes < 45 || timeToKickoffMinutes > 2880) continue;  
 
         discoveredFixtures.push(fixture);
         processedMatchIds.add(matchId);
@@ -90,7 +100,11 @@ export class DailyIngestionScheduler {
         if (alreadyQueued) continue;
 
         // Enfileirar para análise completa. O Orchestrator decidirá a profundidade via operationalDensity.
-        await this.batchQueueService.enqueue(matchId, []);
+                // Enfileirar para análise completa. O Orchestrator decidirá a profundidade via operationalDensity.
+        // O segundo argumento (verticals) será usado para a chave única operacional, mas por enquanto é vazio.
+                // Enfileirar para análise completa. O Orchestrator decidirá a profundidade via operationalDensity.
+        // Por enquanto, enfileiramos com um marketFamily genérico. O Orchestrator irá expandir.
+        await this.batchQueueService.enqueue(matchId, "ALL_MARKETS", [], undefined, ValidationStatus.VALIDATED);
             processedMatchIds.add(matchId);
             enqueuedMatchDetails.push({
                 id: matchId,
