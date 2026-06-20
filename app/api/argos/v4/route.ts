@@ -4,7 +4,7 @@ import { BatchQueueService } from "@/lib/core/BatchQueueService";
 import { ValueDeliveryService } from "@/lib/argos/delivery/ValueDeliveryService";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 import { TelegramDispatcher } from "@/lib/argos/notifications/TelegramDispatcher";
-import { DailyIngestionScheduler } from "@/lib/core/DailyIngestionScheduler";
+import { DailyIngestionScheduler } from "@/lib/argos/ingestion/DailyIngestionScheduler";
 // ============================================================
 // ARGOS API v4.5 — ZERO-TOUCH & BATCH ENDPOINT
 // Endpoint consolidado para auditoria autônoma e em lote
