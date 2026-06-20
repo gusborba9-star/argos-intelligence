@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ArgosOrchestratorV4 } from "@/lib/argos/orchestrator/ArgosOrchestratorV4";
+import { ResilientOrchestratorV5 } from "@/lib/argos/orchestrator/ResilientOrchestratorV5";
 import { BatchQueueService, QueueStatus } from "@/lib/core/BatchQueueService";
 import { ValueDeliveryService } from "@/lib/argos/delivery/ValueDeliveryService";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
@@ -38,18 +38,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "matchId e requestedVerticals são obrigatórios" }, { status: 400 });
     }
 
-    const orchestrator = new ArgosOrchestratorV4();
+    // Argos v5.0 Syndicate-Level: Uso do Orquestrador Resiliente V5
+    const orchestrator = new ResilientOrchestratorV5();
     const deliveryService = new ValueDeliveryService();
 
     // MODO BATCH: Adiciona à fila e retorna imediatamente (Ideal para auditorias massivas na Vercel)
     if (mode === "BATCH") {
       const queueService = new BatchQueueService();
-      // O modo BATCH via API agora também usa a chave única operacional
-      // Como o input pode ter várias verticais, enfileiramos uma vez com market_family="ALL_MARKETS"
-      // e o Orchestrator lidará com a expansão se necessário.
       const queueId = await queueService.enqueue(matchId, "ALL_MARKETS", requestedVerticals, userId);
       
-      // Resposta otimizada para Cron/Batch
       return NextResponse.json({ 
         status: "QUEUED", 
         queueId,
@@ -58,8 +55,8 @@ export async function POST(req: Request) {
       });
     }
 
-    // MODO DIRECT: Processamento imediato (Zero-Touch)
-    const auditResult = await orchestrator.runZeroTouchAudit(matchId, requestedVerticals, marketOdds);
+    // MODO DIRECT: Processamento imediato (Zero-Touch) com Resiliência
+    const auditResult = await orchestrator.runZeroTouchAuditWithResilience(matchId, requestedVerticals, marketOdds);
 
     if (auditResult.status === "FAILED") {
       return NextResponse.json(auditResult, { status: 500 });
@@ -166,10 +163,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: "Fila vazia. Nenhum jogo para processar." });
     }
 
-    const orchestrator = new ArgosOrchestratorV4();
+    const orchestrator = new ResilientOrchestratorV5();
     const deliveryService = new ValueDeliveryService();
     const requestedVerticals: MarketVertical[] = (nextItem.requestedVerticals || []).map((v: string) => v as MarketVertical);
-    const auditResult = await orchestrator.runZeroTouchAudit(nextItem.matchId, requestedVerticals);
+    const auditResult = await orchestrator.runZeroTouchAuditWithResilience(nextItem.matchId, requestedVerticals);
 
     if (auditResult.status === "FAILED") {
       // Se falhar, marcamos como FAILED mas não retornamos 500 para não travar o worker

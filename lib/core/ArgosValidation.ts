@@ -24,8 +24,9 @@ export interface ValidationResult {
 }
 
 export class FixtureValidator {
-  private static OPERATIONAL_WINDOW_MIN_MINUTES = 45; // Mínimo de 45 minutos antes do kickoff
-  private static OPERATIONAL_WINDOW_MAX_MINUTES = 2880; // Máximo de 48 horas (2 dias) antes do kickoff
+  // Argos v5.0 Syndicate-Level: Janela rigorosa de 1h a 72h antes do início
+  private static OPERATIONAL_WINDOW_MIN_MINUTES = 60; // Mínimo de 1 hora antes do kickoff
+  private static OPERATIONAL_WINDOW_MAX_MINUTES = 4320; // Máximo de 72 horas (3 dias) antes do kickoff
 
   public static validate(fixture: FixtureResponse | null, today: Date = new Date()): ValidationResult {
     if (!fixture) {

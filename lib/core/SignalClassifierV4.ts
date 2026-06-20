@@ -38,13 +38,14 @@ export class SignalClassifierV4 {
       // 9. CAMADA FINAL DE QUALIDADE DO SINAL
       // Validar: probabilidade mínima, edge mínimo, confiança, ausência de anomalia
 
-      // VIP: Todos os sinais aprovados, probabilidade extrema, edge, ev+, mercado, justificativa
-      // Requisitos VIP: Probabilidade >= 65%, Edge (EV) > 5%, Confiança do Regime >= 70%
-      const isVipThreshold = prob >= 0.65 && ev > 0.05 && conf >= 0.70;
+      // Argos v5.0 Syndicate-Level: Thresholds de Elite
+      // VIP: Foco em Edge (EV+) e Confiança Estrutural
+      // Requisitos VIP: Probabilidade >= 60%, Edge (EV) > 7%, Confiança do Regime >= 75%
+      const isVipThreshold = prob >= 0.60 && ev > 0.07 && conf >= 0.75;
       
-      // FREE: Alta assertividade, maior confiança, mesmo sem Ev+, várias oportunidades diárias
-      // Requisitos FREE: Probabilidade >= 80%, Confiança do Regime >= 80% (Foco em Green)
-      const isFreeThreshold = prob >= 0.80 && conf >= 0.80;
+      // FREE: Foco em Assertividade Pura (Green) para validação de mercado
+      // Requisitos FREE: Probabilidade >= 82%, Confiança do Regime >= 85%
+      const isFreeThreshold = prob >= 0.82 && conf >= 0.85;
 
       if (isVipThreshold) {
         type = SignalType.VALUE;

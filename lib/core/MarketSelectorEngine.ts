@@ -14,7 +14,11 @@ export class MarketSelectorEngine {
   ): MarketVertical[] {
     if (executionMode === "SKIP") return [];
 
-    if (executionMode === "FULL") {
+    // Argos v5.0 Syndicate-Level: Prioridade Absoluta para Elite
+    const eliteLeagues = [1, 2, 3, 11, 13, 15, 61, 71, 72, 73, 78, 94, 140];
+    const isElite = eliteLeagues.includes(leagueProfile?.id);
+
+    if (executionMode === "FULL" || isElite) {
       return [...availableMarkets];
     }
 
