@@ -151,10 +151,15 @@ export class ArgosOrchestratorV4 {
       const operationalDensity = score.operationalDensity;
       
       let executionMode: "FULL" | "REDUCED" | "SKIP" = "SKIP";
-      if (operationalDensity >= 75) executionMode = "FULL";
+      
+      // Argos v5.0 Syndicate-Level: Elite nunca é SKIP. No mínimo REDUCED.
+      const eliteLeagues = [1, 2, 3, 4, 11, 13, 15, 61, 71, 72, 73, 78, 94, 140];
+      const isElite = eliteLeagues.includes(Number(ingestedData.leagueId));
+
+      if (operationalDensity >= 75 || isElite) executionMode = "FULL";
       else if (operationalDensity >= 55) executionMode = "REDUCED";
 
-      if (executionMode === "SKIP") {
+      if (executionMode === "SKIP" && !isElite) {
         console.log(`[Argos v5.0] MATCH ENGINE: SKIP TOTAL para jogo ${matchId} (Densidade: ${operationalDensity})`);
         return {
           matchId,
@@ -163,6 +168,9 @@ export class ArgosOrchestratorV4 {
           error: "DENSITY_SKIP"
         };
       }
+      
+      // Forçar modo FULL para Elite independente da densidade para varredura exaustiva
+      if (isElite) executionMode = "FULL";
 
       // 5. MARKET ENGINES (Decisão de Nível de Mercado)
       // Argos v5.0: EXHAUSTIVE Multi-Market Scanning

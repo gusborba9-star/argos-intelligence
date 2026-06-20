@@ -46,11 +46,18 @@ export class FixtureValidator {
     }
 
     const timeToKickoffMinutes = (fixtureDate.getTime() - today.getTime()) / (1000 * 60);
+    
+    // Argos v5.0 Syndicate-Level: Ligas de Elite têm passe livre na janela (até 72h)
+    const eliteLeagues = [1, 2, 3, 4, 11, 13, 15, 61, 71, 72, 73, 78, 94, 140]; // Incluindo Copa do Mundo (1) e principais
+    const isElite = eliteLeagues.includes(fixture.league.id);
+
     if (timeToKickoffMinutes < this.OPERATIONAL_WINDOW_MIN_MINUTES) {
-      return { status: ValidationStatus.GAME_ENDED, reason: `Game already started or ended. Time to kickoff: ${timeToKickoffMinutes} minutes.` };
+      return { status: ValidationStatus.GAME_ENDED, reason: `Game already started or ended.` };
     }
-    if (timeToKickoffMinutes > this.OPERATIONAL_WINDOW_MAX_MINUTES) {
-      return { status: ValidationStatus.GAME_TOO_FAR, reason: `Game is too far in the future. Time to kickoff: ${timeToKickoffMinutes} minutes.` };
+    
+    // Se não for elite, respeitamos a janela máxima. Se for elite, permitimos até 72h sem pestanejar.
+    if (!isElite && timeToKickoffMinutes > this.OPERATIONAL_WINDOW_MAX_MINUTES) {
+      return { status: ValidationStatus.GAME_TOO_FAR, reason: `Game too far (Non-Elite).` };
     }
 
     // 3. Liga identificada e relevante
