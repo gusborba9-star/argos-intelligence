@@ -4,7 +4,7 @@ import { BatchQueueService } from "@/lib/core/BatchQueueService";
 import { ValueDeliveryService } from "@/lib/argos/delivery/ValueDeliveryService";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 import { TelegramDispatcher } from "@/lib/argos/notifications/TelegramDispatcher";
-
+import { DailyIngestionScheduler } from "@/lib/core/DailyIngestionScheduler";
 // ============================================================
 // ARGOS API v4.5 — ZERO-TOUCH & BATCH ENDPOINT
 // Endpoint consolidado para auditoria autônoma e em lote
@@ -145,8 +145,16 @@ export async function POST(req: Request) {
 	        }
 
     const queueService = new BatchQueueService();
-    const nextItem = await queueService.getNextInQueue();
 
+const shouldRunIngestion = Date.now() % 4 === 0;
+
+if (shouldRunIngestion) {
+  const scheduler = new DailyIngestionScheduler();
+  await scheduler.scheduleDailyIngestion();
+  await new Promise((r) => setTimeout(r, 800));
+}
+
+const nextItem = await queueService.getNextInQueue();
     if (!nextItem) {
       return NextResponse.json({ message: "Fila vazia. Nenhum jogo para processar." });
     }
