@@ -260,27 +260,36 @@ export class DataIngestionService {
       );
     });
     
-    const history = response.data || [];
-    await getRedisCacheInstance().set(cacheKey, history, 3600);
-    return history;
+      protected async getTeamHistory(teamId: number, limit: number, refresh: boolean = false): Promise<FixtureResponse[]> {
+    const cacheKey = `teamHistory-${teamId}-${limit}`;
+    
+    if (!refresh) {
+      const cachedHistory = await getRedisCacheInstance().get<FixtureResponse[]>(cacheKey);
+      if (cachedHistory) {
+        console.log(`[DataIngestionService] Retornando histórico do time ${teamId} do cache Redis.`);
+        return cachedHistory;
+      }
+    }
+
+    try {
+      // Usando PropLineAPI e o header X-API-Key
+      const response = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
+        await this.incrementRequestCount();
+        return await axios.get(
+          `${this.baseUrl}/events/${teamId}/history`,
+          { headers: { "X-API-Key": this.apiKey } }
+        );
+      });
+      
+      const history = response.data || [];
+      await getRedisCacheInstance().set(cacheKey, history, 3600);
+      return history;
+    } catch (error: any) {
+      console.error(`[DataIngestionService] Erro ao buscar histórico do time ${teamId}:`, error.message);
+      return [];
+    }
   }
 
-
-    const response: AxiosResponse<{ response: FixtureResponse[] }> = await circuitBreakerPool.get("FootballAPI")!.execute(async () => {
-      // Incrementa o contador APENAS se a requisição for realmente para a API externa
-      await this.incrementRequestCount();
-      return await axios.get(
-        `${this.baseUrl}/fixtures?team=${teamId}&last=${limit}`,
-        { headers: { "x-apisports-key": this.apiKey } }
-      );
-    }).catch(err => {
-        console.error(`[DataIngestionService] Erro ao buscar histórico do time ${teamId}:`, err.message);
-        throw err; // Rejeitar novamente para ser pego pelo catch superior
-    });
-    const history = response.data.response || [];
-    await getRedisCacheInstance().set(cacheKey, history, 3600); // Cache por 1 hora
-    return history;
-  }
 
   /**
    * Argos v5.0: REMOVIDO LISTA FIXA DE LIGAS.
