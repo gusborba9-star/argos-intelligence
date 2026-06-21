@@ -324,40 +324,39 @@ export class DataIngestionService {
 
 
       public async getFixturesAnyLeague(date: string, refresh: boolean = false): Promise<any[]> {
-    const cacheKey = `fixturesAnyLeague-${date}`;
+    co// No seu DataIngestionService.ts
+
+public async getFixturesAnyLeague(sportKey: string, date: string, refresh: boolean = false): Promise<any[]> {
+    const cacheKey = `fixtures-${sportKey}-${date}`;
     
     if (!refresh) {
       const cachedFixtures = await getRedisCacheInstance().get<any[]>(cacheKey);
-      if (cachedFixtures) {
-        console.log(`[DataIngestionService] Retornando jogos do cache Redis.`);
-        return cachedFixtures;
-      }
+      if (cachedFixtures) return cachedFixtures;
     }
 
     try {
-      // Usamos o novo nome do Circuit Breaker: "PropLineAPI"
-      const response: AxiosResponse<any[]> = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
+      // CORREÇÃO: O endpoint correto exige o sport_key
+      const response = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
         await this.incrementRequestCount();
         
-        // Ajuste da URL e Header conforme documentação da PropLine
+        // Estrutura oficial: /v1/sports/{sport_key}/events
         return await axios.get(
-          `${this.baseUrl}/events`, // Endpoint de eventos
+          `${this.baseUrl}/sports/${sportKey}/events`, 
           { 
-            headers: { "X-API-Key": this.apiKey },
-            params: { date: date } // Passamos a data como parâmetro
+            headers: { "X-API-Key": this.apiKey }
           }
         );
       });
 
       const fixtures = response.data || [];
-      
       await getRedisCacheInstance().set(cacheKey, fixtures, 3600);
       return fixtures;
     } catch (error: any) {
       console.error(`[DataIngestionService] Erro ao buscar jogos na PropLine:`, error.message);
       return [];
     }
-  }
+}
+
     
 
   /**
