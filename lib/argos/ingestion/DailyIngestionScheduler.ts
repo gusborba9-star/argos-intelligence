@@ -75,12 +75,22 @@ export class DailyIngestionScheduler {
 
         // Deduplicação Técnica e Pre-Filter de Janela de Tempo (Regra de Produção)
         const timeToKickoffMinutes = (new Date(fixture.fixture.date).getTime() - today.getTime()) / (1000 * 60);
-                const validationResult = FixtureValidator.validate(fixture, today);
-        if (validationResult.status !== ValidationStatus.VALIDATED) {
-          console.log(`[Argos v5.0] Jogo ${matchId} rejeitado por: ${validationResult.reason} (${validationResult.status})`);
-          processedMatchIds.add(matchId); // Adiciona ao set para evitar reprocessamento
-          continue;
-        }
+                // --- INÍCIO DA CORREÇÃO ---
+const isWorldCup = fixture.league.name.toLowerCase().includes("world cup") || fixture.league.id === 1; // Ajuste o ID se necessário
+let validationResult = FixtureValidator.validate(fixture, today);
+
+if (isWorldCup) {
+    console.log(`[Argos v5.0] Evento Prioridade Máxima detectado: ${fixture.league.name}. Forçando validação.`);
+    validationResult = { status: ValidationStatus.VALIDATED, reason: "Force Override" };
+}
+
+if (validationResult.status !== ValidationStatus.VALIDATED) {
+  console.log(`[Argos v5.0] Jogo ${matchId} rejeitado por: ${validationResult.reason}`);
+  processedMatchIds.add(matchId);
+  continue;
+}
+// --- FIM DA CORREÇÃO ---
+
 
         // Deduplicação Técnica e Pre-Filter de Janela de Tempo (Regra de Produção)
         // A janela de tempo agora é validada pelo FixtureValidator
