@@ -324,22 +324,20 @@ export class DataIngestionService {
 
 
       public async getFixturesAnyLeague(date: string, refresh: boolean = false): Promise<any[]> {
-    co// No seu DataIngestionService.ts
-
-public async getFixturesAnyLeague(sportKey: string, date: string, refresh: boolean = false): Promise<any[]> {
+    co  public async getFixturesAnyLeague(sportKey: string, date: string, refresh: boolean = false): Promise<any[]> {
     const cacheKey = `fixtures-${sportKey}-${date}`;
     
     if (!refresh) {
       const cachedFixtures = await getRedisCacheInstance().get<any[]>(cacheKey);
-      if (cachedFixtures) return cachedFixtures;
+      if (cachedFixtures) {
+        console.log(`[DataIngestionService] Retornando jogos de ${sportKey} para ${date} do cache.`);
+        return cachedFixtures;
+      }
     }
 
     try {
-      // CORREÇÃO: O endpoint correto exige o sport_key
       const response = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
         await this.incrementRequestCount();
-        
-        // Estrutura oficial: /v1/sports/{sport_key}/events
         return await axios.get(
           `${this.baseUrl}/sports/${sportKey}/events`, 
           { 
@@ -348,18 +346,21 @@ public async getFixturesAnyLeague(sportKey: string, date: string, refresh: boole
         );
       });
 
-      const fixtures = response.data || [];
-      await getRedisCacheInstance().set(cacheKey, fixtures, 3600);
-      return fixtures;
+      // Filtro de data conforme documentação (o endpoint retorna eventos do sport_key)
+      const allEvents = response.data || [];
+      const filteredFixtures = allEvents.filter((event: any) => 
+        event.commence_time && event.commence_time.startsWith(date)
+      );
+      
+      await getRedisCacheInstance().set(cacheKey, filteredFixtures, 3600);
+      return filteredFixtures;
     } catch (error: any) {
-      console.error(`[DataIngestionService] Erro ao buscar jogos na PropLine:`, error.message);
+      console.error(`[DataIngestionService] Erro ao buscar jogos na PropLine para ${sportKey}:`, error.message);
       return [];
     }
-}
+  }
 
-    
-
-  /**
+   /**
    * Argos v5.0: Perfil de Liga Dinâmico.
    * Estima a qualidade da liga com base em dados históricos reais e metadados da competição.
    */
