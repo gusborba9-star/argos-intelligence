@@ -24,7 +24,8 @@ export class DailyIngestionScheduler {
    */
   async scheduleDailyIngestion(): Promise<{ date: string; totalIngested: number; processedMatchIds: string[]; status: string; enqueuedMatchDetails: { id: string; home: string; away: string; league: string; date: string }[] }> {
     const today = new Date();
-    const datesToFetch = [];
+    const datesToFetch: string[] = [];
+    
     // Argos v5.0 Syndicate-Level: Janela de 72 horas (3 dias)
     for (let i = 0; i < 4; i++) { // Hoje + 3 dias futuros (cobrindo a janela de 72h)
         const d = new Date(today);
