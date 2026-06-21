@@ -244,22 +244,7 @@ export class DataIngestionService {
     }
   }
 
-    protected async getTeamHistory(teamId: number, limit: number, refresh: boolean = false): Promise<FixtureResponse[]> {
-    const cacheKey = `teamHistory-${teamId}-${limit}`;
-    if (!refresh) {
-      const cachedHistory = await getRedisCacheInstance().get<FixtureResponse[]>(cacheKey);
-      if (cachedHistory) return cachedHistory;
-    }
-
-    // Agora usa o "PropLineAPI" e o header correto
-    const response = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
-      await this.incrementRequestCount();
-      return await axios.get(
-        `${this.baseUrl}/events/${teamId}/history`, // Ajustado para o endpoint da PropLine
-        { headers: { "X-API-Key": this.apiKey } }
-      );
-    });
-    }
+    
       protected async getTeamHistory(teamId: number, limit: number, refresh: boolean = false): Promise<FixtureResponse[]> {
     const cacheKey = `teamHistory-${teamId}-${limit}`;
     
