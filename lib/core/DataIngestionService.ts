@@ -350,24 +350,6 @@ export class DataIngestionService {
     }
   }
 
-
-    try {
-      const response: AxiosResponse<{ response: any[] }> = await circuitBreakerPool.get("FootballAPI")!.execute(async () => {
-        await this.incrementRequestCount();
-        return await axios.get(
-          `${this.baseUrl}/fixtures?date=${date}`,
-          { headers: { "x-apisports-key": this.apiKey } }
-        );
-      });
-      const fixtures = response.data.response || [];
-      await getRedisCacheInstance().set(cacheKey, fixtures, 3600); // Cache por 1 hora
-      return fixtures;
-    } catch (error: any) {
-      console.error(`[DataIngestionService] Erro ao buscar jogos de qualquer liga para ${date}:`, error);
-      return [];
-    }
-  }
-
   /**
    * Argos v5.0: Perfil de Liga Dinâmico.
    * Estima a qualidade da liga com base em dados históricos reais e metadados da competição.
