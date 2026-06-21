@@ -314,8 +314,10 @@ export class DataIngestionService {
     }
   }
 
-  public async getFixturesAnyLeague(date: string, refresh: boolean = false): Promise<any[]> {
+    public async getFixturesAnyLeague(date: string, refresh: boolean = false): Promise<any[]> {
     const cacheKey = `fixturesAnyLeague-${date}`;
+    
+    // Se não for solicitado refresh, tenta pegar do cache
     if (!refresh) {
       const cachedFixtures = await getRedisCacheInstance().get<any[]>(cacheKey);
       if (cachedFixtures) {
@@ -323,6 +325,31 @@ export class DataIngestionService {
         return cachedFixtures;
       }
     }
+
+    try {
+      const response: AxiosResponse<{ response: any[] }> = await circuitBreakerPool.get("FootballAPI")!.execute(async () => {
+        await this.incrementRequestCount();
+        
+        // AQUI ESTÁ A MUDANÇA: Adicionamos &season=2026
+        // Isso garante que a API entenda que você quer os jogos da Copa de 2026
+        return await axios.get(
+          `${this.baseUrl}/fixtures?date=${date}&season=2026`,
+          { headers: { "x-apisports-key": this.apiKey } }
+        );
+      });
+
+      const fixtures = response.data.response || [];
+      
+      // Salva no cache com expiração de 1 hora
+      await getRedisCacheInstance().set(cacheKey, fixtures, 3600);
+      
+      return fixtures;
+    } catch (error: any) {
+      console.error(`[DataIngestionService] Erro ao buscar jogos de qualquer liga para ${date}:`, error.message);
+      return [];
+    }
+  }
+
 
     try {
       const response: AxiosResponse<{ response: any[] }> = await circuitBreakerPool.get("FootballAPI")!.execute(async () => {
