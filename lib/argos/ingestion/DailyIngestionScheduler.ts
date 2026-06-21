@@ -54,10 +54,13 @@ export class DailyIngestionScheduler {
         );
     }
 
-    const settledResults = await Promise.allSettled(fixturePromises);
-    settledResults.forEach(result => {
+        const settledResults = await Promise.allSettled(fixturePromises);
+    settledResults.forEach((result, index) => {
         if (result.status === 'fulfilled') {
             allPotentialFixtures.push(...result.value);
+            console.log(`[Argos DEBUG] Data ${datesToFetch[index]} retornou ${result.value.length} jogos.`);
+        } else {
+            console.error(`[Argos DEBUG] Data ${datesToFetch[index]} falhou:`, result.reason);
         }
     });
 
