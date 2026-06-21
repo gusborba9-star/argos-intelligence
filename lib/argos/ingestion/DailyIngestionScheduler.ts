@@ -42,33 +42,28 @@ export class DailyIngestionScheduler {
         // Argos v5.0: PIPELINE ADAPTATIVO (Descoberta Automática)
     // 1. Geração de Candidatos: Buscar todos os fixtures disponíveis para as datas alvo.
     const allPotentialFixtures: any[] = [];
-    const fixturePromises: Promise<any[]>[] = [];
+    const priorityLeagues = ['soccer_epl', 'soccer_la_liga', 'soccer_serie_a', 'soccer_bundesliga', 'soccer_ligue_1', 'soccer_brazil_serie_a'];
 
-        for (const date of datesToFetch) {
-        console.log(`[Argos v5.0] Descobrindo competições ativas para ${date}...`);
-        
-        // O parâmetro 'true' força o bypass do cache Redis
-        fixturePromises.push(
-            // Define as ligas que o Argos considera prioritárias/principais
-const priorityLeagues = ['soccer_epl', 'soccer_la_liga', 'soccer_serie_a', 'soccer_bundesliga', 'soccer_ligue_1', 'soccer_brazil_serie_a'];
+    // Criamos um array de promessas para todas as combinações de data e liga
+    const fetchPromises = datesToFetch.flatMap(date => 
+        priorityLeagues.map(sportKey => 
+            this.dataIngestionService.getFixturesAnyLeague(sportKey, date, true)
+                .catch(err => {
+                    console.error(`[Argos v5.0] Erro ao buscar ${sportKey} para ${date}:`, err.message);
+                    return [];
+                })
+        )
+    );
 
-// Dispara a busca para as ligas prioritárias
-Promise.all(priorityLeagues.map(sportKey => 
-    this.dataIngestionService.getFixturesAnyLeague(sportKey, date, true)
-        .catch(err => {
-            console.error(`[Argos v5.0] Erro na descoberta automática para ${date} (${sportKey}):`, err.message);
-            return [];
-        })
-)).then(results => results.flat())
-  .catch(err => {
-      console.error(`[Argos v5.0] Erro crítico na descoberta automática para ${date}:`, err.message);
-      return [];
-  })
-);
+    console.log(`[Argos v5.0] Disparando busca paralela para ${fetchPromises.length} combinações...`);
+    const results = await Promise.all(fetchPromises);
+    
+    // Unifica todos os resultados em um único array
+    allPotentialFixtures.push(...results.flat());
+    console.log(`[Argos v5.0] Total de ${allPotentialFixtures.length} fixtures potenciais coletados.`);
 
 
-
-        const settledResults = await Promise.allSettled(fixturePromises);
+       const settledResults = await Promise.allSettled(fixturePromises);
     settledResults.forEach((result, index) => {
         if (result.status === 'fulfilled') {
             allPotentialFixtures.push(...result.value);
