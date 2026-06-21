@@ -49,13 +49,23 @@ export class DailyIngestionScheduler {
         
         // O parâmetro 'true' força o bypass do cache Redis
         fixturePromises.push(
-            this.dataIngestionService.getFixturesAnyLeague(date, true)
-                .catch(err => {
-                    console.error(`[Argos v5.0] Erro na descoberta automática para ${date}:`, err.message);
-                    return [];
-                })
-        );
-    }
+            // Define as ligas que o Argos considera prioritárias/principais
+const priorityLeagues = ['soccer_epl', 'soccer_la_liga', 'soccer_serie_a', 'soccer_bundesliga', 'soccer_ligue_1', 'soccer_brazil_serie_a'];
+
+// Dispara a busca para as ligas prioritárias
+Promise.all(priorityLeagues.map(sportKey => 
+    this.dataIngestionService.getFixturesAnyLeague(sportKey, date, true)
+        .catch(err => {
+            console.error(`[Argos v5.0] Erro na descoberta automática para ${date} (${sportKey}):`, err.message);
+            return [];
+        })
+)).then(results => results.flat())
+  .catch(err => {
+      console.error(`[Argos v5.0] Erro crítico na descoberta automática para ${date}:`, err.message);
+      return [];
+  })
+);
+
 
 
         const settledResults = await Promise.allSettled(fixturePromises);
