@@ -44,16 +44,19 @@ export class DailyIngestionScheduler {
     const allPotentialFixtures: any[] = [];
     const fixturePromises: Promise<any[]>[] = [];
 
-    for (const date of datesToFetch) {
+        for (const date of datesToFetch) {
         console.log(`[Argos v5.0] Descobrindo competições ativas para ${date}...`);
+        
+        // O parâmetro 'true' força o bypass do cache Redis
         fixturePromises.push(
-            this.dataIngestionService.getFixturesAnyLeague(date)
+            this.dataIngestionService.getFixturesAnyLeague(date, true)
                 .catch(err => {
                     console.error(`[Argos v5.0] Erro na descoberta automática para ${date}:`, err.message);
                     return [];
                 })
         );
     }
+
 
         const settledResults = await Promise.allSettled(fixturePromises);
     settledResults.forEach((result, index) => {
