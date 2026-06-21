@@ -188,16 +188,17 @@ export class DataIngestionService {
 
     try {
       // 1. Buscar detalhes do jogo (Ligas, Times, Árbitro) com Circuit Breaker
-      const fixtureResponse: AxiosResponse<{ response: FixtureResponse[] }> = await circuitBreakerPool.get("FootballAPI")!.execute(async () => {
-        await this.incrementRequestCount();
-        return await axios.get(
-          `${this.baseUrl}/fixtures?id=${matchId}`,
-          { 
-            headers: { "x-apisports-key": this.apiKey },
-            timeout: 15000 // Timeout de 15s para evitar travamento na Vercel
-          }
-        );
-      });
+      const fixtureResponse = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
+  await this.incrementRequestCount();
+  return await axios.get(
+    `${this.baseUrl}/events/${matchId}`, 
+    { 
+      headers: { "X-API-Key": this.apiKey },
+      timeout: 15000
+    }
+  );
+});
+
 
       if (!fixtureResponse.data || !fixtureResponse.data.response || fixtureResponse.data.response.length === 0) {
         throw new Error(`Fixture ${matchId} not found in API-Football response`);
@@ -438,27 +439,32 @@ export class DataIngestionService {
   }
 
   public async getFixturesByLeague(leagueId: number, date: string, refresh: boolean = false): Promise<FixtureResponse[]> {
-    const cacheKey = `fixturesByLeague-${leagueId}-${date}`;
-    if (!refresh) {
-      const cachedFixtures = await getRedisCacheInstance().get<FixtureResponse[]>(cacheKey);
-      if (cachedFixtures) {
-        console.log(`[DataIngestionService] Retornando jogos da liga ${leagueId} para ${date} do cache Redis.`);
-        return cachedFixtures;
-      }
+  const cacheKey = `fixturesByLeague-${leagueId}-${date}`;
+  if (!refresh) {
+    const cachedFixtures = await getRedisCacheInstance().get<FixtureResponse[]>(cacheKey);
+    if (cachedFixtures) {
+      console.log(`[DataIngestionService] Retornando jogos da liga ${leagueId} do cache Redis.`);
+      return cachedFixtures;
     }
-
-    const response: AxiosResponse<{ response: FixtureResponse[] }> = await circuitBreakerPool.get("FootballAPI")!.execute(async () => {
-      // Incrementa o contador APENAS se a requisição for realmente para a API externa
-      await this.incrementRequestCount();
-      return await axios.get(
-        `${this.baseUrl}/fixtures?league=${leagueId}&date=${date}`,
-        { headers: { "x-apisports-key": this.apiKey } }
-      );
-    });
-    const fixtures = response.data.response || [];
-    await getRedisCacheInstance().set(cacheKey, fixtures, 3600); // Cache por 1 hora
-    return fixtures;
   }
+
+  // CORREÇÃO: Usando o pool "PropLineAPI" e o header novo
+  const response = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
+    await this.incrementRequestCount();
+    return await axios.get(
+      `${this.baseUrl}/events`, 
+      { 
+        headers: { "X-API-Key": this.apiKey },
+        params: { leagueId, date }
+      }
+    );
+  });
+
+  const fixtures = response.data || [];
+  await getRedisCacheInstance().set(cacheKey, fixtures, 3600);
+  return fixtures;
+  }
+  
 
 
 
