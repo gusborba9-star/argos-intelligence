@@ -113,27 +113,30 @@ export interface FixtureResponse {
 
 export class DataIngestionService {
   private apiKey: string;
-  private baseUrl: string = "https://v3.football.api-sports.io";
+  private baseUrl: string = "https://api.prop-line.com/v1"; // Alterado para a nova URL
   private MAX_DAILY_REQUESTS: number = 100;
   private dailyRequestCount: number = 0;
   private lastRequestDate: string = "";
+
   // Removendo cache local, usando RedisCache global
   // private cache: Map<string, { data: any; timestamp: number }> = new Map();
   // private CACHE_TTL_MS: number = 5 * 60 * 1000; // 5 minutos de cache
 
-  constructor() {
-    this.apiKey = process.env.API_SPORTS_KEY || "";
+    constructor() {
+    this.apiKey = process.env.PROPLINE_API_KEY || ""; // Altere para a nova variável
     if (!this.apiKey) {
-      console.warn("API_SPORTS_KEY não configurada. O DataIngestionService pode não funcionar.");
+      console.warn("PROPLINE_API_KEY não configurada. O DataIngestionService pode não funcionar.");
     }
-    this.loadRequestCount();
-    // Registrar Circuit Breaker para a API Football
+    // ... restante do seu constructor igual
+
+        this.loadRequestCount();
+    // Registrar Circuit Breaker para a API PropLine (Atualizado)
     circuitBreakerPool.register({
-      name: "FootballAPI",
-      failureThreshold: 5, // 5 falhas antes de abrir o circuito
-      successThreshold: 3, // 3 sucessos para fechar o circuito
-      timeout: 60000, // 60 segundos de espera antes de tentar novamente
-      resetTimeout: 300000, // 5 minutos para resetar contadores
+      name: "PropLineAPI", // Alterado de "FootballAPI" para "PropLineAPI"
+      failureThreshold: 5,
+      successThreshold: 3,
+      timeout: 60000,
+      resetTimeout: 300000,
     });
   }
 
@@ -241,15 +244,27 @@ export class DataIngestionService {
     }
   }
 
-  protected async getTeamHistory(teamId: number, limit: number, refresh: boolean = false): Promise<FixtureResponse[]> {
+    protected async getTeamHistory(teamId: number, limit: number, refresh: boolean = false): Promise<FixtureResponse[]> {
     const cacheKey = `teamHistory-${teamId}-${limit}`;
     if (!refresh) {
       const cachedHistory = await getRedisCacheInstance().get<FixtureResponse[]>(cacheKey);
-      if (cachedHistory) {
-        console.log(`[DataIngestionService] Retornando histórico do time ${teamId} do cache Redis.`);
-        return cachedHistory;
-      }
+      if (cachedHistory) return cachedHistory;
     }
+
+    // Agora usa o "PropLineAPI" e o header correto
+    const response = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
+      await this.incrementRequestCount();
+      return await axios.get(
+        `${this.baseUrl}/events/${teamId}/history`, // Ajustado para o endpoint da PropLine
+        { headers: { "X-API-Key": this.apiKey } }
+      );
+    });
+    
+    const history = response.data || [];
+    await getRedisCacheInstance().set(cacheKey, history, 3600);
+    return history;
+  }
+
 
     const response: AxiosResponse<{ response: FixtureResponse[] }> = await circuitBreakerPool.get("FootballAPI")!.execute(async () => {
       // Incrementa o contador APENAS se a requisição for realmente para a API externa
@@ -283,106 +298,114 @@ export class DataIngestionService {
    * @param date Data dos jogos (YYYY-MM-DD)
    * @param refresh Força a atualização dos dados, ignorando o cache.
    */
-  public async getFixtureDetails(matchId: string, refresh: boolean = false): Promise<FixtureResponse | null> {
+    public async getFixtureDetails(matchId: string, refresh: boolean = false): Promise<FixtureResponse | null> {
     const cacheKey = `fixtureDetails-${matchId}`;
     if (!refresh) {
       const cachedFixture = await getRedisCacheInstance().get<FixtureResponse>(cacheKey);
-      if (cachedFixture) {
-        console.log(`[DataIngestionService] Retornando detalhes do jogo ${matchId} do cache Redis.`);
-        return cachedFixture;
-      }
+      if (cachedFixture) return cachedFixture;
     }
 
     try {
-      const fixtureResponse: AxiosResponse<{ response: FixtureResponse[] }> = await circuitBreakerPool.get("FootballAPI")!.execute(async () => {
+      // Usando "PropLineAPI" e o header correto
+      const response = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
         await this.incrementRequestCount();
         return await axios.get(
-          `${this.baseUrl}/fixtures?id=${matchId}`,
-          { headers: { "x-apisports-key": this.apiKey } }
+          `${this.baseUrl}/events/${matchId}`, 
+          { headers: { "X-API-Key": this.apiKey } }
         );
       });
 
-      const fixture = fixtureResponse.data.response[0];
+      const fixture = response.data;
       if (fixture) {
-        await getRedisCacheInstance().set(cacheKey, fixture, 3600); // Cache por 1 hora
+        await getRedisCacheInstance().set(cacheKey, fixture, 3600);
         return fixture;
       }
       return null;
     } catch (error: any) {
-      console.error(`[DataIngestionService] Erro ao buscar detalhes do jogo ${matchId}:`, error.message);
+      console.error(`[DataIngestionService] Erro ao buscar detalhes na PropLine:`, error.message);
       throw error;
     }
   }
 
-    public async getFixturesAnyLeague(date: string, refresh: boolean = false): Promise<any[]> {
+
+      public async getFixturesAnyLeague(date: string, refresh: boolean = false): Promise<any[]> {
     const cacheKey = `fixturesAnyLeague-${date}`;
     
-    // Se não for solicitado refresh, tenta pegar do cache
     if (!refresh) {
       const cachedFixtures = await getRedisCacheInstance().get<any[]>(cacheKey);
       if (cachedFixtures) {
-        console.log(`[DataIngestionService] Retornando jogos de qualquer liga para ${date} do cache Redis.`);
+        console.log(`[DataIngestionService] Retornando jogos do cache Redis.`);
         return cachedFixtures;
       }
     }
 
     try {
-      const response: AxiosResponse<{ response: any[] }> = await circuitBreakerPool.get("FootballAPI")!.execute(async () => {
+      // Usamos o novo nome do Circuit Breaker: "PropLineAPI"
+      const response: AxiosResponse<any[]> = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
         await this.incrementRequestCount();
         
-        // AQUI ESTÁ A MUDANÇA: Adicionamos &season=2026
-        // Isso garante que a API entenda que você quer os jogos da Copa de 2026
+        // Ajuste da URL e Header conforme documentação da PropLine
         return await axios.get(
-          `${this.baseUrl}/fixtures?date=${date}&season=2026`,
-          { headers: { "x-apisports-key": this.apiKey } }
+          `${this.baseUrl}/events`, // Endpoint de eventos
+          { 
+            headers: { "X-API-Key": this.apiKey },
+            params: { date: date } // Passamos a data como parâmetro
+          }
         );
       });
 
-      const fixtures = response.data.response || [];
+      const fixtures = response.data || [];
       
-      // Salva no cache com expiração de 1 hora
       await getRedisCacheInstance().set(cacheKey, fixtures, 3600);
-      
       return fixtures;
     } catch (error: any) {
-      console.error(`[DataIngestionService] Erro ao buscar jogos de qualquer liga para ${date}:`, error.message);
+      console.error(`[DataIngestionService] Erro ao buscar jogos na PropLine:`, error.message);
       return [];
     }
   }
+    
 
   /**
    * Argos v5.0: Perfil de Liga Dinâmico.
    * Estima a qualidade da liga com base em dados históricos reais e metadados da competição.
    */
-  public getLeagueProfile(leagueId: number, leagueName?: string): LeagueProfile {
-    // Mapeamento dinâmico de Tier baseado em palavras-chave do nome da liga (Descoberta Automática)
+    public getLeagueProfile(leagueId: number, leagueName?: string): LeagueProfile {
     let tier: "Tier 1" | "Tier 2" | "Tier 3" | "Tier 4" = "Tier 3";
     let liquidity = 100000;
 
     if (leagueName) {
       const name = leagueName.toLowerCase();
-      // Ligas Prioritárias (Tier 1)
+
+      // 1. Prioridades Máximas (Incluindo seus novos pedidos)
       if (
         name.includes("champions league") ||
         name.includes("premier league") ||
         name.includes("la liga") ||
-        name.includes("brasileirão serie a") ||
-        name.includes("brasileirão serie b") ||
+        name.includes("brasileirão") ||
         name.includes("copa do brasil") ||
-        name.includes("bundesliga") ||
         name.includes("libertadores") ||
+        name.includes("sudamericana") || // Adicionado: Sua preocupação
+        name.includes("mundial") ||      // Adicionado: Sua preocupação
         name.includes("world cup") ||
+        name.includes("bundesliga") ||
         name.includes("serie a")
       ) {
         tier = "Tier 1";
         liquidity = 1000000;
-      } else if (name.includes("ligue 1") || name.includes("argentina") || name.includes("portugal")) {
-        tier = "Tier 1";
-        liquidity = 800000;
-      } else if (name.includes("championship") || name.includes("eredivisie") || name.includes("copa sudamericana")) {
-        tier = "Tier 2";
-        liquidity = 400000;
+      } 
+      // 2. Regra dos Regionais/Estaduais (O segredo para não dormir no começo do ano)
+      else if (
+        name.includes("paulista") || 
+        name.includes("carioca") || 
+        name.includes("mineiro") || 
+        name.includes("gaucho") || 
+        name.includes("campeonato") // Qualquer "Campeonato" genérico assume Tier 2
+      ) {
+        tier = "Tier 2"; // Regionais entram como Tier 2 para manter o Argos rodando
+        liquidity = 300000;
       }
+      // ... restante do seu código (Championship, Eredivisie, etc)
+        
 
       // Excluir competições obscuras ou sem dados (Tier 4)
       if (
@@ -451,4 +474,24 @@ export class DataIngestionService {
     // Exemplo: if (refereeName.includes("Lahoz")) return 1.5; // Árbitro rigoroso
     return 1.0; // Valor padrão
   }
+    /**
+   * Argos v5.0: Captura de Mercados de Props (Assistências, Faltas, Goleiro, etc.)
+   * @param matchId ID do evento
+   * @param markets Array de mercados desejados (ex: ['player_assists', 'player_shots_on_target'])
+   */
+  public async getMatchProps(matchId: string, markets: string[]): Promise<any> {
+    try {
+      const response = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
+        return await axios.get(`${this.baseUrl}/odds/${matchId}`, {
+          headers: { "X-API-Key": this.apiKey },
+          params: { markets: markets.join(',') }
+        });
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error(`[DataIngestionService] Erro ao buscar props para ${matchId}:`, error.message);
+      return null;
+    }
+  }
+  
 }
