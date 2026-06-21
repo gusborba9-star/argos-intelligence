@@ -259,7 +259,7 @@ export class DataIngestionService {
         { headers: { "X-API-Key": this.apiKey } }
       );
     });
-    
+    }
       protected async getTeamHistory(teamId: number, limit: number, refresh: boolean = false): Promise<FixtureResponse[]> {
     const cacheKey = `teamHistory-${teamId}-${limit}`;
     
