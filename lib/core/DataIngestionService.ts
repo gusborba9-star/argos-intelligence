@@ -4,8 +4,9 @@ import { circuitBreakerPool } from "@/lib/core/CircuitBreaker";
 import { LeagueProfile } from "@/lib/argos/ingestion/LeagueValueScoreEngine";
 
 // ============================================================
-// DATA INGESTION SERVICE v4.5 — EXPONENTIAL INTELLIGENCE
+// DATA INGESTION SERVICE v5.0 — EXPONENTIAL INTELLIGENCE
 // Automatiza a extração de dados e calcula médias ajustadas com decaimento temporal
+// Migração crítica para PropLine API (High-Performance)
 // ============================================================
 
 export interface AdjustedMetrics {
@@ -113,7 +114,7 @@ export interface FixtureResponse {
 
 export class DataIngestionService {
   private apiKey: string;
-  private baseUrl: string = "https://api.prop-line.com/v1"; // Alterado para a nova URL
+  private baseUrl: string = "https://api.prop-line.com/v1"; // PropLine API v1
   private MAX_DAILY_REQUESTS: number = 100;
   private dailyRequestCount: number = 0;
   private lastRequestDate: string = "";
@@ -122,17 +123,17 @@ export class DataIngestionService {
   // private cache: Map<string, { data: any; timestamp: number }> = new Map();
   // private CACHE_TTL_MS: number = 5 * 60 * 1000; // 5 minutos de cache
 
-    constructor() {
-    this.apiKey = process.env.PROPLINE_API_KEY || ""; // Altere para a nova variável
+  constructor() {
+    this.apiKey = process.env.PROPLINE_API_KEY || ""; // PropLine API Key
     if (!this.apiKey) {
       console.warn("PROPLINE_API_KEY não configurada. O DataIngestionService pode não funcionar.");
     }
-    // ... restante do seu constructor igual
 
-        this.loadRequestCount();
-    // Registrar Circuit Breaker para a API PropLine (Atualizado)
+    this.loadRequestCount();
+    
+    // Registrar Circuit Breaker para a API PropLine
     circuitBreakerPool.register({
-      name: "PropLineAPI", // Alterado de "FootballAPI" para "PropLineAPI"
+      name: "PropLineAPI",
       failureThreshold: 5,
       successThreshold: 3,
       timeout: 60000,
@@ -189,19 +190,18 @@ export class DataIngestionService {
     try {
       // 1. Buscar detalhes do jogo (Ligas, Times, Árbitro) com Circuit Breaker
       const fixtureResponse = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
-  await this.incrementRequestCount();
-  return await axios.get(
-    `${this.baseUrl}/events/${matchId}`, 
-    { 
-      headers: { "X-API-Key": this.apiKey },
-      timeout: 15000
-    }
-  );
-});
-
+        await this.incrementRequestCount();
+        return await axios.get(
+          `${this.baseUrl}/events/${matchId}`, 
+          { 
+            headers: { "X-API-Key": this.apiKey },
+            timeout: 15000
+          }
+        );
+      });
 
       if (!fixtureResponse.data || !fixtureResponse.data.response || fixtureResponse.data.response.length === 0) {
-        throw new Error(`Fixture ${matchId} not found in API-Football response`);
+        throw new Error(`Fixture ${matchId} não encontrado na PropLine`);
       }
       const fixture = fixtureResponse.data.response[0];
 
@@ -240,13 +240,18 @@ export class DataIngestionService {
         throw error;
       } else {
         console.error("[DataIngestionService] Unknown Ingestion Error:", error);
-        throw new Error("An unknown error occurred during data ingestion.");
+        throw new Error("Erro desconhecido durante ingestão de dados.");
       }
     }
   }
 
-    
-      protected async getTeamHistory(teamId: number, limit: number, refresh: boolean = false): Promise<FixtureResponse[]> {
+  /**
+   * Busca histórico dos últimos N jogos de um time
+   * @param teamId ID do time
+   * @param limit Número de jogos anteriores a buscar
+   * @param refresh Força a atualização dos dados, ignorando o cache.
+   */
+  protected async getTeamHistory(teamId: number, limit: number, refresh: boolean = false): Promise<FixtureResponse[]> {
     const cacheKey = `teamHistory-${teamId}-${limit}`;
     
     if (!refresh) {
@@ -258,7 +263,7 @@ export class DataIngestionService {
     }
 
     try {
-      // Usando PropLineAPI e o header X-API-Key
+      // Usando PropLineAPI com header X-API-Key
       const response = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
         await this.incrementRequestCount();
         return await axios.get(
@@ -276,7 +281,6 @@ export class DataIngestionService {
     }
   }
 
-
   /**
    * Argos v5.0: REMOVIDO LISTA FIXA DE LIGAS.
    * Agora o sistema descobre competições ativas via API de fixtures futuros.
@@ -288,12 +292,11 @@ export class DataIngestionService {
   }
 
   /**
-   * Busca jogos de uma liga específica para uma data
-   * @param leagueId ID da liga
-   * @param date Data dos jogos (YYYY-MM-DD)
+   * Busca detalhes de um jogo específico
+   * @param matchId ID do jogo
    * @param refresh Força a atualização dos dados, ignorando o cache.
    */
-    public async getFixtureDetails(matchId: string, refresh: boolean = false): Promise<FixtureResponse | null> {
+  public async getFixtureDetails(matchId: string, refresh: boolean = false): Promise<FixtureResponse | null> {
     const cacheKey = `fixtureDetails-${matchId}`;
     if (!refresh) {
       const cachedFixture = await getRedisCacheInstance().get<FixtureResponse>(cacheKey);
@@ -301,7 +304,7 @@ export class DataIngestionService {
     }
 
     try {
-      // Usando "PropLineAPI" e o header correto
+      // Usando "PropLineAPI" com header correto
       const response = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
         await this.incrementRequestCount();
         return await axios.get(
@@ -322,21 +325,24 @@ export class DataIngestionService {
     }
   }
 
-   public async getFixturesAnyLeague(sportKey: string, date: string, refresh: boolean = false): Promise<any[]> {
-        const cacheKey = `fixtures-${sportKey}-${date}`;
-        
-        if (!refresh) {
-            // ... resto do seu código
-        }
-        
+  /**
+   * Busca jogos de qualquer liga para uma data específica
+   * @param sportKey Chave do esporte (ex: 'soccer_epl', 'soccer_champions_league')
+   * @param date Data dos jogos (YYYY-MM-DD)
+   * @param refresh Força a atualização dos dados, ignorando o cache.
+   */
+  public async getFixturesAnyLeague(sportKey: string, date: string, refresh: boolean = false): Promise<any[]> {
+    const cacheKey = `fixtures-${sportKey}-${date}`;
     
-   const cachedFixtures = await getRedisCacheInstance().get<any[]>(cacheKey);
+    if (!refresh) {
+      const cachedFixtures = await getRedisCacheInstance().get<any[]>(cacheKey);
       if (cachedFixtures) {
         console.log(`[DataIngestionService] Retornando jogos de ${sportKey} para ${date} do cache.`);
         return cachedFixtures;
-      
+      }
+    }
     
-   try {
+    try {
       const response = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
         await this.incrementRequestCount();
         return await axios.get(
@@ -347,7 +353,7 @@ export class DataIngestionService {
         );
       });
 
-      // Filtro de data conforme documentação (o endpoint retorna eventos do sport_key)
+      // Filtro de data conforme documentação PropLine
       const allEvents = response.data || [];
       const filteredFixtures = allEvents.filter((event: any) => 
         event.commence_time && event.commence_time.startsWith(date)
@@ -360,18 +366,20 @@ export class DataIngestionService {
       return [];
     }
   }
-   /**
+
+  /**
    * Argos v5.0: Perfil de Liga Dinâmico.
    * Estima a qualidade da liga com base em dados históricos reais e metadados da competição.
+   * ZERO TOLERÂNCIA para ligas de baixa qualidade ou categorias obscuras.
    */
-    public getLeagueProfile(leagueId: number, leagueName?: string): LeagueProfile {
+  public getLeagueProfile(leagueId: number, leagueName?: string): LeagueProfile {
     let tier: "Tier 1" | "Tier 2" | "Tier 3" | "Tier 4" = "Tier 3";
     let liquidity = 100000;
 
     if (leagueName) {
       const name = leagueName.toLowerCase();
 
-      // 1. Prioridades Máximas (Incluindo seus novos pedidos)
+      // 1. Prioridades Máximas (Tier 1 - Elite)
       if (
         name.includes("champions league") ||
         name.includes("premier league") ||
@@ -379,49 +387,59 @@ export class DataIngestionService {
         name.includes("brasileirão") ||
         name.includes("copa do brasil") ||
         name.includes("libertadores") ||
-        name.includes("sudamericana") || // Adicionado: Sua preocupação
-        name.includes("mundial") ||      // Adicionado: Sua preocupação
+        name.includes("sudamericana") ||
+        name.includes("mundial") ||
         name.includes("world cup") ||
         name.includes("bundesliga") ||
-        name.includes("serie a")
+        name.includes("serie a") ||
+        name.includes("ligue 1") ||
+        name.includes("serie a (italy)") ||
+        name.includes("eredivisie") ||
+        name.includes("championship") ||
+        name.includes("euro")
       ) {
         tier = "Tier 1";
         liquidity = 1000000;
       } 
-      // 2. Regra dos Regionais/Estaduais (O segredo para não dormir no começo do ano)
+      // 2. Competições Regionais e Secundárias (Tier 2)
       else if (
         name.includes("paulista") || 
         name.includes("carioca") || 
         name.includes("mineiro") || 
         name.includes("gaucho") || 
-        name.includes("campeonato") // Qualquer "Campeonato" genérico assume Tier 2
+        name.includes("campeonato") ||
+        name.includes("segunda divisão") ||
+        name.includes("serie b") ||
+        name.includes("terceira divisão")
       ) {
-        tier = "Tier 2"; // Regionais entram como Tier 2 para manter o Argos rodando
+        tier = "Tier 2";
         liquidity = 300000;
       }
-      // ... restante do seu código (Championship, Eredivisie, etc)
-        
-
-      // Excluir competições obscuras ou sem dados (Tier 4)
+      
+      // 3. FILTRO NEGATIVO: Zero Tolerância para Tier 4 (Ligas Obscuras, Sub-18, Women's, Youth)
+      // Isso garante que o Argos NUNCA processa dados de baixa qualidade ou ruído
       if (
         name.includes("u19") ||
         name.includes("u20") ||
         name.includes("u21") ||
         name.includes("u23") ||
         name.includes("women") ||
+        name.includes("women's") ||
         name.includes("youth") ||
         name.includes("reserve") ||
         name.includes("friendly") ||
-        name.includes("exhibition")
+        name.includes("exhibition") ||
+        name.includes("amateur") ||
+        name.includes("futsal") ||
+        name.includes("beach")
       ) {
         tier = "Tier 4";
-        liquidity = 0;
+        liquidity = 0; // BLOQUEADO
       }
     }
 
     // Argos v5.0: Dynamic League Profiling
     // Quando não existe dado ou a liga é desconhecida, usamos confiança baixa (0.35)
-    // conforme regra fundamental do documento.
     const isUnknown = tier === "Tier 3" && !leagueName;
 
     return {
@@ -438,43 +456,56 @@ export class DataIngestionService {
     };
   }
 
+  /**
+   * Busca jogos de uma liga específica para uma data
+   * @param leagueId ID da liga
+   * @param date Data dos jogos (YYYY-MM-DD)
+   * @param refresh Força a atualização dos dados, ignorando o cache.
+   */
   public async getFixturesByLeague(leagueId: number, date: string, refresh: boolean = false): Promise<FixtureResponse[]> {
-  const cacheKey = `fixturesByLeague-${leagueId}-${date}`;
-  if (!refresh) {
-    const cachedFixtures = await getRedisCacheInstance().get<FixtureResponse[]>(cacheKey);
-    if (cachedFixtures) {
-      console.log(`[DataIngestionService] Retornando jogos da liga ${leagueId} do cache Redis.`);
-      return cachedFixtures;
+    const cacheKey = `fixturesByLeague-${leagueId}-${date}`;
+    if (!refresh) {
+      const cachedFixtures = await getRedisCacheInstance().get<FixtureResponse[]>(cacheKey);
+      if (cachedFixtures) {
+        console.log(`[DataIngestionService] Retornando jogos da liga ${leagueId} do cache Redis.`);
+        return cachedFixtures;
+      }
+    }
+
+    try {
+      // Usando o pool "PropLineAPI" com header correto
+      const response = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
+        await this.incrementRequestCount();
+        return await axios.get(
+          `${this.baseUrl}/events`, 
+          { 
+            headers: { "X-API-Key": this.apiKey },
+            params: { leagueId, date }
+          }
+        );
+      });
+
+      const fixtures = response.data || [];
+      await getRedisCacheInstance().set(cacheKey, fixtures, 3600);
+      return fixtures;
+    } catch (error: any) {
+      console.error(`[DataIngestionService] Erro ao buscar jogos da liga ${leagueId}:`, error.message);
+      throw error;
     }
   }
 
-  // CORREÇÃO: Usando o pool "PropLineAPI" e o header novo
-  const response = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
-    await this.incrementRequestCount();
-    return await axios.get(
-      `${this.baseUrl}/events`, 
-      { 
-        headers: { "X-API-Key": this.apiKey },
-        params: { leagueId, date }
-      }
-    );
-  });
-
-  const fixtures = response.data || [];
-  await getRedisCacheInstance().set(cacheKey, fixtures, 3600);
-  return fixtures;
-  }
-  
-
-
-
+  /**
+   * Calcula o nível de rigor do árbitro com base em histórico
+   * @param refereeName Nome do árbitro
+   */
   private parseRefereeStrictness(refereeName: string): number {
     if (!refereeName) return 1.0;
     // Lógica simples: nomes conhecidos por rigor podem ser mapeados aqui
     // Exemplo: if (refereeName.includes("Lahoz")) return 1.5; // Árbitro rigoroso
     return 1.0; // Valor padrão
   }
-    /**
+
+  /**
    * Argos v5.0: Captura de Mercados de Props (Assistências, Faltas, Goleiro, etc.)
    * @param matchId ID do evento
    * @param markets Array de mercados desejados (ex: ['player_assists', 'player_shots_on_target'])
@@ -493,5 +524,4 @@ export class DataIngestionService {
       return null;
     }
   }
-  
 }
