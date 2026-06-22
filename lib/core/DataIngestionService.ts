@@ -334,10 +334,9 @@ export class DataIngestionService {
       if (cachedFixtures) {
         console.log(`[DataIngestionService] Retornando jogos de ${sportKey} para ${date} do cache.`);
         return cachedFixtures;
-      }
-    }
-
-    try {
+      
+    
+   try {
       const response = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
         await this.incrementRequestCount();
         return await axios.get(
