@@ -2,7 +2,7 @@ import { ArgosSignal } from "@/lib/core/contracts/SignalContract";
 import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
 
 // ============================================================
-// SIGNAL CLASSIFIER v4.1 — MULTI-VERTICAL
+// SIGNAL CLASSIFIER v4.2 — MULTI-VERTICAL (SYNDICATE EDITION)
 // Classifica Gols, Escanteios, Cartões e Finalizações
 // ============================================================
 
@@ -22,10 +22,6 @@ export class SignalClassifierV4 {
   /**
    * Classifica uma oportunidade de mercado usando a Tripla Classificação
    */
-  /**
-   * Argos v5.0: Camada de Classificação de Entrega (Free vs VIP)
-   * O motor é único, a diferença está na seletividade da entrega.
-   */
   static classify(signals: ArgosSignal[], regime: RegimeProfile): ClassifiedSignal[] {
     return signals.map(s => {
       let type = SignalType.NOISE;
@@ -36,23 +32,24 @@ export class SignalClassifierV4 {
       const conf = regime.confidence;
 
       // 9. CAMADA FINAL DE QUALIDADE DO SINAL
-      // Validar: probabilidade mínima, edge mínimo, confiança, ausência de anomalia
-
-      // Argos v5.0 Syndicate-Level: Thresholds de Elite
-      // VIP: Foco em Edge (EV+) e Confiança Estrutural
-      // Requisitos VIP: Probabilidade >= 60%, Edge (EV) > 7%, Confiança do Regime >= 75%
-      const isVipThreshold = prob >= 0.60 && ev > 0.07 && conf >= 0.75;
+      // Argos v5.1 Syndicate-Level: Thresholds de Elite Reajustados
       
-      // FREE: Foco em Assertividade Pura (Green) para validação de mercado
-      // Requisitos FREE: Probabilidade >= 82%, Confiança do Regime >= 85%
-      const isFreeThreshold = prob >= 0.82 && conf >= 0.85;
+      // VIP: Foco em Volume com Edge (EV+) e Confiança Estrutural
+      // Requisitos VIP: Probabilidade >= 55% (Agressivo), Edge (EV) > 5%
+      const isVipThreshold = prob >= 0.55 && ev > 0.05;
+      
+      // FREE: Foco em Assertividade Pura (Isca para Marketing)
+      // Requisitos FREE: Probabilidade >= 75%
+      const isFreeThreshold = prob >= 0.75;
 
-      if (isVipThreshold) {
-        type = SignalType.VALUE;
-        tier = "VIP";
-      } else if (isFreeThreshold) {
+      if (isFreeThreshold) {
+        // Se é FREE, automaticamente é VIP também na lógica de entrega, 
+        // mas marcamos como FREE para o dispatcher saber que deve enviar para ambos.
         type = SignalType.VALIDATION;
         tier = "FREE";
+      } else if (isVipThreshold) {
+        type = SignalType.VALUE;
+        tier = "VIP";
       }
 
       return {
@@ -60,7 +57,7 @@ export class SignalClassifierV4 {
         signal_type: type,
         confidence_score: conf,
         tier: tier,
-        status: (type === SignalType.VALUE ? "OPTIMIZED" : "HEDGED") as any
+        status: (tier === "VIP" ? "OPTIMIZED" : tier === "FREE" ? "PREMIUM" : "HEDGED") as any
       };
     }).filter(s => s.tier !== "NONE"); 
   }
@@ -79,6 +76,7 @@ export class SignalClassifierV4 {
       expected_value: s.expectedValue,
       regime: regime.regime,
       confidence: regime.confidence,
+      tier: s.tier,
       created_at: new Date().toISOString()
     }));
   }

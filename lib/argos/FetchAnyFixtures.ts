@@ -1,33 +1,37 @@
-
 import axios from "axios";
-import dotenv from "dotenv";
-
-dotenv.config();
+import { propLineConfig } from "../core/PropLineConfigManager";
 
 async function fetchFixtures() {
-    const apiKey = process.env.API_SPORTS_KEY;
-    const baseUrl = "https://v3.football.api-sports.io";
+    const apiKey = propLineConfig.getApiKey();
+    const baseUrl = propLineConfig.getBaseUrl();
     const date = new Date().toISOString().split('T')[0];
 
     try {
-        console.log(`🔍 Buscando QUALQUER jogo para a data: ${date}...`);
-        const response = await axios.get(`${baseUrl}/fixtures?date=${date}`, {
-            headers: { "x-apisports-key": apiKey }
+        console.log(`🔍 Buscando QUALQUER jogo para a data: ${date} na PropLine...`);
+        // Na PropLine, buscamos por esporte. Vamos usar soccer_epl como exemplo ou listar esportes primeiro
+        const sportKey = "soccer_epl"; // Exemplo, em produção isso seria dinâmico
+        const response = await axios.get(`${baseUrl}/sports/${sportKey}/events`, {
+            headers: propLineConfig.getHeaders()
         });
 
-        const fixtures = response.data.response;
+        const fixtures = response.data;
         if (!fixtures || fixtures.length === 0) {
-            console.log("⚠️ Nenhum jogo encontrado para hoje.");
+            console.log(`⚠️ Nenhum jogo encontrado para ${sportKey}.`);
             return;
         }
 
-        console.log(`✅ Encontrados ${fixtures.length} jogos no total.`);
+        const filteredFixtures = fixtures.filter((f: any) => f.commence_time && f.commence_time.startsWith(date));
+
+        console.log(`✅ Encontrados ${filteredFixtures.length} jogos para hoje em ${sportKey}.`);
         console.log("\nExemplos de jogos encontrados:");
-        fixtures.slice(0, 10).forEach((f: any) => {
-            console.log(`ID: ${f.fixture.id} | ${f.league.name} (${f.league.country}) | ${f.teams.home.name} x ${f.teams.away.name}`);
+        filteredFixtures.slice(0, 10).forEach((f: any) => {
+            console.log(`ID: ${f.id} | ${f.sport_title} | ${f.home_team} x ${f.away_team} | Início: ${f.commence_time}`);
         });
     } catch (error: any) {
-        console.error("Erro ao buscar jogos:", error.message);
+        console.error("❌ Erro ao buscar jogos na PropLine:", error.message);
+        if (error.response) {
+            console.error("Detalhes:", error.response.data);
+        }
     }
 }
 

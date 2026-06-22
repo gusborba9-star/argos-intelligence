@@ -1,5 +1,5 @@
 // ============================================================
-// SIGNAL CONTRACT v4.0 — ATUALIZADO
+// SIGNAL CONTRACT v5.1 — SYNDICATE EDITION
 // ============================================================
 
 export interface ArgosSignal {
@@ -11,13 +11,13 @@ export interface ArgosSignal {
   adjustedProbability?: number;
   impliedOdds?: number;
   expectedValue: number;
-  ev?: number; // Adicionado para suportar o cálculo de estatísticas
+  ev?: number;
   units?: number;
   model?: string;
   modelConsensusSize?: number;
   unitSize?: number;
-  status: "OPTIMIZED" | "HEDGED";
+  status: "OPTIMIZED" | "HEDGED" | "PREMIUM";
   reasoning?: string;
-  confidence?: "HIGH" | "MEDIUM" | "LOW"; // Adicionado para compatibilidade com getStats
-  tier?: "FREE" | "VIP"; // Adicionado para o Dispatcher
+  confidence?: "HIGH" | "MEDIUM" | "LOW" | number;
+  tier?: "FREE" | "VIP" | "NONE"; // Unificado para aceitar NONE internamente
 }

@@ -1,22 +1,28 @@
-
 import axios from "axios";
-import dotenv from "dotenv";
-
-dotenv.config();
+import { propLineConfig } from "../core/PropLineConfigManager";
 
 async function checkStatus() {
-    const apiKey = process.env.API_SPORTS_KEY;
-    const baseUrl = "https://v3.football.api-sports.io";
+    const apiKey = propLineConfig.getApiKey();
+    const baseUrl = propLineConfig.getBaseUrl();
 
     try {
-        console.log("🔍 Verificando status da chave API...");
-        const response = await axios.get(`${baseUrl}/status`, {
-            headers: { "x-apisports-key": apiKey }
+        console.log("🔍 Verificando status da chave API PropLine...");
+        // PropLine v1 não tem endpoint /status direto, vamos testar listando esportes ou similar
+        const response = await axios.get(`${baseUrl}/sports`, {
+            headers: propLineConfig.getHeaders()
         });
 
-        console.log("Status da API:", JSON.stringify(response.data, null, 2));
+        if (response.status === 200) {
+            console.log("✅ API PropLine ONLINE e Chave Válida.");
+            console.log("Esportes disponíveis:", response.data.length);
+        } else {
+            console.log("⚠️ Resposta inesperada da API:", response.status);
+        }
     } catch (error: any) {
-        console.error("Erro ao verificar status:", error.message);
+        console.error("❌ Erro ao verificar status da PropLine:", error.message);
+        if (error.response) {
+            console.error("Detalhes:", error.response.data);
+        }
     }
 }
 

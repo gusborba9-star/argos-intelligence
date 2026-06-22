@@ -1,31 +1,27 @@
-
 import axios from "axios";
-import dotenv from "dotenv";
-
-dotenv.config();
+import { propLineConfig } from "../core/PropLineConfigManager";
 
 async function listLeagues() {
-    const apiKey = process.env.API_SPORTS_KEY;
-    const baseUrl = "https://v3.football.api-sports.io";
+    const apiKey = propLineConfig.getApiKey();
+    const baseUrl = propLineConfig.getBaseUrl();
 
     try {
-        console.log("🔍 Buscando ligas ativas na API Football...");
-        const response = await axios.get(`${baseUrl}/leagues?current=true`, {
-            headers: { "x-apisports-key": apiKey }
+        console.log("🔍 Buscando esportes/ligas ativas na PropLine...");
+        const response = await axios.get(`${baseUrl}/sports`, {
+            headers: propLineConfig.getHeaders()
         });
 
-        const leagues = response.data.response;
-        console.log(`Encontradas ${leagues.length} ligas ativas.`);
+        const sports = response.data;
+        console.log(`Encontrados ${sports.length} esportes/ligas ativos.`);
         
-        // Filtrar algumas ligas importantes para ver se estão ativas
-        const priorityNames = ["Serie A", "Serie B", "World Cup", "Euro", "Copa America"];
-        leagues.forEach((l: any) => {
-            if (priorityNames.some(name => l.league.name.includes(name))) {
-                console.log(`ID: ${l.league.id} | Nome: ${l.league.name} | País: ${l.country.name}`);
-            }
+        sports.slice(0, 15).forEach((s: any) => {
+            console.log(`Key: ${s.key} | Título: ${s.title} | Grupo: ${s.group}`);
         });
     } catch (error: any) {
-        console.error("Erro ao buscar ligas:", error.message);
+        console.error("❌ Erro ao buscar esportes na PropLine:", error.message);
+        if (error.response) {
+            console.error("Detalhes:", error.response.data);
+        }
     }
 }
 

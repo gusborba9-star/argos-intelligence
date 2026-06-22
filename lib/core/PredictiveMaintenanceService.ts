@@ -1,9 +1,11 @@
 // ============================================================
-// PREDICTIVE MAINTENANCE SERVICE v1.0 — FAILOVER AUTOMÁTICO
+// PREDICTIVE MAINTENANCE SERVICE v1.1 — FAILOVER AUTOMÁTICO
 // Monitora latência e falhas, realiza failover para rotas backup
+// Migração para PropLine API
 // ============================================================
 
 import { telemetryService } from "@/lib/core/TelemetryService";
+import { propLineConfig } from "./PropLineConfigManager";
 
 export interface EndpointHealth {
   name: string;
@@ -44,7 +46,7 @@ export class PredictiveMaintenanceService {
    */
   private initializeEndpoints(): void {
     const endpoints = [
-      { name: "Football API", url: "https://v3.football.api-sports.io" },
+      { name: "PropLine API", url: propLineConfig.getBaseUrl() },
       { name: "Supabase", url: process.env.NEXT_PUBLIC_SUPABASE_URL || "" },
       { name: "Upstash Redis", url: "https://infinite-perch-150057.upstash.io" },
       { name: "Efi Pix", url: "https://api.gerencianet.com.br" },
@@ -61,10 +63,9 @@ export class PredictiveMaintenanceService {
       });
     });
 
-    // Configurar rotas de failover
-    this.failoverRoutes.set("Football API", [
-      "https://api.football-data.org",
-      "https://www.api-football.com",
+    // Configurar rotas de failover (PropLine v1 é o primário agora)
+    this.failoverRoutes.set("PropLine API", [
+      "https://api.prop-line.com/v1", // Redundância interna se necessário
     ]);
 
     console.log("[PredictiveMaintenanceService] Inicializado com " + endpoints.length + " endpoints");
@@ -88,21 +89,30 @@ export class PredictiveMaintenanceService {
     console.log("[PredictiveMaintenanceService] Executando health checks...");
 
     for (const [name, health] of this.endpointHealth) {
+      if (!health.url) continue;
+
       try {
         const startTime = Date.now();
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
         
+        // Para PropLine, precisamos enviar o header de API Key
+        const headers: Record<string, string> = {};
+        if (name === "PropLine API") {
+          headers["X-API-Key"] = propLineConfig.getApiKey();
+        }
+
         const response = await fetch(health.url, { 
           method: "HEAD", 
+          headers,
           signal: controller.signal 
         });
         
         clearTimeout(timeoutId);
         const latency = Date.now() - startTime;
 
-        if (response.ok || response.status === 405) {
-          // 405 = Method Not Allowed (ainda indica que o endpoint está vivo)
+        if (response.ok || response.status === 405 || response.status === 401) {
+          // 405 = Method Not Allowed, 401 = Unauthorized (ambos indicam que o endpoint respondeu)
           this.recordSuccess(name, latency);
         } else {
           this.recordFailure(name);
