@@ -322,17 +322,15 @@ export class DataIngestionService {
     }
   }
 
-
-          public async getFixturesAnyLeague(sportKey: string, date: string, refresh: boolean = false): Promise<any[]> {
+   public async getFixturesAnyLeague(sportKey: string, date: string, refresh: boolean = false): Promise<any[]> {
         const cacheKey = `fixtures-${sportKey}-${date}`;
         
         if (!refresh) {
             // ... resto do seu código
         }
-        // ...
-    }
-
-      const cachedFixtures = await getRedisCacheInstance().get<any[]>(cacheKey);
+        
+    
+   const cachedFixtures = await getRedisCacheInstance().get<any[]>(cacheKey);
       if (cachedFixtures) {
         console.log(`[DataIngestionService] Retornando jogos de ${sportKey} para ${date} do cache.`);
         return cachedFixtures;
