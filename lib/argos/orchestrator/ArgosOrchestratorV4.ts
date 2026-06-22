@@ -253,17 +253,17 @@ export class ArgosOrchestratorV4 {
 
       // Limitar a no máximo 5 melhores oportunidades por jogo para evitar ruído
       classifiedSignals = classifiedSignals.slice(0, 5);
-
-      // 8. DETECÇÃO DE ANOMALIAS: Comparar com odds de mercado e emitir alertas
+// 8. DETECÇÃO DE ANOMALIAS: Comparar com odds de mercado e emitir alertas
 if (marketOdds && classifiedSignals.length > 0) {
-  // Filtramos os sinais para remover o "NONE" e garantir compatibilidade com ArgosSignal
+  // Filtramos e fazemos o cast explícito para ArgosSignal[]
   const validSignals = classifiedSignals.filter(
-    (s): s is ArgosSignal => s.tier === "FREE" || s.tier === "VIP"
-  );
+    (s) => s.tier === "FREE" || s.tier === "VIP"
+  ) as unknown as ArgosSignal[];
 
   const anomalyAlerts = this.anomalyDetector.detectAnomalies(validSignals, marketOdds);
   anomalyAlerts.forEach((alert) => console.warn(alert));
 }
+
 
       if (classifiedSignals.length > 0) {
         const ledgerEntries = SignalClassifierV4.prepareLedger(
