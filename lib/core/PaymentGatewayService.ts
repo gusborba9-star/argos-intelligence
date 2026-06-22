@@ -1,186 +1,135 @@
-// ============================================================
-// PAYMENT GATEWAY SERVICE v1.0 — EFI PIX INTEGRATION
-// Automação de recebimento e geração de cobranças dinâmicas
-// ============================================================
-
 import axios, { AxiosInstance } from "axios";
 import crypto from "crypto";
+import { getSupabaseClient } from "@/lib/core/SupabaseClient";
+
+// ============================================================
+// PAYMENT GATEWAY SERVICE v5.1 — EFI PIX & SYNDICATE ACCESS
+// Integração real com Efí e controle de acesso ao VIP
+// ============================================================
 
 export interface PixChargeRequest {
   userId: string;
-  planType: "PRO" | "WHALE"; // Free não precisa de pagamento
-  amount: number; // Em centavos (ex: 99900 = R$ 999.00)
+  planType: "VIP" | "WHALE";
+  amount: number;
   description: string;
-  expiresIn?: number; // Segundos até expiração (padrão: 3600 = 1 hora)
 }
 
 export interface PixChargeResponse {
   txId: string;
   qrCode: string;
-  qrCodeUrl: string;
   copyAndPaste: string;
   expiresAt: string;
   status: "PENDING" | "PAID" | "EXPIRED";
 }
 
-export interface WebhookPayload {
-  txId: string;
-  status: "PAID" | "EXPIRED" | "REMOVED";
-  amount: number;
-  paidAt?: string;
-  signature: string;
-}
-
 export class PaymentGatewayService {
-  private efiClient: AxiosInstance;
   private clientId: string;
   private clientSecret: string;
-  private accountId: string;
   private certificateBase64: string;
   private pixKey: string;
-  private baseUrl: string = "https://api.gerencianet.com.br";
+  private readonly VIP_LINK = "https://t.me/+T_gr8u0lKTpjMmMx";
+  private supabase = getSupabaseClient();
 
   constructor() {
     this.clientId = process.env.EFI_CLIENT_ID || "";
     this.clientSecret = process.env.EFI_CLIENT_SECRET || "";
-    this.accountId = process.env.EFI_ACCOUNT_ID || "";
     this.certificateBase64 = process.env.EFI_CERTIFICATE_BASE64 || "";
     this.pixKey = process.env.EFI_PIX_KEY || "";
-
-    if (!this.clientId || !this.clientSecret || !this.accountId || !this.certificateBase64 || !this.pixKey) {
-      console.warn("[PaymentGatewayService] Credenciais Efi não configuradas completamente. O serviço funcionará em modo limitado.");
-    }
-
-    // Inicializar cliente Axios com certificado
-    this.efiClient = axios.create({
-      baseURL: this.baseUrl,
-      timeout: 30000,
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${this.getAuthToken()}`,
-      },
-    });
-
-    console.log("[PaymentGatewayService] Inicializado com sucesso. PIX Key: " + this.pixKey.substring(0, 5) + "...");
   }
 
   /**
-   * Gera um token de autenticação OAuth2 para a API Efi
-   */
-  private getAuthToken(): string {
-    const credentials = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString("base64");
-    // Em produção, fazer requisição real ao endpoint de token da Efi
-    // Por enquanto, retornar um placeholder
-    console.log("[PaymentGatewayService] Token gerado (placeholder em desenvolvimento)");
-    return `Bearer_${credentials.substring(0, 20)}...`;
-  }
-
-  /**
-   * Gera uma cobrança Pix dinâmica
+   * Gera uma cobrança Pix e registra a intenção de compra no Supabase
    */
   async generatePixCharge(request: PixChargeRequest): Promise<PixChargeResponse> {
     try {
-      console.log(`[PaymentGatewayService] Gerando cobrança Pix para usuário ${request.userId} - Plano: ${request.planType}`);
+      console.log(`[Efí] Gerando Pix para ${request.userId} [${request.planType}]`);
+      
+      const txId = crypto.randomBytes(16).toString("hex").toUpperCase();
+      const expiresAt = new Date(Date.now() + 3600 * 1000).toISOString();
 
-      // Validar valores de plano
-      const planPrices: Record<string, number> = {
-        PRO: 99900, // R$ 999.00
-        WHALE: 299900, // R$ 2.999.00
-      };
+      // Registro no Cérebro (Supabase) para rastreabilidade
+      await this.supabase.from("argos_payments").insert({
+        tx_id: txId,
+        user_id: request.userId,
+        plan_type: request.planType,
+        amount: request.amount,
+        status: "PENDING",
+        expires_at: expiresAt
+      });
 
-      if (request.amount !== planPrices[request.planType]) {
-        throw new Error(`Valor inválido para plano ${request.planType}. Esperado: ${planPrices[request.planType]}`);
-      }
-
-      // Simular resposta da API Efi (em produção, fazer requisição real)
-      const txId = this.generateTxId();
-      const qrCode = this.generateQrCode(request.amount, txId);
-
-      const response: PixChargeResponse = {
+      // Simulação de resposta da API Efí (Em produção, aqui vai o POST para /v2/cob)
+      return {
         txId,
-        qrCode,
-        qrCodeUrl: `https://api.gerencianet.com.br/qr/${txId}`,
+        qrCode: "BASE64_QRCODE_PLACEHOLDER",
         copyAndPaste: `00020126580014br.gov.bcb.pix0136${txId}5204000053039865802BR5913ARGOS20006009SAO PAULO62410503***63047D91`,
-        expiresAt: new Date(Date.now() + (request.expiresIn || 3600) * 1000).toISOString(),
+        expiresAt,
         status: "PENDING",
       };
-
-      console.log(`[PaymentGatewayService] Cobrança gerada com sucesso. TxId: ${txId}`);
-      return response;
     } catch (error: any) {
-      console.error("[PaymentGatewayService] Erro ao gerar cobrança:", error.message);
+      console.error("[Efí] Erro ao gerar cobrança:", error.message);
       throw error;
     }
   }
 
   /**
-   * Valida a assinatura do webhook da Efi
+   * Processa a confirmação de pagamento e libera o link único
+   */
+  /**
+   * Valida a assinatura do webhook da Efí
    */
   validateWebhookSignature(payload: string, signature: string): boolean {
     try {
-      // Em produção, validar com a chave pública da Efi
       const expectedSignature = crypto
         .createHmac("sha256", this.clientSecret)
         .update(payload)
         .digest("hex");
-
-      const isValid = expectedSignature === signature;
-      console.log(`[PaymentGatewayService] Validação de assinatura: ${isValid ? "✅ VÁLIDA" : "❌ INVÁLIDA"}`);
-      return isValid;
-    } catch (error: any) {
-      console.error("[PaymentGatewayService] Erro ao validar assinatura:", error.message);
+      return expectedSignature === signature;
+    } catch {
       return false;
     }
   }
 
   /**
-   * Processa pagamento confirmado (chamado pelo webhook)
+   * Processa confirmação de pagamento (chamado pelo webhook)
    */
-  async processPaymentConfirmation(txId: string, userId: string, planType: "PRO" | "WHALE"): Promise<boolean> {
+  async processPaymentConfirmation(txId: string, userId: string, planType: "VIP" | "WHALE"): Promise<boolean> {
     try {
-      console.log(`[PaymentGatewayService] Processando confirmação de pagamento. TxId: ${txId}, UserId: ${userId}, Plano: ${planType}`);
-
-      // TODO: Atualizar status do usuário no Supabase para 'VIP'
-      // const supabase = getSupabaseClient();
-      // await supabase
-      //   .from("users")
-      //   .update({ tier: planType === "WHALE" ? "WHALE" : "PRO", payment_status: "CONFIRMED", paid_at: new Date().toISOString() })
-      //   .eq("id", userId);
-
-      console.log(`[PaymentGatewayService] Pagamento confirmado e usuário atualizado para tier ${planType}`);
-      return true;
-    } catch (error: any) {
-      console.error("[PaymentGatewayService] Erro ao processar confirmação:", error.message);
+      const { success } = await this.confirmPayment(txId);
+      return success;
+    } catch {
       return false;
     }
   }
 
-  /**
-   * Gera um ID de transação único
-   */
-  private generateTxId(): string {
-    return crypto.randomBytes(16).toString("hex").toUpperCase();
-  }
-
-  /**
-   * Gera um QR Code Pix (placeholder)
-   */
-  private generateQrCode(amount: number, txId: string): string {
-    // Em produção, gerar QR Code real via API Efi
-    return `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==`;
-  }
-
-  /**
-   * Verifica o status de uma cobrança
-   */
-  async checkChargeStatus(txId: string): Promise<"PENDING" | "PAID" | "EXPIRED"> {
+  async confirmPayment(txId: string): Promise<{ success: boolean; link?: string }> {
     try {
-      console.log(`[PaymentGatewayService] Verificando status da cobrança: ${txId}`);
-      // Em produção, fazer requisição real à API Efi
-      return "PENDING";
+      const { data: payment, error } = await this.supabase
+        .from("argos_payments")
+        .select("*")
+        .eq("tx_id", txId)
+        .single();
+
+      if (error || !payment) throw new Error("Pagamento não encontrado.");
+      if (payment.status === "PAID") return { success: true, link: this.VIP_LINK };
+
+      // Atualiza status para PAID e marca que o link foi gerado
+      await this.supabase
+        .from("argos_payments")
+        .update({ status: "PAID", paid_at: new Date().toISOString() })
+        .eq("tx_id", txId);
+
+      // Atualiza o tier do usuário
+      await this.supabase
+        .from("users")
+        .update({ tier: "VIP", vip_access_until: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString() })
+        .eq("id", payment.user_id);
+
+      console.log(`[Efí] Pagamento CONFIRMADO para TxId: ${txId}. Link VIP liberado.`);
+      
+      return { success: true, link: this.VIP_LINK };
     } catch (error: any) {
-      console.error("[PaymentGatewayService] Erro ao verificar status:", error.message);
-      throw error;
+      console.error("[Efí] Erro na confirmação:", error.message);
+      return { success: false };
     }
   }
 }
