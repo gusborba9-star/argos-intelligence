@@ -86,24 +86,24 @@ export class DatabaseFirstCache {
   }
 
   /**
-   * Salva fixture no cache (Supabase)
-   * Chamado após processar dados da API
+   * Salva uma fixture no cache do banco de dados
    */
   public async saveFixtureToCache(fixture: CachedFixture): Promise<void> {
     try {
-      await this.supabase.from("argos_market_snapshot_cache").upsert({ ... })
-  ...fixture,
-  cachedAt: new Date().toISOString(),
-});
-
-
-      console.log(`[DatabaseFirstCache] ✅ Fixture ${fixture.matchId} salvo no cache`);
-    } catch (error: any) {
-      console.error(`[DatabaseFirstCache] Erro ao salvar cache:`, error.message);
+      await this.supabase
+        .from("argos_market_snapshot_cache")
+        .upsert({
+          ...fixture,
+          cachedAt: new Date().toISOString(),
+        } as any);
+    } catch (error) {
+      console.error("[DatabaseFirstCache] Erro ao salvar cache:", error);
+      throw error;
     }
   }
 
-  /**
+
+ /**
    * Busca análises já realizadas (p/ não processar 2x)
    */
   public async getAnalysisFromCache(
