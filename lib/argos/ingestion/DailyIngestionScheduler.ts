@@ -40,9 +40,11 @@ export class DailyIngestionScheduler {
 
     // 1. PRIORIDADE TIER 1: Ligas de Elite e Alto Valor
         // Argos v5.0: PIPELINE ADAPTATIVO (Descoberta Automática)
-    // 1. Geração de Candidatos: Buscar todos os fixtures disponíveis para as datas alvo.
+        // 1. Geração de Candidatos: Buscar todos os fixtures disponíveis para as datas alvo.
     const allPotentialFixtures: any[] = [];
     const priorityLeagues = ['soccer_epl', 'soccer_la_liga', 'soccer_serie_a', 'soccer_bundesliga', 'soccer_ligue_1', 'soccer_brazil_serie_a'];
+
+    console.log(`[Argos v5.0] Disparando busca paralela para ${datesToFetch.length * priorityLeagues.length} combinações...`);
 
     // Criamos um array de promessas para todas as combinações de data e liga
     const fetchPromises = datesToFetch.flatMap(date => 
@@ -55,21 +57,9 @@ export class DailyIngestionScheduler {
         )
     );
 
-    console.log(`[Argos v5.0] Disparando busca paralela para ${fetchPromises.length} combinações...`);
+    // Resolvemos todas as promessas e unificamos o resultado
     const results = await Promise.all(fetchPromises);
-    
-    // Unifica todos os resultados em um único array
     allPotentialFixtures.push(...results.flat());
-
-       const settledResults = await Promise.allSettled(fixturePromises);
-    settledResults.forEach((result, index) => {
-        if (result.status === 'fulfilled') {
-            allPotentialFixtures.push(...result.value);
-            console.log(`[Argos DEBUG] Data ${datesToFetch[index]} retornou ${result.value.length} jogos.`);
-        } else {
-            console.error(`[Argos DEBUG] Data ${datesToFetch[index]} falhou:`, result.reason);
-        }
-    });
 
     console.log(`[Argos v5.0] Total de ${allPotentialFixtures.length} fixtures potenciais coletados.`);
 
