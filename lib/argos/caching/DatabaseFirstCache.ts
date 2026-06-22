@@ -142,12 +142,12 @@ export class DatabaseFirstCache {
         Date.now() + this.ANALYSIS_CACHE_TTL_MINUTES * 60000
       ).toISOString();
 
-      await this.supabase.from("analysis_cache").upsert({
-        matchId: analysis.matchId,
-        analysisType: analysis.analysisType,
-        ...analysis,
-        createdAt: new Date().toISOString(),
-      });
+      // Corrija para ficar exatamente assim:
+await this.supabase.from("analysis_cache").upsert({
+  ...analysis,
+  createdAt: new Date().toISOString(),
+} as any);
+
 
       console.log(
         `[DatabaseFirstCache] ✅ Analysis ${analysis.matchId}/${analysis.analysisType} salvo`
