@@ -360,7 +360,6 @@ export class DataIngestionService {
       return [];
     }
   }
-
    /**
    * Argos v5.0: Perfil de Liga Dinâmico.
    * Estima a qualidade da liga com base em dados históricos reais e metadados da competição.
