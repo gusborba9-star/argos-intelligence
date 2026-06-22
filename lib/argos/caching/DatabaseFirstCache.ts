@@ -92,10 +92,10 @@ export class DatabaseFirstCache {
   public async saveFixtureToCache(fixture: CachedFixture): Promise<void> {
     try {
       await this.supabase.from("fixture_cache").upsert({
-        matchId: fixture.matchId,
-        ...fixture,
-        cachedAt: new Date().toISOString(),
-      });
+  ...fixture,
+  cachedAt: new Date().toISOString(),
+});
+
 
       console.log(`[DatabaseFirstCache] ✅ Fixture ${fixture.matchId} salvo no cache`);
     } catch (error: any) {
