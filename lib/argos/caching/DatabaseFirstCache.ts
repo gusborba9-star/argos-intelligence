@@ -91,7 +91,7 @@ export class DatabaseFirstCache {
    */
   public async saveFixtureToCache(fixture: CachedFixture): Promise<void> {
     try {
-      await this.supabase.from("fixture_cache").upsert({
+      await this.supabase.from("argos_market_snapshot_cache").upsert({ ... })
   ...fixture,
   cachedAt: new Date().toISOString(),
 });
