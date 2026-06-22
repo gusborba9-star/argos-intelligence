@@ -3,12 +3,12 @@
 // Classifica sinais por tier: FREE (75%+) vs VIP (55%+)
 // ============================================================
 
-import { TelegramSignal } from "@/lib/argos/notifications/TelegramDispatcher";
+import { ArgosSignal } from "@/lib/core/contracts/SignalContract";
 
 export interface ClassifiedSignals {
-  free: TelegramSignal[];
-  vip: TelegramSignal[];
-  rejected: TelegramSignal[];
+  free: (ArgosSignal & { tier: "FREE" })[];
+  vip: (ArgosSignal & { tier: "VIP" })[];
+  rejected: ArgosSignal[];
 }
 
 /**
@@ -30,7 +30,7 @@ export class SignalTierClassifier {
   /**
    * Classifica sinais por tier
    */
-  public classify(signals: TelegramSignal[]): ClassifiedSignals {
+  public classify(signals: ArgosSignal[]): ClassifiedSignals {
     const classified: ClassifiedSignals = {
       free: [],
       vip: [],
@@ -116,7 +116,7 @@ export class SignalTierClassifier {
   /**
    * Estatísticas de uma batch de sinais
    */
-  public getStats(signals: TelegramSignal[]) {
+  public getStats(signals: ArgosSignal[]) {
     const avgProb = signals.reduce((sum, s) => sum + s.probability, 0) / signals.length;
     const highConfidence = signals.filter((s) => s.confidence === "HIGH").length;
     const withEV = signals.filter((s) => s.ev && s.ev > 0).length;
