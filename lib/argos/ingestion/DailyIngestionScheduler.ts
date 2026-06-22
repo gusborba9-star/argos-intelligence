@@ -41,7 +41,6 @@ export class DailyIngestionScheduler {
     // 1. PRIORIDADE TIER 1: Ligas de Elite e Alto Valor
         // Argos v5.0: PIPELINE ADAPTATIVO (Descoberta Automática)
     // 1. Geração de Candidatos: Buscar todos os fixtures disponíveis para as datas alvo.
-        // 1. Geração de Candidatos: Buscar todos os fixtures disponíveis para as datas alvo.
     const allPotentialFixtures: any[] = [];
     const priorityLeagues = ['soccer_epl', 'soccer_la_liga', 'soccer_serie_a', 'soccer_bundesliga', 'soccer_ligue_1', 'soccer_brazil_serie_a'];
 
