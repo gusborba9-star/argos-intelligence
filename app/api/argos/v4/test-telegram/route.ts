@@ -1,4 +1,3 @@
-
 import { NextResponse } from "next/server";
 import { TelegramDispatcher } from "@/lib/argos/notifications/TelegramDispatcher";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
@@ -20,9 +19,11 @@ export async function GET(request: Request) {
     console.log("[Test Telegram] Iniciando teste de disparo manual...");
     const dispatcher = new TelegramDispatcher();
     
+    // ATUALIZADO: Adicionado 'tier' para que o Dispatcher reconheça onde enviar
     const mockSignals = [
       {
         id: "test-signal-vip",
+        tier: "VIP", // <--- CRÍTICO: Agora o Dispatcher saberá enviar para o canal VIP
         vertical: MarketVertical.GOALS,
         market: "OVER 2.5 GOALS (TESTE)",
         probability: 0.88,
@@ -30,7 +31,19 @@ export async function GET(request: Request) {
         odds: 1.90,
         status: "OPTIMIZED",
         signal_type: SignalType.VALUE,
-        reasoning: "Teste de conexão industrial bem-sucedido. O Argos está pronto para operar."
+        reasoning: "Teste de conexão industrial bem-sucedido."
+      },
+      {
+        id: "test-signal-free",
+        tier: "FREE", // <--- Adicionado para validar o canal FREE
+        vertical: MarketVertical.WINNER,
+        market: "HOME WIN (TESTE)",
+        probability: 0.76,
+        expectedValue: 0.05,
+        odds: 1.70,
+        status: "OPTIMIZED",
+        signal_type: SignalType.VALUE,
+        reasoning: "Teste de conexão industrial FREE."
       }
     ];
 
@@ -40,11 +53,12 @@ export async function GET(request: Request) {
       bias: "NEUTRAL"
     };
 
+    // O cast 'as any' continua sendo usado aqui para permitir os campos extras de teste
     await dispatcher.dispatch(mockSignals as any, mockRegime);
 
     return NextResponse.json({ 
       status: "SUCCESS", 
-      message: "Comando de teste enviado ao TelegramDispatcher. Verifique seus canais.",
+      message: "Comando de teste enviado ao TelegramDispatcher. Ambos canais (VIP/FREE) devem receber sinais.",
       config: {
         hasToken: !!process.env.TELEGRAM_BOT_TOKEN,
         hasFreeId: !!process.env.TELEGRAM_FREE_CHANNEL_ID,
@@ -56,4 +70,5 @@ export async function GET(request: Request) {
     console.error("[Test Telegram] Erro no teste:", error);
     return NextResponse.json({ status: "FAILED", error: error.message }, { status: 500 });
   }
-}
+        }
+    
