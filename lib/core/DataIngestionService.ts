@@ -5,10 +5,8 @@ import { LeagueProfile } from "@/lib/argos/ingestion/LeagueValueScoreEngine";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 
 // ============================================================
-// DATA INGESTION SERVICE v5.2 — SYNDICATE HUNTER (FIXED)
-// 1. Discovery de Esportes Ativos (/v1/sports)
-// 2. Fetch de Eventos Limpo (/v1/sports/{key}/events)
-// 3. Filtragem de Data em Memória (Nível Aplicação)
+// DATA INGESTION SERVICE v5.2.1 — SYNDICATE HUNTER (FIXED)
+// LOG DE VERSÃO: console.log('Versão do Argos: 5.2.1 - SYNDICATE HUNTER')
 // ============================================================
 
 export interface AdjustedMetrics {
@@ -70,6 +68,8 @@ export class DataIngestionService {
 
   constructor() {
     this.apiKey = process.env.PROPLINE_API_KEY || "";
+    console.log('Versão do Argos: 5.2.1 - SYNDICATE HUNTER');
+    
     circuitBreakerPool.register({
       name: "PropLineAPI",
       failureThreshold: 5,
@@ -79,21 +79,19 @@ export class DataIngestionService {
     });
   }
 
-  /**
-   * Discovery: Obtém todos os esportes/ligas ativos
-   */
   public async getActiveSports(): Promise<any[]> {
     const cacheKey = "propline-active-sports";
     const cached = await getRedisCacheInstance().get<any[]>(cacheKey);
     if (cached) return cached;
 
     try {
-      console.log(`[PropLine] Fetching Discovery: ${this.baseUrl}/sports`);
-      const response = await axios.get(`${this.baseUrl}/sports`, {
+      const url = `${this.baseUrl}/sports`;
+      console.log(`[PropLine-URL] EXECUTANDO DISCOVERY EM: ${url}`);
+      const response = await axios.get(url, {
         headers: { "X-API-Key": this.apiKey }
       });
       const sports = response.data || [];
-      await getRedisCacheInstance().set(cacheKey, sports, 3600); // Cache 1h
+      await getRedisCacheInstance().set(cacheKey, sports, 3600);
       return sports;
     } catch (error: any) {
       console.error("[PropLine] Discovery Error:", error.message);
@@ -101,9 +99,6 @@ export class DataIngestionService {
     }
   }
 
-  /**
-   * Fetch Limpo: Busca eventos sem data na URL para evitar 404
-   */
   public async getEventsBySport(sportKey: string): Promise<any[]> {
     const cacheKey = `events-${sportKey}`;
     const cached = await getRedisCacheInstance().get<any[]>(cacheKey);
@@ -111,7 +106,7 @@ export class DataIngestionService {
 
     try {
       const url = `${this.baseUrl}/sports/${sportKey}/events`;
-      console.log(`[PropLine] Fetching Events: ${url}`); // Log de debug solicitado
+      console.log(`[PropLine-URL] EXECUTANDO FETCH EM: ${url}`);
       
       const response = await axios.get(url, {
         headers: { "X-API-Key": this.apiKey },
@@ -119,7 +114,7 @@ export class DataIngestionService {
       });
       
       const events = response.data || [];
-      await getRedisCacheInstance().set(cacheKey, events, 600); // Cache 10min
+      await getRedisCacheInstance().set(cacheKey, events, 600);
       return events;
     } catch (error: any) {
       console.error(`[PropLine] Events Fetch Error (${sportKey}):`, error.message);
@@ -127,21 +122,13 @@ export class DataIngestionService {
     }
   }
 
-  // Métodos de Ingestão Individual (Mantidos para o Orchestrator)
   async ingest(matchId: string, refresh: boolean = false): Promise<IngestedData> {
-    if (!refresh) {
-      const { data: dbData } = await this.supabase
-        .from("argos_context_facts")
-        .select("content")
-        .eq("match_id", matchId)
-        .eq("fact_type", "ingested_data")
-        .maybeSingle();
-      if (dbData && dbData.content) return JSON.parse(dbData.content);
-    }
-
     try {
+      const url = `${this.baseUrl}/events/${matchId}`;
+      console.log(`[PropLine-URL] EXECUTANDO INGEST EM: ${url}`);
+      
       const fixtureResponse = await circuitBreakerPool.get("PropLineAPI")!.execute(async () => {
-        return await axios.get(`${this.baseUrl}/events/${matchId}`, { 
+        return await axios.get(url, { 
           headers: { "X-API-Key": this.apiKey },
           timeout: 15000
         });
@@ -172,7 +159,8 @@ export class DataIngestionService {
 
   protected async getTeamHistory(teamId: number, limit: number, refresh: boolean = false): Promise<FixtureResponse[]> {
     try {
-      const response = await axios.get(`${this.baseUrl}/events/${teamId}/history`, { headers: { "X-API-Key": this.apiKey } });
+      const url = `${this.baseUrl}/events/${teamId}/history`;
+      const response = await axios.get(url, { headers: { "X-API-Key": this.apiKey } });
       return response.data || [];
     } catch { return []; }
   }
