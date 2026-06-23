@@ -168,6 +168,10 @@ export class DataIngestionService {
     }
   }
 
+  /**
+   * Busca jogos de forma agnóstica por esporte e data
+   * Argos v5.1: Agora foca exclusivamente na janela temporal.
+   */
   public async getFixturesAnyLeague(sportKey: string, date: string, refresh: boolean = false): Promise<any[]> {
     const cacheKey = `fixtures-${sportKey}-${date}`;
     if (!refresh) {
@@ -176,14 +180,29 @@ export class DataIngestionService {
     }
     
     try {
+      // Argos v5.1: Usamos o endpoint de eventos por esporte e data
       const response = await axios.get(`${this.baseUrl}/sports/${sportKey}/events`, { 
+        params: { date }, // Passando a data como parâmetro se suportado, ou filtrando no retorno
         headers: { "X-API-Key": this.apiKey }
       });
+      
       const allEvents = response.data || [];
-      const filtered = allEvents.filter((event: any) => event.commence_time && event.commence_time.startsWith(date));
-      await getRedisCacheInstance().set(cacheKey, filtered, 3600);
+      
+      // Filtro de segurança para garantir que os eventos pertencem à data solicitada e são SCHEDULED ou LIVE
+      const filtered = allEvents.filter((event: any) => {
+        const eventDate = event.commence_time || (event.fixture && event.fixture.date);
+        const status = event.status || (event.fixture && event.fixture.status && event.fixture.status.short);
+        
+        const isCorrectDate = eventDate && eventDate.startsWith(date);
+        const isActiveStatus = ['NS', 'LIVE', '1H', 'HT', '2H'].includes(status);
+        
+        return isCorrectDate && isActiveStatus;
+      });
+
+      await getRedisCacheInstance().set(cacheKey, filtered, 1800); // Cache de 30min para eventos dinâmicos
       return filtered;
-    } catch {
+    } catch (error: any) {
+      console.error(`[DataIngestionService] Falha na busca agnóstica (${sportKey}/${date}):`, error.message);
       return [];
     }
   }
@@ -192,9 +211,12 @@ export class DataIngestionService {
     let tier: "Tier 1" | "Tier 2" | "Tier 3" | "Tier 4" = "Tier 3";
     if (leagueName) {
       const name = leagueName.toLowerCase();
-      if (name.includes("champions league") || name.includes("premier league") || name.includes("world cup") || name.includes("brasileirão") || name.includes("libertadores") || name.includes("euro")) {
+      // Ligas de Elite e Competições de Momento (Adaptativo)
+      if (name.includes("champions league") || name.includes("premier league") || name.includes("world cup") || 
+          name.includes("brasileirão") || name.includes("libertadores") || name.includes("euro") || 
+          name.includes("copa américa") || name.includes("bundesliga") || name.includes("la liga")) {
         tier = "Tier 1";
-      } else if (name.includes("serie b") || name.includes("paulista") || name.includes("carioca")) {
+      } else if (name.includes("serie b") || name.includes("paulista") || name.includes("carioca") || name.includes("gaúcho") || name.includes("mineiro")) {
         tier = "Tier 2";
       }
       if (name.includes("u19") || name.includes("u20") || name.includes("women") || name.includes("youth") || name.includes("friendly")) {

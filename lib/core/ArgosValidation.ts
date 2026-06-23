@@ -24,77 +24,56 @@ export interface ValidationResult {
 }
 
 export class FixtureValidator {
-  // Argos v5.0 Syndicate-Level: Janela rigorosa de 1h a 72h antes do início
-  private static OPERATIONAL_WINDOW_MIN_MINUTES = 60; // Mínimo de 1 hora antes do kickoff
-  private static OPERATIONAL_WINDOW_MAX_MINUTES = 4320; // Máximo de 72 horas (3 dias) antes do kickoff
+  // Argos v5.1 Syndicate-Level: Janela operacional de 10.000 simulações
+  private static OPERATIONAL_WINDOW_MIN_MINUTES = -15; // Permitir jogos que acabaram de começar (LIVE)
+  private static OPERATIONAL_WINDOW_MAX_MINUTES = 4320; // Máximo de 72 horas (3 dias)
 
   public static validate(fixture: FixtureResponse | null, today: Date = new Date()): ValidationResult {
     if (!fixture) {
-      return { status: ValidationStatus.FIXTURE_NOT_FOUND, reason: "Fixture object is null or undefined." };
+      return { status: ValidationStatus.FIXTURE_NOT_FOUND, reason: "Fixture is null." };
     }
 
-    if (!fixture.fixture || !fixture.teams || !fixture.league || !fixture.goals) {
-      return { status: ValidationStatus.CORRUPTED_RECORD, reason: "Essential fixture data is missing." };
+    if (!fixture.fixture || !fixture.teams || !fixture.league) {
+      return { status: ValidationStatus.CORRUPTED_RECORD, reason: "Essential data missing." };
     }
 
-    // 1. Fixture existe na API-Football (já coberto pelo `fixture` ser não-nulo)
-
-    // 2. Data válida e dentro da janela operacional
     const fixtureDate = new Date(fixture.fixture.date);
     if (isNaN(fixtureDate.getTime())) {
-      return { status: ValidationStatus.INVALID_DATE, reason: `Invalid fixture date: ${fixture.fixture.date}` };
+      return { status: ValidationStatus.INVALID_DATE, reason: `Invalid date: ${fixture.fixture.date}` };
     }
 
     const timeToKickoffMinutes = (fixtureDate.getTime() - today.getTime()) / (1000 * 60);
     
-    // Argos v5.0 Syndicate-Level: Ligas de Elite têm passe livre na janela (até 72h)
-    const eliteLeagues = [1, 2, 3, 4, 11, 13, 15, 61, 71, 72, 73, 78, 94, 140]; // Incluindo Copa do Mundo (1) e principais
-    const isElite = eliteLeagues.includes(fixture.league.id);
-
+    // Argos v5.1: Se o jogo já começou há mais de 15 min e não estamos em modo LIVE completo, pulamos.
     if (timeToKickoffMinutes < this.OPERATIONAL_WINDOW_MIN_MINUTES) {
-      return { status: ValidationStatus.GAME_ENDED, reason: `Game already started or ended.` };
+      return { status: ValidationStatus.GAME_ENDED, reason: `Game already in progress or finished.` };
     }
     
-    // Se não for elite, respeitamos a janela máxima. Se for elite, permitimos até 72h sem pestanejar.
-    if (!isElite && timeToKickoffMinutes > this.OPERATIONAL_WINDOW_MAX_MINUTES) {
-      return { status: ValidationStatus.GAME_TOO_FAR, reason: `Game too far (Non-Elite).` };
+    if (timeToKickoffMinutes > this.OPERATIONAL_WINDOW_MAX_MINUTES) {
+      return { status: ValidationStatus.GAME_TOO_FAR, reason: `Game outside 72h window.` };
     }
 
-    // 3. Liga identificada e relevante
-    if (!fixture.league.id || !fixture.league.name) {
-      return { status: ValidationStatus.LEAGUE_NOT_IDENTIFIED, reason: "League ID or name is missing." };
+    // 3. Status do jogo permitido (Apenas jogos que ainda não terminaram)
+    const allowedStatuses = ["NS", "LIVE", "1H", "HT", "2H", "ET", "P"]; 
+    const status = fixture.fixture.status.short;
+    if (!allowedStatuses.includes(status)) {
+      return { status: ValidationStatus.GAME_STATUS_NOT_ALLOWED, reason: `Status '${status}' not allowed.` };
     }
 
+    // 4. Filtro de Irrelevância (Apenas o que é lixo absoluto)
     const name = fixture.league.name.toLowerCase();
-    if (
-      name.includes("u19") ||
-      name.includes("u20") ||
-      name.includes("u21") ||
-      name.includes("u23") ||
-      name.includes("women") ||
-      name.includes("youth") ||
-      name.includes("reserve") ||
-      name.includes("friendly") ||
-      name.includes("exhibition")
-    ) {
-      return { status: ValidationStatus.IRRELEVANT_LEAGUE, reason: `League '${fixture.league.name}' is considered obscure or irrelevant.` };
+    const isObscure = (
+      name.includes("u19") || name.includes("u20") || name.includes("youth") || 
+      name.includes("reserve") || name.includes("women") || name.includes("friendly")
+    );
+
+    // Se for obscuro e não for elite (pode acontecer em amigáveis de grandes times), rejeitamos.
+    const eliteLeagues = [1, 2, 3, 11, 13, 15, 61, 71, 72, 73, 78, 94, 140];
+    const isElite = eliteLeagues.includes(fixture.league.id);
+
+    if (isObscure && !isElite) {
+      return { status: ValidationStatus.IRRELEVANT_LEAGUE, reason: `League '${fixture.league.name}' is obscure.` };
     }
-
-    // 4. Times identificados
-    if (!fixture.teams.home || !fixture.teams.home.id || !fixture.teams.home.name ||
-        !fixture.teams.away || !fixture.teams.away.id || !fixture.teams.away.name) {
-      return { status: ValidationStatus.TEAMS_NOT_IDENTIFIED, reason: "Home or away team ID or name is missing." };
-    }
-
-    // 5. Status do jogo permitido (não encerrado, não adiado, etc.)
-    const disallowedStatuses = ["FT", "AET", "PEN", "CANC", "POSTP", "INT", "ABAN"]; // Full Time, After Extra Time, Penalties, Cancelled, Postponed, Interrupted, Abandoned
-    if (disallowedStatuses.includes(fixture.fixture.status.short)) {
-      return { status: ValidationStatus.GAME_STATUS_NOT_ALLOWED, reason: `Game status '${fixture.fixture.status.short}' is not allowed.` };
-    }
-
-    // 6. Remover registros corrompidos (já coberto pela verificação inicial de campos essenciais)
-
-    // 7. Remover fixtures inexistentes (já coberto pelo `fixture` ser não-nulo)
 
     return { status: ValidationStatus.VALIDATED };
   }
