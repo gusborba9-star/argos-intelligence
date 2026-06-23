@@ -5,7 +5,7 @@ import { LeagueProfile } from "@/lib/argos/ingestion/LeagueValueScoreEngine";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 
 // ============================================================
-// DATA INGESTION SERVICE v5.3.2 — STATE OF THE ART (MEGA CALL)
+// DATA INGESTION SERVICE v5.3.3 — STATE OF THE ART (MEGA CALL)
 // ============================================================
 
 export interface AdjustedMetrics {
@@ -67,16 +67,29 @@ export class DataIngestionService {
 
   constructor() {
     this.apiKey = process.env.PROPLINE_API_KEY || "";
-    console.log('Versão do Argos: 5.3.2 - STATE OF THE ART');
+    console.log('Versão do Argos: 5.3.3 - STATE OF THE ART');
   }
 
   public async getActiveSports(): Promise<any[]> {
     try {
       const url = `${this.baseUrl}/sports`;
+      console.log(`[Argos-URL] Discovery: ${url}`);
       const response = await axios.get(url, { headers: { "X-API-Key": this.apiKey } });
       this.trackRequest();
-      return (response.data || []).filter((s: any) => s.active);
-    } catch { return []; }
+      
+      const rawSports = response.data || [];
+      const activeSports = rawSports.filter((s: any) => s.active);
+      const soccerSports = activeSports.filter((s: any) => s.key.includes("soccer"));
+      
+      console.log(`[Argos-Discovery] Horizonte de Eventos: ${rawSports.length} esportes totais encontrados.`);
+      console.log(`[Argos-Discovery] Filtro Ativo: ${activeSports.length} esportes operacionais.`);
+      console.log(`[Argos-Discovery] Foco Soccer: ${soccerSports.length} ligas/mercados de futebol em monitoramento.`);
+      
+      return activeSports;
+    } catch (error: any) {
+      console.error("[Argos-Budget] Discovery Error:", error.message);
+      return [];
+    }
   }
 
   public async checkFreshness(sportKey: string): Promise<boolean> {
@@ -92,6 +105,7 @@ export class DataIngestionService {
     try {
       const markets = "h2h,totals,btts,corners,cards";
       const url = `${this.baseUrl}/sports/${sportKey}/events?markets=${markets}&include_bookmakers=true`;
+      console.log(`[Argos-URL] Mega Call: ${url}`);
       const response = await axios.get(url, { headers: { "X-API-Key": this.apiKey }, timeout: 30000 });
       this.trackRequest();
       const events = response.data || [];
@@ -113,6 +127,7 @@ export class DataIngestionService {
 
   async ingest(matchId: string): Promise<IngestedData> {
     const url = `${this.baseUrl}/events/${matchId}?markets=all&include_bookmakers=true`;
+    console.log(`[Argos-URL] Single Ingest: ${url}`);
     const response = await axios.get(url, { headers: { "X-API-Key": this.apiKey } });
     this.trackRequest();
     const fixture = response.data;
