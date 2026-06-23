@@ -16,8 +16,7 @@ import { RegimeProfile, MarketRegime } from "@/lib/argos/regime/RegimeSchema";
 import { TelegramDispatcher } from "@/lib/argos/notifications/TelegramDispatcher";
 
 // ============================================================
-// ARGOS ORCHESTRATOR v5.1 — SYNDICATE EDITION (FIXED)
-// Inteligência Exponencial • Ingestão Reativa • Anti-Fragilidade
+// ARGOS ORCHESTRATOR v5.2.1 — SYNDICATE EDITION
 // ============================================================
 
 export interface AuditPayload {
@@ -71,7 +70,7 @@ export class ArgosOrchestratorV4 {
     liveData?: { score: { home: number; away: number }; elapsed: number }
   ): Promise<AuditResult> {
     const startTime = Date.now();
-    console.log(`[Argos v5.1] Iniciando Auditoria Zero-Touch para matchId: ${matchId}`);
+    console.log(`[Argos v5.2.1] Iniciando Auditoria para matchId: ${matchId}`);
 
     try {
       let ingestedData: IngestedData;
@@ -136,8 +135,7 @@ export class ArgosOrchestratorV4 {
       const isElite = eliteLeagues.includes(Number(ingestedData.leagueId));
 
       if (operationalDensity >= 75 || isElite) executionMode = "FULL";
-      else if (operationalDensity >= 55) executionMode = "REDUCED";
-      else executionMode = "REDUCED"; // Syndicate mode: Nunca ignora elite
+      else executionMode = "REDUCED"; 
 
       const mandatoryVerticals = [
         MarketVertical.WINNER, MarketVertical.GOALS, MarketVertical.GOALS_HT,
@@ -171,7 +169,6 @@ export class ArgosOrchestratorV4 {
         if (result.status === "fulfilled") rawSignals.push(...result.value);
       });
 
-      // 7. CLASSIFICAÇÃO E RANKING
       const classifiedSignals: ClassifiedSignal[] = SignalClassifierV4.classify(rawSignals, regime);
       const sortedSignals = classifiedSignals.sort((a, b) => {
         const scoreA = (a.expectedValue || 0) * 0.6 + a.probability * 0.4;
@@ -193,11 +190,12 @@ export class ArgosOrchestratorV4 {
           id: persistedSignals[index].id,
         })) as ArgosSignal[];
 
-        // 8. DISPACHO TELEGRAM (Cast explícito para ArgosSignal[] para evitar erro de tipo)
         await this.telegramDispatcher.dispatch(signalsToDispatch, regime).catch(err => {
-          console.error("[Argos v5.1] Falha no despacho:", err.message);
+          console.error("[Argos v5.2.1] Falha no despacho:", err.message);
         });
 
+        console.log(`[Argos-Processamento] Evento ${matchId} concluído com sucesso. Sinais gerados: ${signalsToDispatch.length}`);
+        
         return {
           matchId,
           status: "SUCCESS",
@@ -207,9 +205,10 @@ export class ArgosOrchestratorV4 {
         };
       }
 
+      console.log(`[Argos-Processamento] Evento ${matchId} concluído. Nenhum sinal de valor encontrado.`);
       return { matchId, status: "SUCCESS", executionTimeMs: Date.now() - startTime };
     } catch (error: any) {
-      console.error(`[Argos v5.1] Zero-Touch Error: ${error.message}`);
+      console.error(`[Argos v5.2.1] Zero-Touch Error: ${error.message}`);
       return { status: "FAILED", matchId, error: error.message, executionTimeMs: Date.now() - startTime };
     }
   }
@@ -237,7 +236,6 @@ export class ArgosOrchestratorV4 {
           status: "OPTIMIZED"
         });
         break;
-      // Adicionar outras verticais conforme necessário
     }
     return signals;
   }

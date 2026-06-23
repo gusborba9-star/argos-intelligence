@@ -2,8 +2,7 @@ import { MarketVertical } from "./ArgosUnifiedEngine";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 
 // ============================================================
-// BATCH QUEUE SERVICE v4.5 — INDUSTRIAL ORCHESTRATION
-// Gerencia a fila de processamento para auditorias massivas
+// BATCH QUEUE SERVICE v4.6 — INDUSTRIAL TELEMETRY
 // ============================================================
 
 export enum QueueStatus {
@@ -19,12 +18,12 @@ export enum QueueStatus {
 export interface QueueItem {
   id: string;
   matchId: string;
-  marketFamily: string; // Nova chave operacional: ex: GOALS, CORNERS
-  uniqueKey: string; // matchId + marketFamily
+  marketFamily: string;
+  uniqueKey: string;
   requestedVerticals: MarketVertical[];
-  userId?: string; // Adicionado para rastreamento de usuário
+  userId?: string;
   status: QueueStatus;
-  priority?: number; // Adicionado para priorização
+  priority?: number;
 }
 
 export class BatchQueueService {
@@ -34,11 +33,8 @@ export class BatchQueueService {
     this.supabase = getSupabaseClient();
   }
 
-  /**
-   * Adiciona um jogo à fila de processamento
-   */
   async enqueue(matchId: string, marketFamily: string, verticals: string[], userId?: string, status: QueueStatus = QueueStatus.QUEUED, priority: number = 0): Promise<string> {
-        const uniqueKey = `${matchId}_${marketFamily}`;
+    const uniqueKey = `${matchId}_${marketFamily}`;
     const safeVerticals = (verticals || []).filter(v =>
       Object.values(MarketVertical).includes(v as MarketVertical)
     );
@@ -58,34 +54,27 @@ export class BatchQueueService {
       .single();
 
     if (error) {
-            if (error.code === "23505") {
-        console.log(`[BatchQueueService] Item com uniqueKey ${uniqueKey} já existe na fila.`);
-
-        const { data: existing, error: fetchError } = await this.supabase
+      if (error.code === "23505") {
+        const { data: existing } = await this.supabase
           .from("argos_batch_queue")
-          .select("id")
+          .select("id, status, created_at")
           .eq("unique_key", uniqueKey)
+          .order("created_at", { ascending: false })
           .limit(1)
           .single();
 
-        if (fetchError || !existing) {
-          throw fetchError || new Error("Registro duplicado não encontrado.");
+        if (existing) {
+          console.log(`[BatchQueue-Trace] Item ${uniqueKey} já existe. Status: ${existing.status} | Criado em: ${existing.created_at}`);
+          return existing.id;
         }
-
-        return existing.id;
       }
-
       throw error;
     }
 
     return data.id;
   }
 
-  /**
-   * Verifica se um jogo já está na fila com status QUEUED ou PROCESSING
-   * Argos v5.0: Agora verifica se já foi processado hoje para evitar re-análise desnecessária.
-   */
-    async isAlreadyEnqueued(matchId: string, marketFamily: string = "ALL_MARKETS"): Promise<boolean> {
+  async isAlreadyEnqueued(matchId: string, marketFamily: string = "ALL_MARKETS"): Promise<boolean> {
     const uniqueKey = `${matchId}_${marketFamily}`;
     const { data, error } = await this.supabase
       .from("argos_batch_queue")
@@ -94,70 +83,28 @@ export class BatchQueueService {
       .order("created_at", { ascending: false })
       .limit(1);
 
-    if (error) {
-      console.error("[BatchQueueService] Erro verificando duplicidade:", error.message);
-      return false;
-    }
-
-    if (!data || data.length === 0) return false;
+    if (error || !data || data.length === 0) return false;
 
     const lastEntry = data[0];
-    const isRecent = (new Date().getTime() - new Date(lastEntry.created_at).getTime()) < (12 * 60 * 60 * 1000); // 12 horas
+    const isRecent = (new Date().getTime() - new Date(lastEntry.created_at).getTime()) < (12 * 60 * 60 * 1000); 
 
-    // Se estiver na fila, processando ou se foi completado recentemente, ignoramos
-    return [QueueStatus.QUEUED, QueueStatus.PROCESSING, QueueStatus.COMPLETED].includes(lastEntry.status) && isRecent;
-  }
-
-  /**
-   * Busca o próximo item da fila para processamento, priorizando ligas Tier 1.
-   * Implementa um lock de processamento para garantir idempotência real.
-   */
-  async getNextInQueue(): Promise<QueueItem | null> {
-    // Usamos uma transação simulada via Supabase RPC ou uma lógica de update atômico
-    // Para simplificar no Supabase, tentamos dar update em um registro QUEUED para PROCESSING
-    // e o que conseguirmos o update, nós retornamos.
-    
-    const { data, error } = await this.supabase.rpc('get_next_queue_item');
-
-    if (error) {
-      console.error("[BatchQueueService] Erro ao buscar próximo item da fila via RPC:", error.message);
-      
-      // Fallback para o método antigo se o RPC não existir (embora devamos criá-lo)
-      const { data: fallbackData, error: fallbackError } = await this.supabase
-        .from("argos_batch_queue")
-        .select("*")
-        .eq("status", QueueStatus.QUEUED)
-        .order("priority", { ascending: false })
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-      if (fallbackError || !fallbackData) return null;
-
-      // Tentativa de lock simples
-      const { error: updateError } = await this.supabase
-        .from("argos_batch_queue")
-        .update({ status: QueueStatus.PROCESSING, updated_at: new Date().toISOString() })
-        .eq("id", fallbackData.id)
-        .eq("status", QueueStatus.QUEUED); // Garantia de que ainda está QUEUED
-
-      if (updateError) return null; // Outro worker pegou primeiro
-
-      return {
-        id: fallbackData.id,
-        matchId: fallbackData.match_id,
-        marketFamily: fallbackData.market_family,
-        uniqueKey: fallbackData.unique_key,
-        requestedVerticals: fallbackData.requested_verticals,
-        userId: fallbackData.user_id,
-        status: QueueStatus.PROCESSING,
-        priority: fallbackData.priority,
-      };
+    // Argos v5.2: Se o status for COMPLETED mas já faz mais de 2 horas, permitimos re-enfileirar para atualizar odds
+    if (lastEntry.status === QueueStatus.COMPLETED) {
+      const isVeryRecent = (new Date().getTime() - new Date(lastEntry.created_at).getTime()) < (2 * 60 * 60 * 1000);
+      return isVeryRecent;
     }
 
-    if (!data || data.length === 0) return null;
+    return [QueueStatus.QUEUED, QueueStatus.PROCESSING].includes(lastEntry.status) && isRecent;
+  }
+
+  async getNextInQueue(): Promise<QueueItem | null> {
+    const { data, error } = await this.supabase.rpc('get_next_queue_item');
+
+    if (error || !data || data.length === 0) return null;
 
     const item = data[0];
+    console.log(`[BatchQueue-Worker] Consumindo item: ${item.unique_key} (ID: ${item.id})`);
+    
     return {
       id: item.id,
       matchId: item.match_id,
@@ -170,10 +117,11 @@ export class BatchQueueService {
     };
   }
 
-  /**
-   * Atualiza o status de um item na fila
-   */
   async updateStatus(id: string, status: QueueStatus, errorMessage?: string): Promise<void> {
+    if (status === QueueStatus.COMPLETED) {
+      console.log(`[Argos-Processamento] Item ID ${id} concluído com sucesso.`);
+    }
+    
     await this.supabase
       .from("argos_batch_queue")
       .update({ 
