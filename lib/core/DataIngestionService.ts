@@ -5,7 +5,7 @@ import { LeagueProfile } from "@/lib/argos/ingestion/LeagueValueScoreEngine";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 
 // ============================================================
-// DATA INGESTION SERVICE v5.3.3 — STATE OF THE ART (MEGA CALL)
+// DATA INGESTION SERVICE v5.3.5 — SUPABASE PERSISTENCE ENGINE
 // ============================================================
 
 export interface AdjustedMetrics {
@@ -48,6 +48,10 @@ export interface FixtureResponse {
   };
   odds?: any;
   fairLine?: any;
+  commence_time?: string;
+  sport_key?: string;
+  home_team?: string;
+  away_team?: string;
 }
 
 export interface IngestedData {
@@ -67,7 +71,7 @@ export class DataIngestionService {
 
   constructor() {
     this.apiKey = process.env.PROPLINE_API_KEY || "";
-    console.log('Versão do Argos: 5.3.3 - STATE OF THE ART');
+    console.log('Versão do Argos: 5.3.5 - PERSISTENCE ENGINE');
   }
 
   public async getActiveSports(): Promise<any[]> {
@@ -79,11 +83,6 @@ export class DataIngestionService {
       
       const rawSports = response.data || [];
       const activeSports = rawSports.filter((s: any) => s.active);
-      const soccerSports = activeSports.filter((s: any) => s.key.includes("soccer"));
-      
-      console.log(`[Argos-Discovery] Horizonte de Eventos: ${rawSports.length} esportes totais encontrados.`);
-      console.log(`[Argos-Discovery] Filtro Ativo: ${activeSports.length} esportes operacionais.`);
-      console.log(`[Argos-Discovery] Foco Soccer: ${soccerSports.length} ligas/mercados de futebol em monitoramento.`);
       
       return activeSports;
     } catch (error: any) {
@@ -125,6 +124,53 @@ export class DataIngestionService {
     console.log(`[Argos-Budget] Req Gastas: ${this.requestsSpent} | Restantes: ${1000 - this.requestsSpent}`);
   }
 
+  /**
+   * Persiste os dados da partida na tabela argos_matches do Supabase.
+   * Resolve o erro de BigInt e campos Not-Null.
+   */
+  private async saveMatchToDatabase(fixture: any): Promise<void> {
+    try {
+      // 1. Extração e Normalização de Dados
+      const matchId = (fixture.id || fixture.fixture?.id).toString();
+      const externalFixtureId = parseInt(matchId); // Garantir BigInt compatível
+      const leagueId = parseInt(fixture.league?.id || "0");
+      const startTime = fixture.commence_time || fixture.fixture?.date;
+      
+      // 2. Construção do Payload Resiliente
+      const matchPayload = {
+        external_fixture_id: externalFixtureId,
+        external_provider: "PROPLINE", // Identificador obrigatório
+        match_id: matchId,
+        league_id: leagueId,
+        sport_key: fixture.sport_key || "soccer",
+        home_team: fixture.home_team || fixture.teams?.home?.name || "Unknown",
+        away_team: fixture.away_team || fixture.teams?.away?.name || "Unknown",
+        start_time: startTime,
+        status: fixture.status?.short || fixture.fixture?.status?.short || "NS",
+        raw_data: fixture, // Armazenamos o JSON completo para o RAG
+        updated_at: new Date().toISOString()
+      };
+
+      console.log(`[Argos-Persistence] Tentando persistir match ${matchId} (Provider: PROPLINE)...`);
+
+      // 3. Upsert no Supabase
+      const { error } = await this.supabase
+        .from("argos_matches")
+        .upsert(matchPayload, { onConflict: "external_fixture_id" });
+
+      if (error) {
+        console.error(`[Argos-Persistence] ❌ Erro de Constraint no Supabase:`, error.message);
+        console.error(`[Argos-Persistence] Detalhes do Erro:`, error.details);
+        console.error(`[Argos-Persistence] Payload que falhou:`, JSON.stringify(matchPayload));
+        throw error;
+      }
+
+      console.log(`[Argos-Persistence] ✅ Match ${matchId} persistido com sucesso.`);
+    } catch (error: any) {
+      console.error(`[Argos-Persistence] Falha crítica ao salvar match:`, error.message);
+    }
+  }
+
   async ingest(matchId: string): Promise<IngestedData> {
     const url = `${this.baseUrl}/events/${matchId}?markets=all&include_bookmakers=true`;
     console.log(`[Argos-URL] Single Ingest: ${url}`);
@@ -134,13 +180,16 @@ export class DataIngestionService {
       this.trackRequest();
       const fixture = response.data;
 
-      // Pré-Validação Temporal: Se o jogo já passou do tempo de corte, nem processamos
+      // PRÉ-VALIDAÇÃO TEMPORAL
       const commenceTime = new Date(fixture.commence_time || fixture.fixture?.date).getTime();
       const now = Date.now();
       
-      if (commenceTime < now - (10 * 60 * 1000)) { // 10 min de tolerância
+      if (commenceTime < now - (10 * 60 * 1000)) { 
         throw new Error("404 - Evento já iniciado ou expirado temporalmente.");
       }
+
+      // PERSISTÊNCIA NO CÉREBRO (SUPABASE)
+      await this.saveMatchToDatabase(fixture);
 
       return {
         matchId,
