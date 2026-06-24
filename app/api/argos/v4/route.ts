@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { ResilientOrchestratorV5 } from "@/lib/argos/orchestrator/ResilientOrchestratorV5";
 import { BatchQueueService, QueueStatus } from "@/lib/core/BatchQueueService";
-import { ValueDeliveryService } from "@/lib/argos/delivery/ValueDeliveryService";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 import { TelegramDispatcher } from "@/lib/argos/notifications/TelegramDispatcher";
 import { DailyIngestionScheduler } from "@/lib/argos/ingestion/DailyIngestionScheduler";
@@ -20,30 +19,30 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { matchId, requestedVerticals, marketOdds, userId, mode = "DIRECT" } = body;
+    const { matchId, requestedVerticals, marketOdds, mode = "DIRECT" } = body;
 
     if (!matchId || !requestedVerticals) {
       return NextResponse.json({ error: "matchId e requestedVerticals são obrigatórios" }, { status: 400 });
     }
 
     const orchestrator = new ResilientOrchestratorV5();
-    const deliveryService = new ValueDeliveryService();
 
     if (mode === "BATCH") {
       const queueService = new BatchQueueService();
-      const queueId = await queueService.enqueue(matchId, "ALL_MARKETS", requestedVerticals, userId);
+      const queueId = await queueService.enqueue(matchId, "ALL_MARKETS", requestedVerticals);
       return NextResponse.json({ status: "QUEUED", queueId, matchId });
     }
 
+    // Nota: Para chamadas POST diretas, ainda usamos o matchId, mas o orquestrador v5.5.0
+    // lidará com isso usando o fallback de ingest individual se necessário.
     const auditResult = await orchestrator.runZeroTouchAuditWithResilience(matchId, requestedVerticals, marketOdds);
 
     if (auditResult.status === "FAILED") {
       return NextResponse.json(auditResult, { status: 500 });
     }
 
-    // @ts-ignore - auditResult pode vir com erro de expiração
+    // @ts-ignore
     let signalsToDeliver = auditResult.classifiedSignals || [];
-    let userTier: any = (req.headers.get("x-user-tier") as any) || 'FREE';
     
     if (signalsToDeliver.length > 0) {
       const telegramDispatcher = new TelegramDispatcher();
@@ -56,8 +55,7 @@ export async function POST(req: Request) {
       status: auditResult.status,
       // @ts-ignore
       regime: auditResult.regime,
-      signals: signalsToDeliver,
-      userTier
+      signals: signalsToDeliver
     });
 
   } catch (error: any) {
@@ -96,21 +94,21 @@ export async function GET(request: Request) {
         MarketVertical.HANDICAP, MarketVertical.SHOTS, MarketVertical.SHOTS_ON_TARGET
       ];
 
-      const auditResult = await orchestrator.runZeroTouchAuditWithResilience(nextItem.matchId, exhaustiveVerticals, undefined, undefined, nextItem.id);
+      // ARQUITETURA SINGLE-PASS (v5.5.0)
+      // Se o item da fila já tiver o raw_data (payload completo), usamos o runSinglePassAudit
+      let auditResult;
+      if (nextItem.rawData) {
+        auditResult = await orchestrator.runSinglePassAudit(nextItem.rawData, exhaustiveVerticals, nextItem.id);
+      } else {
+        // Fallback para itens antigos na fila que só têm o matchId
+        auditResult = await orchestrator.runZeroTouchAuditWithResilience(nextItem.matchId, exhaustiveVerticals, undefined, undefined, nextItem.id);
+      }
 
       if (auditResult.status === "FAILED") {
         processedResults.push({ matchId: nextItem.matchId, status: "FAILED" });
         continue;
       }
 
-      // Se expirou (404), marcamos como EXPIRED e prosseguimos
-      if (auditResult.error === "EXPIRED_ON_SOURCE") {
-        await queueService.updateStatus(nextItem.id, QueueStatus.EXPIRED, "404 Not Found");
-        processedResults.push({ matchId: nextItem.matchId, status: "EXPIRED" });
-        continue;
-      }
-
-      await queueService.updateStatus(nextItem.id, QueueStatus.COMPLETED);
       // @ts-ignore
       let signalsToDeliver = auditResult.classifiedSignals || [];
       

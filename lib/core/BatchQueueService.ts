@@ -2,7 +2,7 @@ import { MarketVertical } from "./ArgosUnifiedEngine";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 
 // ============================================================
-// BATCH QUEUE SERVICE v4.6 — INDUSTRIAL TELEMETRY
+// BATCH QUEUE SERVICE v5.5.0 — SINGLE-PASS TRANSPORT
 // ============================================================
 
 export enum QueueStatus {
@@ -25,6 +25,7 @@ export interface QueueItem {
   userId?: string;
   status: QueueStatus;
   priority?: number;
+  rawData?: any; // Payload completo para Single-Pass
 }
 
 export class BatchQueueService {
@@ -34,7 +35,14 @@ export class BatchQueueService {
     this.supabase = getSupabaseClient();
   }
 
-  async enqueue(matchId: string, marketFamily: string, verticals: string[], userId?: string, status: QueueStatus = QueueStatus.QUEUED, priority: number = 0): Promise<string> {
+  async enqueue(
+    matchId: string, 
+    marketFamily: string, 
+    verticals: string[], 
+    rawData?: any, 
+    status: QueueStatus = QueueStatus.QUEUED, 
+    priority: number = 0
+  ): Promise<string> {
     const uniqueKey = `${matchId}_${marketFamily}`;
     const safeVerticals = (verticals || []).filter(v =>
       Object.values(MarketVertical).includes(v as MarketVertical)
@@ -47,7 +55,7 @@ export class BatchQueueService {
         market_family: marketFamily,
         unique_key: uniqueKey,
         requested_verticals: safeVerticals,
-        user_id: userId,
+        raw_data: rawData, // Persistimos o objeto completo no banco
         status: status,
         priority: priority,
       })
@@ -65,7 +73,7 @@ export class BatchQueueService {
           .single();
 
         if (existing) {
-          console.log(`[BatchQueue-Trace] Item ${uniqueKey} já existe. Status: ${existing.status} | Criado em: ${existing.created_at}`);
+          console.log(`[BatchQueue-Trace] Item ${uniqueKey} já existe. Status: ${existing.status}`);
           return existing.id;
         }
       }
@@ -75,36 +83,13 @@ export class BatchQueueService {
     return data.id;
   }
 
-  async isAlreadyEnqueued(matchId: string, marketFamily: string = "ALL_MARKETS"): Promise<boolean> {
-    const uniqueKey = `${matchId}_${marketFamily}`;
-    const { data, error } = await this.supabase
-      .from("argos_batch_queue")
-      .select("id, status, created_at")
-      .eq("unique_key", uniqueKey)
-      .order("created_at", { ascending: false })
-      .limit(1);
-
-    if (error || !data || data.length === 0) return false;
-
-    const lastEntry = data[0];
-    const isRecent = (new Date().getTime() - new Date(lastEntry.created_at).getTime()) < (12 * 60 * 60 * 1000); 
-
-    // Argos v5.2: Se o status for COMPLETED mas já faz mais de 2 horas, permitimos re-enfileirar para atualizar odds
-    if (lastEntry.status === QueueStatus.COMPLETED) {
-      const isVeryRecent = (new Date().getTime() - new Date(lastEntry.created_at).getTime()) < (2 * 60 * 60 * 1000);
-      return isVeryRecent;
-    }
-
-    return [QueueStatus.QUEUED, QueueStatus.PROCESSING].includes(lastEntry.status) && isRecent;
-  }
-
   async getNextInQueue(): Promise<QueueItem | null> {
     const { data, error } = await this.supabase.rpc('get_next_queue_item');
 
     if (error || !data || data.length === 0) return null;
 
     const item = data[0];
-    console.log(`[BatchQueue-Worker] Consumindo item: ${item.unique_key} (ID: ${item.id})`);
+    console.log(`[BatchQueue-Worker] Consumindo item: ${item.unique_key} (Single-Pass: ${!!item.raw_data})`);
     
     return {
       id: item.id,
@@ -115,14 +100,11 @@ export class BatchQueueService {
       userId: item.user_id,
       status: QueueStatus.PROCESSING,
       priority: item.priority,
+      rawData: item.raw_data, // Recuperamos o payload completo
     };
   }
 
   async updateStatus(id: string, status: QueueStatus, errorMessage?: string): Promise<void> {
-    if (status === QueueStatus.COMPLETED) {
-      console.log(`[Argos-Processamento] Item ID ${id} concluído com sucesso.`);
-    }
-    
     await this.supabase
       .from("argos_batch_queue")
       .update({ 
