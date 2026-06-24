@@ -86,7 +86,8 @@ export class DataIngestionService {
       this.trackRequest();
       
       const rawSports = response.data || [];
-      const activeSports = rawSports.filter((s: any) => s.active);
+      const activeSports = rawSports.filter((s: any) => s.active && s.key.toLowerCase().includes('soccer'));
+
       
       console.log(`[Argos-Discovery] Encontrados ${activeSports.length} esportes ativos.`);
       return activeSports;
