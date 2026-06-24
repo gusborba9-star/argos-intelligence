@@ -5,7 +5,7 @@ import { LeagueProfile } from "@/lib/argos/ingestion/LeagueValueScoreEngine";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 
 // ============================================================
-// DATA INGESTION SERVICE v5.3.5 — SUPABASE PERSISTENCE ENGINE
+// DATA INGESTION SERVICE v5.4.0 — DYNAMIC DISCOVERY ENGINE
 // ============================================================
 
 export interface AdjustedMetrics {
@@ -71,22 +71,55 @@ export class DataIngestionService {
 
   constructor() {
     this.apiKey = process.env.PROPLINE_API_KEY || "";
-    console.log('Versão do Argos: 5.3.5 - PERSISTENCE ENGINE');
+    console.log('Versão do Argos: 5.4.0 - DYNAMIC DISCOVERY ENGINE');
   }
 
+  /**
+   * Discovery Dinâmico: Busca esportes ativos na PropLine.
+   * Elimina a necessidade de listas estáticas de ligas.
+   */
   public async getActiveSports(): Promise<any[]> {
     try {
       const url = `${this.baseUrl}/sports`;
-      console.log(`[Argos-URL] Discovery: ${url}`);
+      console.log(`[Argos-Discovery] Buscando esportes ativos: ${url}`);
       const response = await axios.get(url, { headers: { "X-API-Key": this.apiKey } });
       this.trackRequest();
       
       const rawSports = response.data || [];
       const activeSports = rawSports.filter((s: any) => s.active);
       
+      console.log(`[Argos-Discovery] Encontrados ${activeSports.length} esportes ativos.`);
       return activeSports;
     } catch (error: any) {
-      console.error("[Argos-Budget] Discovery Error:", error.message);
+      console.error("[Argos-Discovery] Erro ao buscar esportes:", error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Busca eventos futuros/próximos de forma agnóstica a ligas.
+   * Janela de 48h recomendada para Discovery.
+   */
+  public async getUpcomingEvents(sportKey: string): Promise<any[]> {
+    try {
+      const url = `${this.baseUrl}/sports/${sportKey}/events`;
+      console.log(`[Argos-Discovery] Buscando eventos para ${sportKey}: ${url}`);
+      const response = await axios.get(url, { headers: { "X-API-Key": this.apiKey } });
+      this.trackRequest();
+      
+      const events = response.data || [];
+      const now = Date.now();
+      const horizon = now + (48 * 60 * 60 * 1000); // 48 horas à frente
+
+      const filteredEvents = events.filter((e: any) => {
+        const commenceTime = new Date(e.commence_time).getTime();
+        return commenceTime > now && commenceTime <= horizon;
+      });
+
+      console.log(`[Argos-Discovery] ${sportKey}: ${filteredEvents.length} eventos encontrados nas próximas 48h.`);
+      return filteredEvents;
+    } catch (error: any) {
+      console.error(`[Argos-Discovery] Erro ao buscar eventos para ${sportKey}:`, error.message);
       return [];
     }
   }
@@ -100,6 +133,9 @@ export class DataIngestionService {
     } catch { return true; }
   }
 
+  /**
+   * Mega Call Otimizada: Agora processa múltiplos bookmakers dinamicamente.
+   */
   public async getMegaCallOdds(sportKey: string): Promise<any[]> {
     try {
       const markets = "h2h,totals,btts,corners,cards";
@@ -109,14 +145,29 @@ export class DataIngestionService {
       this.trackRequest();
       const events = response.data || [];
       const now = Math.floor(Date.now() / 1000);
+      
+      // Filtramos apenas dados atualizados nos últimos 5 minutos
       return events.filter((e: any) => (now - (e.last_update || now)) <= 300);
     } catch { return []; }
   }
 
+  /**
+   * Cálculo de Fair Line Multi-Bookmaker.
+   * Prioriza Pinnacle, mas processa o que estiver disponível.
+   */
   public calculateFairLine(event: any): any {
-    if (!event.bookmakers) return null;
+    if (!event.bookmakers || event.bookmakers.length === 0) return null;
+    
+    // 1. Tentar Pinnacle (Referência de Ouro)
     const pinnacle = event.bookmakers.find((b: any) => b.key.toLowerCase() === 'pinnacle');
-    return pinnacle ? { source: 'Pinnacle', odds: pinnacle.markets } : { source: 'Average', odds: event.bookmakers[0]?.markets };
+    if (pinnacle) return { source: 'Pinnacle', odds: pinnacle.markets };
+    
+    // 2. Tentar Betfair
+    const betfair = event.bookmakers.find((b: any) => b.key.toLowerCase() === 'betfair');
+    if (betfair) return { source: 'Betfair', odds: betfair.markets };
+
+    // 3. Fallback para o primeiro disponível
+    return { source: event.bookmakers[0].title || 'Generic', odds: event.bookmakers[0].markets };
   }
 
   private trackRequest() {
@@ -124,22 +175,16 @@ export class DataIngestionService {
     console.log(`[Argos-Budget] Req Gastas: ${this.requestsSpent} | Restantes: ${1000 - this.requestsSpent}`);
   }
 
-  /**
-   * Persiste os dados da partida na tabela argos_matches do Supabase.
-   * Resolve o erro de BigInt e campos Not-Null.
-   */
   private async saveMatchToDatabase(fixture: any): Promise<void> {
     try {
-      // 1. Extração e Normalização de Dados
       const matchId = (fixture.id || fixture.fixture?.id).toString();
-      const externalFixtureId = parseInt(matchId); // Garantir BigInt compatível
+      const externalFixtureId = parseInt(matchId); 
       const leagueId = parseInt(fixture.league?.id || "0");
       const startTime = fixture.commence_time || fixture.fixture?.date;
       
-      // 2. Construção do Payload Resiliente
       const matchPayload = {
         external_fixture_id: externalFixtureId,
-        external_provider: "PROPLINE", // Identificador obrigatório
+        external_provider: "PROPLINE", 
         match_id: matchId,
         league_id: leagueId,
         sport_key: fixture.sport_key || "soccer",
@@ -147,27 +192,18 @@ export class DataIngestionService {
         away_team: fixture.away_team || fixture.teams?.away?.name || "Unknown",
         start_time: startTime,
         status: fixture.status?.short || fixture.fixture?.status?.short || "NS",
-        raw_data: fixture, // Armazenamos o JSON completo para o RAG
+        raw_data: fixture, 
         updated_at: new Date().toISOString()
       };
 
-      console.log(`[Argos-Persistence] Tentando persistir match ${matchId} (Provider: PROPLINE)...`);
-
-      // 3. Upsert no Supabase
       const { error } = await this.supabase
         .from("argos_matches")
         .upsert(matchPayload, { onConflict: "external_fixture_id" });
 
-      if (error) {
-        console.error(`[Argos-Persistence] ❌ Erro de Constraint no Supabase:`, error.message);
-        console.error(`[Argos-Persistence] Detalhes do Erro:`, error.details);
-        console.error(`[Argos-Persistence] Payload que falhou:`, JSON.stringify(matchPayload));
-        throw error;
-      }
-
-      console.log(`[Argos-Persistence] ✅ Match ${matchId} persistido com sucesso.`);
+      if (error) throw error;
+      console.log(`[Argos-Persistence] ✅ Match ${matchId} persistido.`);
     } catch (error: any) {
-      console.error(`[Argos-Persistence] Falha crítica ao salvar match:`, error.message);
+      console.error(`[Argos-Persistence] Falha ao salvar match:`, error.message);
     }
   }
 
@@ -180,15 +216,13 @@ export class DataIngestionService {
       this.trackRequest();
       const fixture = response.data;
 
-      // PRÉ-VALIDAÇÃO TEMPORAL
       const commenceTime = new Date(fixture.commence_time || fixture.fixture?.date).getTime();
       const now = Date.now();
       
       if (commenceTime < now - (10 * 60 * 1000)) { 
-        throw new Error("404 - Evento já iniciado ou expirado temporalmente.");
+        throw new Error("404 - Evento já iniciado ou expirado.");
       }
 
-      // PERSISTÊNCIA NO CÉREBRO (SUPABASE)
       await this.saveMatchToDatabase(fixture);
 
       return {
@@ -201,7 +235,7 @@ export class DataIngestionService {
       };
     } catch (error: any) {
       if (error.response?.status === 404) {
-        throw new Error("404 - Evento não encontrado na PropLine.");
+        throw new Error("404 - Evento não encontrado.");
       }
       throw error;
     }

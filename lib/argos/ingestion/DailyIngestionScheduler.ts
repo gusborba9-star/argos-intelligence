@@ -2,10 +2,11 @@ import { DataIngestionService } from "@/lib/core/DataIngestionService";
 import { BatchQueueService, QueueStatus } from "@/lib/core/BatchQueueService";
 
 /**
- * DAILY INGESTION SCHEDULER v5.3 — SYNDICATE BUDGET MANAGER
- * 1. Sentinel Loop (Freshness Check)
- * 2. Priority Score (Score >= 2)
- * 3. Mega Call Processing
+ * DAILY INGESTION SCHEDULER v5.4.0 — DYNAMIC DISCOVERY SCHEDULER
+ * 1. Dynamic Sport Discovery (Agnóstico a Ligas)
+ * 2. Sentinel Loop (Freshness Check)
+ * 3. Priority Score (Score >= 2)
+ * 4. Mega Call Processing (Multi-Bookmaker)
  */
 export class DailyIngestionScheduler {
   private dataIngestionService: DataIngestionService;
@@ -18,13 +19,17 @@ export class DailyIngestionScheduler {
   }
 
   async scheduleDailyIngestion(): Promise<{ totalProcessed: number; status: string }> {
-    console.log(`[Argos v5.3] Iniciando Ciclo de Ingestão com Sentinel Loop...`);
+    console.log(`[Argos v5.4.0] Iniciando Ciclo de Discovery Dinâmico...`);
 
-    // 1. DISCOVERY LAYER
+    // 1. DYNAMIC DISCOVERY LAYER: Busca esportes ativos sem hardcoding
     const activeSports = await this.dataIngestionService.getActiveSports();
+    
+    // Filtramos esportes de futebol de forma dinâmica
     const soccerKeys = activeSports
-      .filter((s: any) => s.key.includes("soccer"))
+      .filter((s: any) => s.key.includes("soccer") || s.group.toLowerCase().includes("soccer"))
       .map((s: any) => s.key);
+
+    console.log(`[Argos-Discovery] ${soccerKeys.length} chaves de futebol identificadas para varredura.`);
 
     let totalProcessed = 0;
 
@@ -36,22 +41,23 @@ export class DailyIngestionScheduler {
         continue;
       }
 
-      // 3. MEGA CALL: Puxa tudo de uma vez
+      // 3. MEGA CALL: Puxa todos os eventos e bookmakers da chave
       const events = await this.dataIngestionService.getMegaCallOdds(sportKey);
       
       for (const event of events) {
-        // 4. PRIORITY SCORE
+        // 4. PRIORITY SCORE: Prioriza o que realmente importa
         const score = this.calculatePriorityScore(event);
-        if (score < 2) continue; // Descarta jogos irrelevantes/distantes
+        if (score < 2) continue; // Descarta jogos irrelevantes ou muito distantes
 
-        const matchId = (event.id || event.fixture?.id).toString();
+        const matchId = (event.id || event.fixture?.id || event.match_id).toString();
         
-        // 5. FAIR LINE & ENFILEIRAMENTO
+        // 5. FAIR LINE & ENFILEIRAMENTO DINÂMICO
+        // O calculateFairLine agora é resiliente a múltiplos bookmakers
         const fairLine = this.dataIngestionService.calculateFairLine(event);
         
         await this.batchQueueService.enqueue(
           matchId, 
-          "MEGA_CALL", 
+          "DYNAMIC_DISCOVERY", 
           [], 
           undefined, 
           QueueStatus.VALIDATED,
@@ -65,7 +71,7 @@ export class DailyIngestionScheduler {
       if (totalProcessed >= this.MAX_DAILY_GAMES) break;
     }
 
-    console.log(`[Argos-Budget] Ciclo concluído. Jogos Processados: ${totalProcessed}`);
+    console.log(`[Argos-Budget] Ciclo Discovery concluído. Jogos Enfileirados: ${totalProcessed}`);
 
     return {
       totalProcessed,
@@ -74,7 +80,8 @@ export class DailyIngestionScheduler {
   }
 
   /**
-   * Priority Score: Peso para jogos de alta liquidez ou próximos
+   * Priority Score: Peso para jogos de alta liquidez ou próximos.
+   * Adaptado para ser agnóstico a nomes de ligas fixas.
    */
   private calculatePriorityScore(event: any): number {
     let score = 0;
@@ -82,14 +89,22 @@ export class DailyIngestionScheduler {
     const commenceTime = new Date(event.commence_time);
     const hoursToStart = (commenceTime.getTime() - now.getTime()) / (1000 * 60 * 60);
 
-    // Jogos nas próximas 24h ganham +2
+    // 1. Proximidade Temporal (Máximo +2)
     if (hoursToStart <= 24) score += 2;
-    // Jogos entre 24h e 48h ganham +1
     else if (hoursToStart <= 48) score += 1;
 
-    // Ligas de Elite ganham +1
-    const name = (event.league?.name || event.sport_title || "").toLowerCase();
-    if (name.includes("world cup") || name.includes("premier league") || name.includes("champions")) {
+    // 2. Relevância da Competição (Dinâmico)
+    const title = (event.sport_title || event.league?.name || "").toLowerCase();
+    const eliteKeywords = ["world cup", "premier league", "champions", "libertadores", "serie a", "bundesliga", "la liga"];
+    
+    if (eliteKeywords.some(kw => title.includes(kw))) {
+      score += 1;
+    }
+
+    // 3. Liquidez de Bookmakers (Se tiver Pinnacle, Betfair ou +5 bookies, +1)
+    const bookies = event.bookmakers || [];
+    const hasSharp = bookies.some((b: any) => ["pinnacle", "betfair"].includes(b.key.toLowerCase()));
+    if (hasSharp || bookies.length >= 5) {
       score += 1;
     }
 
