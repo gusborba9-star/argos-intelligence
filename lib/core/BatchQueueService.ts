@@ -13,6 +13,7 @@ export enum QueueStatus {
   COMPLETED = "COMPLETED",
   FAILED = "FAILED",
   REJECTED = "REJECTED",
+  EXPIRED = "EXPIRED",
 }
 
 export interface QueueItem {

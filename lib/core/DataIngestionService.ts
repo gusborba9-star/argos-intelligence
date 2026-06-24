@@ -128,17 +128,34 @@ export class DataIngestionService {
   async ingest(matchId: string): Promise<IngestedData> {
     const url = `${this.baseUrl}/events/${matchId}?markets=all&include_bookmakers=true`;
     console.log(`[Argos-URL] Single Ingest: ${url}`);
-    const response = await axios.get(url, { headers: { "X-API-Key": this.apiKey } });
-    this.trackRequest();
-    const fixture = response.data;
-    return {
-      matchId,
-      leagueId: fixture.league.id.toString(),
-      homeHistory: [],
-      awayHistory: [],
-      externalFactors: { refereeStrictness: 0.5, weatherCondition: "CLEAR", motivationLevel: "NORMAL", isDerby: false, expectedEdge: 0 },
-      fixture
-    };
+    
+    try {
+      const response = await axios.get(url, { headers: { "X-API-Key": this.apiKey } });
+      this.trackRequest();
+      const fixture = response.data;
+
+      // Pré-Validação Temporal: Se o jogo já passou do tempo de corte, nem processamos
+      const commenceTime = new Date(fixture.commence_time || fixture.fixture?.date).getTime();
+      const now = Date.now();
+      
+      if (commenceTime < now - (10 * 60 * 1000)) { // 10 min de tolerância
+        throw new Error("404 - Evento já iniciado ou expirado temporalmente.");
+      }
+
+      return {
+        matchId,
+        leagueId: (fixture.league?.id || "0").toString(),
+        homeHistory: [],
+        awayHistory: [],
+        externalFactors: { refereeStrictness: 0.5, weatherCondition: "CLEAR", motivationLevel: "NORMAL", isDerby: false, expectedEdge: 0 },
+        fixture
+      };
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        throw new Error("404 - Evento não encontrado na PropLine.");
+      }
+      throw error;
+    }
   }
 
   public getLeagueProfile(leagueId: number, leagueName?: string): LeagueProfile {
