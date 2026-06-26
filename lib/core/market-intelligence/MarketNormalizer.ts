@@ -1,5 +1,12 @@
 import { MarketVertical } from "../ArgosUnifiedEngine";
 
+// ============================================================
+// MARKET NORMALIZER v6.0.0 — SYNDICATE MASTER EDITION
+// Transforma o payload bruto da PropLine em estrutura estável.
+// Captura TODAS as casas, mercados, linhas e odds disponíveis.
+// Nenhum mercado é descartado antes de passar pelo motor de avaliação.
+// ============================================================
+
 export interface NormalizedMarket {
   vertical: MarketVertical;
   marketName: string;
@@ -10,30 +17,52 @@ export interface NormalizedMarket {
     impliedProb: number;
   }[];
   bookmaker: string;
+  bookmakerTitle: string;
   lastUpdate: number;
+  isSharp: boolean; // Pinnacle / Betfair = sharp reference
 }
+
+export interface NormalizationReport {
+  totalBookmakers: number;
+  totalMarkets: number;
+  sharpBookmakers: string[];
+  verticalCoverage: Record<string, number>;
+  hasSharpReference: boolean;
+}
+
+const SHARP_BOOKMAKERS = ["pinnacle", "betfair", "matchbook", "smarkets"];
 
 export class MarketNormalizer {
   /**
-   * Transforma o payload bruto da PropLine em uma estrutura padronizada para os modelos.
+   * Transforma o payload bruto da PropLine em uma estrutura padronizada.
+   * Captura TODAS as casas e TODOS os mercados disponíveis sem descartar nada.
    */
   public static normalize(event: any): NormalizedMarket[] {
     const normalized: NormalizedMarket[] = [];
     const bookmakers = event.bookmakers || [];
 
     for (const bookie of bookmakers) {
-      const bookieKey = bookie.key.toLowerCase();
+      const bookieKey = (bookie.key || "").toLowerCase();
+      const bookieTitle = bookie.title || bookie.key || "Unknown";
+      const isSharp = SHARP_BOOKMAKERS.includes(bookieKey);
       const markets = bookie.markets || [];
 
       for (const market of markets) {
         const vertical = this.mapToVertical(market.key);
-        if (vertical === MarketVertical.UNKNOWN) continue;
 
-        const outcomes = (market.outcomes || []).map((o: any) => ({
-          selection: o.name,
-          odd: o.price,
-          impliedProb: 1 / o.price
-        }));
+        // REGRA MASTER: Não descartar mercados desconhecidos antes da avaliação.
+        // Mercados UNKNOWN são normalizados com vertical UNKNOWN para auditoria posterior.
+
+        const outcomes = (market.outcomes || []).map((o: any) => {
+          const price = typeof o.price === "number" ? o.price : 1.01;
+          return {
+            selection: o.name || o.description || "Unknown",
+            odd: price,
+            impliedProb: price > 0 ? 1 / price : 0,
+          };
+        });
+
+        if (outcomes.length === 0) continue;
 
         normalized.push({
           vertical,
@@ -41,7 +70,9 @@ export class MarketNormalizer {
           line: this.extractLine(market),
           outcomes,
           bookmaker: bookieKey,
-          lastUpdate: bookie.last_update || Math.floor(Date.now() / 1000)
+          bookmakerTitle: bookieTitle,
+          lastUpdate: bookie.last_update || Math.floor(Date.now() / 1000),
+          isSharp,
         });
       }
     }
@@ -49,23 +80,83 @@ export class MarketNormalizer {
     return normalized;
   }
 
-  private static mapToVertical(key: string): MarketVertical {
-    const k = key.toLowerCase();
-    if (k.includes("h2h")) return MarketVertical.WINNER;
-    if (k.includes("totals")) return MarketVertical.GOALS;
-    if (k.includes("btts")) return MarketVertical.BTTS;
+  /**
+   * Gera um relatório de cobertura de mercado para auditoria.
+   */
+  public static generateReport(normalized: NormalizedMarket[]): NormalizationReport {
+    const sharpBookmakers = [...new Set(
+      normalized.filter(m => m.isSharp).map(m => m.bookmakerTitle)
+    )];
+
+    const verticalCoverage: Record<string, number> = {};
+    for (const m of normalized) {
+      verticalCoverage[m.vertical] = (verticalCoverage[m.vertical] || 0) + 1;
+    }
+
+    return {
+      totalBookmakers: new Set(normalized.map(m => m.bookmaker)).size,
+      totalMarkets: normalized.length,
+      sharpBookmakers,
+      verticalCoverage,
+      hasSharpReference: sharpBookmakers.length > 0,
+    };
+  }
+
+  /**
+   * Mapeia a chave de mercado da PropLine para o enum MarketVertical.
+   * Cobre todos os mercados obrigatórios da arquitetura Syndicate Master.
+   */
+  public static mapToVertical(key: string): MarketVertical {
+    const k = (key || "").toLowerCase();
+
+    // Vencedor / Result
+    if (k === "h2h" || k.includes("match_winner") || k.includes("1x2")) return MarketVertical.WINNER;
+
+    // Handicap
+    if (k.includes("spreads") || k.includes("handicap") || k.includes("asian_handicap")) return MarketVertical.HANDICAP;
+
+    // Gols HT (Half Time) — deve vir antes de totals genérico
+    if (k.includes("totals_first_half") || k.includes("ht_goals") || k.includes("half_time_goals") || k.includes("first_half_totals")) return MarketVertical.GOALS_HT;
+
+    // Gols (Over/Under totais)
+    if (k.includes("totals") || k.includes("goals_ou") || k.includes("over_under")) return MarketVertical.GOALS;
+
+    // BTTS
+    if (k.includes("btts") || k.includes("both_teams_to_score")) return MarketVertical.BTTS;
+
+    // Escanteios
     if (k.includes("corners")) return MarketVertical.CORNERS;
-    if (k.includes("cards")) return MarketVertical.CARDS;
-    if (k.includes("shots_on_target")) return MarketVertical.SHOTS_ON_TARGET;
+
+    // Cartões
+    if (k.includes("cards") || k.includes("bookings")) return MarketVertical.CARDS;
+
+    // Finalizações no alvo
+    if (k.includes("shots_on_target") || k.includes("shots_on_goal")) return MarketVertical.SHOTS_ON_TARGET;
+
+    // Finalizações totais
     if (k.includes("shots")) return MarketVertical.SHOTS;
-    if (k.includes("handicap")) return MarketVertical.HANDICAP;
+
+    // Faltas
+    if (k.includes("fouls")) return MarketVertical.FOULS;
+
+    // Defesas
+    if (k.includes("saves")) return MarketVertical.SAVES;
+
+    // Duelos/Tackles
+    if (k.includes("tackles")) return MarketVertical.TACKLES;
+
     return MarketVertical.UNKNOWN;
   }
 
   private static extractLine(market: any): number {
-    // Tenta extrair a linha (ex: 2.5) de campos comuns da PropLine
-    if (typeof market.line === 'number') return market.line;
-    const outcomeWithPoint = market.outcomes?.find((o: any) => typeof o.point === 'number');
-    return outcomeWithPoint ? Math.abs(outcomeWithPoint.point) : 0;
+    if (typeof market.line === "number") return market.line;
+    // PropLine armazena a linha nos outcomes (ex: point: 2.5)
+    const outcomeWithPoint = (market.outcomes || []).find(
+      (o: any) => typeof o.point === "number"
+    );
+    if (outcomeWithPoint) return Math.abs(outcomeWithPoint.point);
+    // Tenta extrair da chave do mercado (ex: "totals_2.5")
+    const match = (market.key || "").match(/(\d+\.?\d*)/);
+    return match ? parseFloat(match[1]) : 0;
   }
 }

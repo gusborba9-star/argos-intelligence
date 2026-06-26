@@ -205,6 +205,34 @@ export class DataIngestionService {
     }
   }
 
+  /**
+   * getCachedMatchData (v6.0.0): Busca o payload completo de uma partida já persistida
+   * no banco de dados (argos_matches.raw_data). Usado como fallback para chamadas legadas
+   * que chegam apenas com matchId, sem o payload completo da Mega Call.
+   */
+  public async getCachedMatchData(matchId: string): Promise<{ rawData: any } | null> {
+    try {
+      const { data, error } = await this.supabase
+        .from("argos_matches")
+        .select("raw_data")
+        .eq("match_id", matchId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error || !data?.raw_data) {
+        console.warn(`[Argos-Cache] Nenhum dado em cache para match ${matchId}.`);
+        return null;
+      }
+
+      console.log(`[Argos-Cache] ✅ Payload recuperado do banco para match ${matchId}.`);
+      return { rawData: data.raw_data };
+    } catch (error: any) {
+      console.error(`[Argos-Cache] Erro ao buscar cache para ${matchId}:`, error.message);
+      return null;
+    }
+  }
+
   // Mantido para compatibilidade, mas marcado como legado
   async ingest(matchId: string): Promise<IngestedData> {
     console.warn(`[Argos-Legacy] Chamada de ingest individual detectada para ${matchId}. Use ingestObject para Single-Pass.`);

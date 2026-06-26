@@ -7,9 +7,23 @@ import { DailyIngestionScheduler } from "@/lib/argos/ingestion/DailyIngestionSch
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Todos os mercados obrigatórios para varredura completa (Syndicate Master)
+const EXHAUSTIVE_VERTICALS: MarketVertical[] = [
+  MarketVertical.WINNER,
+  MarketVertical.HANDICAP,
+  MarketVertical.GOALS,
+  MarketVertical.GOALS_HT,
+  MarketVertical.BTTS,
+  MarketVertical.CORNERS,
+  MarketVertical.CARDS,
+  MarketVertical.SHOTS,
+  MarketVertical.SHOTS_ON_TARGET,
+];
+
 /**
- * ENDPOINT MASTER v6.0.0
- * Gerencia a ingestão e o processamento da fila com orquestração Single-Pass.
+ * ENDPOINT MASTER v6.0.0 — SYNDICATE MASTER EDITION
+ * POST: Processa uma partida diretamente ou enfileira para processamento em lote.
+ * GET:  Worker de fila — executa discovery + processa itens enfileirados.
  */
 export async function POST(req: Request) {
   try {
@@ -25,20 +39,32 @@ export async function POST(req: Request) {
     const { matchId, requestedVerticals, marketOdds, mode = "DIRECT" } = body;
 
     if (!matchId || !requestedVerticals) {
-      return NextResponse.json({ error: "matchId e requestedVerticals são obrigatórios" }, { status: 400 });
+      return NextResponse.json(
+        { error: "matchId e requestedVerticals são obrigatórios" },
+        { status: 400 }
+      );
     }
 
     const orchestrator = new ResilientOrchestratorV5();
 
+    // Modo BATCH: enfileira com payload completo se disponível
     if (mode === "BATCH") {
       const queueService = new BatchQueueService();
-      const queueId = await queueService.enqueue(matchId, "ALL_MARKETS", requestedVerticals);
+      const queueId = await queueService.enqueue(
+        matchId,
+        "ALL_MARKETS",
+        requestedVerticals
+        // rawData não disponível neste modo — será buscado do cache no worker
+      );
       return NextResponse.json({ status: "QUEUED", queueId, matchId });
     }
 
-    // Processamento Direto (v6.0.0)
-    // O Orquestrador agora lida com o despacho do Telegram internamente para evitar duplicidade.
-    const auditResult = await orchestrator.runZeroTouchAuditWithResilience(matchId, requestedVerticals, marketOdds);
+    // Modo DIRECT: processamento imediato via fallback de cache
+    const auditResult = await orchestrator.runZeroTouchAuditWithResilience(
+      matchId,
+      requestedVerticals,
+      marketOdds
+    );
 
     if (auditResult.status === "FAILED") {
       return NextResponse.json(auditResult, { status: 500 });
@@ -48,13 +74,14 @@ export async function POST(req: Request) {
       matchId: auditResult.matchId,
       status: auditResult.status,
       regime: (auditResult as any).regime,
-      signals: (auditResult as any).distributedSignals || []
+      normalizationReport: (auditResult as any).normalizationReport,
+      discoveryReport: (auditResult as any).discoveryReport,
+      signals: (auditResult as any).distributedSignals || [],
     });
-
   } catch (error: any) {
     return NextResponse.json({ status: "FAILED", error: error.message }, { status: 500 });
   }
-} 
+}
 
 export async function GET(request: Request) {
   try {
@@ -66,45 +93,66 @@ export async function GET(request: Request) {
     }
 
     const queueService = new BatchQueueService();
+
+    // Discovery + Limpeza: executa sempre no cron, ou com 25% de chance em chamadas manuais
     const shouldRunIngestion = isVercelCron || Math.random() < 0.25;
 
+    let discoveryResult: any = null;
     if (shouldRunIngestion) {
       const scheduler = new DailyIngestionScheduler();
-      await scheduler.scheduleDailyIngestion().catch(() => {});
+      discoveryResult = await scheduler.scheduleDailyIngestion().catch((err) => ({
+        status: "FAILED",
+        error: err.message,
+      }));
     }
 
+    // Processamento da fila (Single-Pass Architecture)
     const processedResults = [];
     const MAX_PROCESS_PER_CALL = 3;
-    
+
     for (let i = 0; i < MAX_PROCESS_PER_CALL; i++) {
       const nextItem = await queueService.getNextInQueue();
       if (!nextItem) break;
 
       const orchestrator = new ResilientOrchestratorV5();
-      const exhaustiveVerticals: MarketVertical[] = [
-        MarketVertical.WINNER, MarketVertical.GOALS, MarketVertical.GOALS_HT,
-        MarketVertical.CORNERS, MarketVertical.CARDS, MarketVertical.BTTS,
-        MarketVertical.HANDICAP, MarketVertical.SHOTS, MarketVertical.SHOTS_ON_TARGET
-      ];
 
-      // ARQUITETURA SINGLE-PASS (v6.0.0)
-      // O Orquestrador agora despacha para o Telegram internamente.
       let auditResult;
       if (nextItem.rawData) {
-        auditResult = await orchestrator.runSinglePassAudit(nextItem.rawData, exhaustiveVerticals, nextItem.id);
+        // SINGLE-PASS: payload completo disponível — zero re-fetch
+        auditResult = await orchestrator.runSinglePassAudit(
+          nextItem.rawData,
+          EXHAUSTIVE_VERTICALS,
+          nextItem.id
+        );
       } else {
-        auditResult = await orchestrator.runZeroTouchAuditWithResilience(nextItem.matchId, exhaustiveVerticals, undefined, undefined, nextItem.id);
+        // FALLBACK LEGADO: busca do cache do banco
+        auditResult = await orchestrator.runZeroTouchAuditWithResilience(
+          nextItem.matchId,
+          EXHAUSTIVE_VERTICALS,
+          undefined,
+          undefined,
+          nextItem.id
+        );
       }
 
-      processedResults.push({ 
-        matchId: nextItem.matchId, 
-        status: auditResult.status, 
-        signalsCount: (auditResult as any).distributedSignals?.length || 0 
+      processedResults.push({
+        matchId: nextItem.matchId,
+        status: auditResult.status,
+        signalsCount: (auditResult as any).signals || 0,
+        executionTimeMs: (auditResult as any).executionTimeMs,
       });
     }
 
-    return NextResponse.json({ status: "BATCH_PROCESSED", totalProcessed: processedResults.length, results: processedResults });
+    // Estatísticas da fila para monitoramento
+    const queueStats = await queueService.getQueueStats();
 
+    return NextResponse.json({
+      status: "BATCH_PROCESSED",
+      totalProcessed: processedResults.length,
+      results: processedResults,
+      queueStats,
+      discoveryResult,
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

@@ -1,6 +1,13 @@
 import { NormalizedMarket } from "./MarketNormalizer";
 import { FairOddsCalculator } from "./FairOddsCalculator";
 import { OddsValueEngine } from "./OddsValueEngine";
+import { MarketVertical } from "../ArgosUnifiedEngine";
+
+// ============================================================
+// MARKET DISCOVERY ENGINE v6.0.0 — SYNDICATE MASTER EDITION
+// Regra: A partida só é descartada após varredura completa.
+// Se Winner não possui valor, executar TODOS os outros mercados.
+// ============================================================
 
 export interface Opportunity {
   market: string;
@@ -8,62 +15,111 @@ export interface Opportunity {
   line: number;
   selection: string;
   bookmaker: string;
+  bookmakerTitle?: string;
   odd: number;
   fairOdd: number;
   probability: number;
   expectedValue: number;
   edge: number;
+  edgePercent: number;
   confidence: number;
   liquidity: number;
   risk: number;
   source: string;
+  divergence?: number;
+  kellyCriterion?: number;
+  ratingLabel?: string;
 }
+
+export interface DiscoveryReport {
+  totalOpportunities: number;
+  positiveEVCount: number;
+  eliteCount: number;
+  verticalBreakdown: Record<string, number>;
+  discardedReason?: string;
+}
+
+// Mercados obrigatórios para varredura completa (Syndicate Master)
+const MANDATORY_VERTICALS: MarketVertical[] = [
+  MarketVertical.WINNER,
+  MarketVertical.HANDICAP,
+  MarketVertical.GOALS,
+  MarketVertical.GOALS_HT,
+  MarketVertical.BTTS,
+  MarketVertical.CORNERS,
+  MarketVertical.CARDS,
+  MarketVertical.SHOTS,
+  MarketVertical.SHOTS_ON_TARGET,
+];
 
 export class MarketDiscoveryEngine {
   /**
-   * Varre todos os mercados normalizados e identifica oportunidades de valor.
+   * Varre TODOS os mercados normalizados e identifica oportunidades de valor.
+   * A partida só é descartada após varredura completa de todos os mercados.
+   * Se Winner não possui valor, continua para os demais mercados.
    */
   public static discover(
-    normalizedMarkets: NormalizedMarket[], 
-    modelPredictions: { [key: string]: number } // Mapeamento vertical_selection_line -> prob
+    normalizedMarkets: NormalizedMarket[],
+    modelPredictions: { [key: string]: number }
   ): Opportunity[] {
     const opportunities: Opportunity[] = [];
 
+    // Agrupa mercados por vertical para garantir cobertura completa
+    const verticalsCovered = new Set(normalizedMarkets.map((m) => m.vertical));
+    const missingMandatory = MANDATORY_VERTICALS.filter((v) => !verticalsCovered.has(v));
+
+    if (missingMandatory.length > 0) {
+      console.log(
+        `[MarketDiscovery] Mercados obrigatórios sem cobertura de odds: ${missingMandatory.join(", ")}`
+      );
+    }
+
     for (const market of normalizedMarkets) {
+      // REGRA MASTER: Não pular mercados UNKNOWN — auditá-los também
       for (const outcome of market.outcomes) {
         // 1. Calcular Fair Line do Mercado
         const fairLine = FairOddsCalculator.calculate(
-          normalizedMarkets, 
-          market.vertical, 
-          outcome.selection, 
+          normalizedMarkets,
+          market.vertical,
+          outcome.selection,
           market.line
         );
 
         if (!fairLine) continue;
 
-        // 2. Obter Probabilidade do Modelo (se disponível)
-        // O modelo deve prover probabilidades para as mesmas seleções/linhas
-        const modelProb = modelPredictions[`${market.vertical}_${outcome.selection}_${market.line}`] || fairLine.fairProb;
+        // 2. Obter Probabilidade do Modelo
+        // Chave de lookup: vertical_selection_line (normalizada)
+        const selectionKey = outcome.selection.toUpperCase().replace(/\s+/g, "_");
+        const modelProb =
+          modelPredictions[`${market.vertical}_${selectionKey}_${market.line}`] ||
+          modelPredictions[`${market.vertical}_${outcome.selection}_${market.line}`] ||
+          modelPredictions[`${market.vertical}_${outcome.selection}_0`] ||
+          fairLine.fairProb; // Fallback: usa fair prob como estimativa do modelo
 
-        // 3. Calcular EV Real
-        const value = OddsValueEngine.calculateValue(modelProb, outcome.odd);
+        // 3. Calcular EV Real (REGRA: nunca enviar sinal sem esta camada)
+        const value = OddsValueEngine.calculateValue(modelProb, outcome.odd, fairLine.fairOdd);
 
-        // 4. Mapear Oportunidade
+        // 4. Mapear Oportunidade (incluindo sinais negativos para auditoria)
         opportunities.push({
           market: market.marketName,
           vertical: market.vertical,
           line: market.line,
           selection: outcome.selection,
           bookmaker: market.bookmaker,
+          bookmakerTitle: market.bookmakerTitle,
           odd: outcome.odd,
           fairOdd: fairLine.fairOdd,
           probability: modelProb,
           expectedValue: value.expectedValue,
           edge: value.edge,
+          edgePercent: value.edgePercent,
           confidence: fairLine.confidence,
-          liquidity: this.estimateLiquidity(market.bookmaker),
+          liquidity: this.estimateLiquidity(market.bookmaker, market.isSharp),
           risk: this.calculateRisk(value.edge, fairLine.confidence),
-          source: fairLine.source
+          source: fairLine.source,
+          divergence: fairLine.divergence,
+          kellyCriterion: value.kellyCriterion,
+          ratingLabel: value.ratingLabel,
         });
       }
     }
@@ -71,22 +127,46 @@ export class MarketDiscoveryEngine {
     return opportunities;
   }
 
-  private static estimateLiquidity(bookmaker: string): number {
-    const weights: { [key: string]: number } = {
-      'pinnacle': 1.0,
-      'betfair': 0.9,
-      'bet365': 0.8,
-      'draftkings': 0.7,
-      'fanduel': 0.7
+  /**
+   * Gera relatório de discovery para auditoria e debug.
+   */
+  public static generateReport(opportunities: Opportunity[]): DiscoveryReport {
+    const positiveEV = opportunities.filter((o) => o.expectedValue > 0);
+    const elite = opportunities.filter((o) => o.ratingLabel === "ELITE");
+
+    const verticalBreakdown: Record<string, number> = {};
+    for (const op of positiveEV) {
+      verticalBreakdown[op.vertical] = (verticalBreakdown[op.vertical] || 0) + 1;
+    }
+
+    return {
+      totalOpportunities: opportunities.length,
+      positiveEVCount: positiveEV.length,
+      eliteCount: elite.length,
+      verticalBreakdown,
+      discardedReason: opportunities.length === 0 ? "NO_MARKETS_AVAILABLE" : undefined,
     };
-    return weights[bookmaker.toLowerCase()] || 0.5;
+  }
+
+  private static estimateLiquidity(bookmaker: string, isSharp: boolean): number {
+    if (isSharp) return bookmaker === "pinnacle" ? 1.0 : 0.9;
+    const weights: Record<string, number> = {
+      bet365: 0.80,
+      bwin: 0.70,
+      unibet: 0.65,
+      draftkings: 0.65,
+      fanduel: 0.65,
+      williamhill: 0.60,
+      betway: 0.55,
+    };
+    return weights[bookmaker.toLowerCase()] ?? 0.50;
   }
 
   private static calculateRisk(edge: number, confidence: number): number {
-    // Risco inverso: quanto maior o edge e maior a confiança, menor o risco percebido
+    // Risco inverso: maior edge + maior confiança = menor risco percebido
     const baseRisk = 1.0;
     const edgeBonus = Math.max(0, edge * 2);
-    const confidenceBonus = confidence;
-    return Math.max(0.1, baseRisk - edgeBonus - confidenceBonus);
+    const confidenceBonus = confidence * 0.5;
+    return parseFloat(Math.max(0.05, baseRisk - edgeBonus - confidenceBonus).toFixed(4));
   }
 }
