@@ -1,21 +1,25 @@
 import { FixtureResponse, AdjustedMetrics } from "./DataIngestionService";
 
 /**
- * FEATURE ENGINE v5.1
+ * FEATURE ENGINE v6.0.0 — SYNDICATE MASTER
  * Responsável exclusiva por transformar dados RAW em features estatísticas.
- * Isola a inteligência da camada de transporte/ingestão.
+ * Integração profunda com histórico real e perfis de liga.
  */
 export interface FeatureVector {
   homeMetrics: AdjustedMetrics;
   awayMetrics: AdjustedMetrics;
   externalFactors: any;
   leagueProfile: any;
+  historicalContext: {
+    headToHead: any[];
+    homeRecentForm: number; // 0 a 1
+    awayRecentForm: number; // 0 a 1
+  };
 }
 
 export class FeatureEngine {
   /**
-   * CONTRATO FORMAL: RawData -> FeatureVector
-   * Transforma dados brutos de ingestão em um vetor de features normalizado.
+   * Transforma dados brutos de ingestão em um vetor de features normalizado v6.0.0.
    */
   public static generateFeatureVector(rawData: any): FeatureVector {
     const homeMetrics = this.calculateExponentialAverages(rawData.homeHistory);
@@ -25,18 +29,32 @@ export class FeatureEngine {
       homeMetrics,
       awayMetrics,
       externalFactors: rawData.externalFactors,
-      leagueProfile: this.normalizeLeagueProfile(rawData.fixture.league)
+      leagueProfile: this.normalizeLeagueProfile(rawData.fixture.league),
+      historicalContext: {
+        headToHead: rawData.headToHead || [],
+        homeRecentForm: this.calculateForm(rawData.homeHistory),
+        awayRecentForm: this.calculateForm(rawData.awayHistory)
+      }
     };
+  }
+
+  private static calculateForm(history: FixtureResponse[]): number {
+    if (!history || history.length === 0) return 0.5;
+    const recent = history.slice(0, 5);
+    let points = 0;
+    recent.forEach(m => {
+      if (m.teams.home.winner) points += 3;
+      else if (m.teams.home.winner === null) points += 1;
+    });
+    return points / 15;
   }
 
   /**
    * Aplica Fator de Decaimento Exponencial: Jogos recentes têm peso maior
-   * Fórmula: Peso = alpha * (1 - alpha)^n, onde n é a distância do jogo atual
    */
   private static calculateExponentialAverages(history: FixtureResponse[]): AdjustedMetrics {
-    const alpha = 0.3; // Fator de decaimento (30% de peso para o mais recente)
+    const alpha = 0.3;
     let totalWeight = 0;
-
     const sums = { goals: 0, goalsHT: 0, corners: 0, cards: 0, shots: 0, shotsOnTarget: 0 };
 
     if (!history || history.length === 0) {
@@ -47,20 +65,18 @@ export class FeatureEngine {
       const weight = Math.pow(1 - alpha, index);
       totalWeight += weight;
 
-      const homeGoals = typeof match.goals.home === 'number' ? match.goals.home : 0;
-      const awayGoals = typeof match.goals.away === 'number' ? match.goals.away : 0;
+      const homeGoals = typeof match.goals?.home === 'number' ? match.goals.home : 0;
+      const awayGoals = typeof match.goals?.away === 'number' ? match.goals.away : 0;
       sums.goals += (homeGoals + awayGoals) * weight;
 
-      const homeGoalsHT = typeof match.score.halftime.home === 'number' ? match.score.halftime.home : 0;
-      const awayGoalsHT = typeof match.score.halftime.away === 'number' ? match.score.halftime.away : 0;
+      const homeGoalsHT = typeof match.score?.halftime?.home === 'number' ? match.score.halftime.home : 0;
+      const awayGoalsHT = typeof match.score?.halftime?.away === 'number' ? match.score.halftime.away : 0;
       sums.goalsHT += (homeGoalsHT + awayGoalsHT) * weight;
 
-      // Argos v5.0: Integração de estatísticas reais (se disponíveis no objeto da API-Football)
-      // Nota: FixtureResponse precisa ser estendido se a API retornar statistics embutido no histórico
       const stats = (match as any).statistics;
       if (stats && Array.isArray(stats)) {
         const getVal = (type: string) => {
-          const s = stats.find(i => i.type === type);
+          const s = stats.find((i: any) => i.type === type);
           return typeof s?.value === 'number' ? s.value : parseInt(s?.value || '0');
         };
         sums.corners += getVal("Corner Kicks") * weight;
@@ -68,7 +84,6 @@ export class FeatureEngine {
         sums.shots += getVal("Total Shots") * weight;
         sums.shotsOnTarget += getVal("Shots on Goal") * weight;
       } else {
-        // Fallback conservador se não houver estatísticas no histórico
         sums.corners += 4.5 * weight; 
         sums.cards += 1.8 * weight; 
         sums.shots += 10 * weight; 
@@ -86,23 +101,13 @@ export class FeatureEngine {
     };
   }
 
-  /**
-   * Normalização de contrato de liga para garantir consistência do pipeline
-   */
   private static normalizeLeagueProfile(league: any) {
     const rawTier = league?.tier || league?.level || league?.rank;
-
-    const normalizedTier =
-      rawTier === 1 || rawTier === "1" || rawTier === "Tier 1"
-        ? "Tier 1"
-        : rawTier === 2 || rawTier === "2" || rawTier === "Tier 2"
-        ? "Tier 2"
-        : "Tier 3";
-
+    const normalizedTier = (rawTier === 1 || rawTier === "1" || rawTier === "Tier 1") ? "Tier 1" : "Tier 2";
     return {
       tier: normalizedTier,
-      country: league?.country ?? null,
-      name: league?.name ?? null
+      country: league?.country ?? "Global",
+      name: league?.name ?? "Unknown League"
     };
   }
 }

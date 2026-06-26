@@ -43,7 +43,7 @@ export class TelegramDispatcher {
     
     return `<b>${edgeEmoji} OPORTUNIDADE VIP | ARGOS v6.0</b>
 ──────────────────────
-🏟️ <b>JOGO:</b> <code>${signal.home_team || 'Time A'} vs ${signal.away_team || 'Time B'}</code>
+🏟️ <b>JOGO:</b> <code>${signal.source || 'Partida'}</code>
 🎯 <b>MERCADO:</b> <code>${signal.vertical}</code>
 📊 <b>LINHA:</b> <code>${signal.line}</code>
 ──────────────────────
@@ -61,7 +61,7 @@ export class TelegramDispatcher {
     const prob = (signal.probability * 100).toFixed(0);
     return `🔥 <b>SINAL FREE | ALTA ASSERTIVIDADE</b>
 ──────────────────────
-🏟️ <b>JOGO:</b> <code>${signal.home_team || 'Time A'} vs ${signal.away_team || 'Time B'}</code>
+🏟️ <b>JOGO:</b> <code>${signal.source || 'Partida'}</code>
 🎯 <b>ENTRADA:</b> <code>${signal.vertical}</code>
 📊 <b>CONFIANÇA:</b> <code>${prob}%</code>
 ──────────────────────

@@ -25,7 +25,7 @@ export class ModelFactory {
 
   /**
    * Monte Carlo v6.0.0 — Motor de Simulação de Elite
-   * Integra regime, variância e contextos reais.
+   * Integra regime, variância e contextos reais de forma estocástica.
    */
   static runMonteCarlo(
     metrics: MarketMetrics,
@@ -41,14 +41,16 @@ export class ModelFactory {
     let totalGoals = 0;
     let over25Count = 0;
 
-    // Fatores de Ajuste de Regime
+    // Fatores de Ajuste de Regime (Contexto Real)
+    // O multiplicador de variância do RegimeEngine (via Gemini) dita a volatilidade da simulação
     const variance = regime.variance_multiplier || 1.2;
-    const confidence = regime.confidence || 0.7;
+    const bias = regime.model_bias || 0;
 
     for (let i = 0; i < iterations; i++) {
       // Negative Binomial Approximation via Gamma-Poisson
-      const hLambda = this.generateGamma(metrics.homeMean, variance);
-      const aLambda = this.generateGamma(metrics.awayMean, variance);
+      // Aplicamos o viés do modelo (bias) para ajustar as expectativas baseadas no contexto RAG
+      const hLambda = this.generateGamma(metrics.homeMean * (1 + bias), variance);
+      const aLambda = this.generateGamma(metrics.awayMean * (1 - bias), variance);
 
       const hScore = this.poisson(hLambda);
       const aScore = this.poisson(aLambda);
@@ -78,9 +80,6 @@ export class ModelFactory {
     };
   }
 
-  /**
-   * Calcula o EV Real cruzando a simulação com a odd de mercado.
-   */
   static calculateEV(probability: number, marketOdd: number): ValueAnalysis {
     return OddsValueEngine.calculateValue(probability, marketOdd);
   }

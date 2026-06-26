@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server";
 import { ResilientOrchestratorV5 } from "@/lib/argos/orchestrator/ResilientOrchestratorV5";
-import { BatchQueueService, QueueStatus } from "@/lib/core/BatchQueueService";
+import { BatchQueueService } from "@/lib/core/BatchQueueService";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
-import { TelegramDispatcher } from "@/lib/argos/notifications/TelegramDispatcher";
 import { DailyIngestionScheduler } from "@/lib/argos/ingestion/DailyIngestionScheduler";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * ENDPOINT MASTER v6.0.0
+ * Gerencia a ingestão e o processamento da fila com orquestração Single-Pass.
+ */
 export async function POST(req: Request) {
   try {
     const isAuthorized = req.headers.get("x-authorized") === "true";
@@ -33,29 +36,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ status: "QUEUED", queueId, matchId });
     }
 
-    // Nota: Para chamadas POST diretas, ainda usamos o matchId, mas o orquestrador v5.5.0
-    // lidará com isso usando o fallback de ingest individual se necessário.
+    // Processamento Direto (v6.0.0)
+    // O Orquestrador agora lida com o despacho do Telegram internamente para evitar duplicidade.
     const auditResult = await orchestrator.runZeroTouchAuditWithResilience(matchId, requestedVerticals, marketOdds);
 
     if (auditResult.status === "FAILED") {
       return NextResponse.json(auditResult, { status: 500 });
     }
 
-    // @ts-ignore
-    let signalsToDeliver = auditResult.classifiedSignals || [];
-    
-    if (signalsToDeliver.length > 0) {
-      const telegramDispatcher = new TelegramDispatcher();
-      // @ts-ignore
-      await telegramDispatcher.dispatch(signalsToDeliver, auditResult.regime).catch(() => {});
-    }
-
     return NextResponse.json({
       matchId: auditResult.matchId,
       status: auditResult.status,
-      // @ts-ignore
-      regime: auditResult.regime,
-      signals: signalsToDeliver
+      regime: (auditResult as any).regime,
+      signals: (auditResult as any).distributedSignals || []
     });
 
   } catch (error: any) {
@@ -94,31 +87,20 @@ export async function GET(request: Request) {
         MarketVertical.HANDICAP, MarketVertical.SHOTS, MarketVertical.SHOTS_ON_TARGET
       ];
 
-      // ARQUITETURA SINGLE-PASS (v5.5.0)
-      // Se o item da fila já tiver o raw_data (payload completo), usamos o runSinglePassAudit
+      // ARQUITETURA SINGLE-PASS (v6.0.0)
+      // O Orquestrador agora despacha para o Telegram internamente.
       let auditResult;
       if (nextItem.rawData) {
         auditResult = await orchestrator.runSinglePassAudit(nextItem.rawData, exhaustiveVerticals, nextItem.id);
       } else {
-        // Fallback para itens antigos na fila que só têm o matchId
         auditResult = await orchestrator.runZeroTouchAuditWithResilience(nextItem.matchId, exhaustiveVerticals, undefined, undefined, nextItem.id);
       }
 
-      if (auditResult.status === "FAILED") {
-        processedResults.push({ matchId: nextItem.matchId, status: "FAILED" });
-        continue;
-      }
-
-      // @ts-ignore
-      let signalsToDeliver = auditResult.classifiedSignals || [];
-      
-      if (signalsToDeliver.length > 0) {
-        const telegramDispatcher = new TelegramDispatcher();
-        // @ts-ignore
-        await telegramDispatcher.dispatch(signalsToDeliver, auditResult.regime).catch(() => {});
-      }
-
-      processedResults.push({ matchId: nextItem.matchId, status: "SUCCESS", signalsCount: signalsToDeliver.length });
+      processedResults.push({ 
+        matchId: nextItem.matchId, 
+        status: auditResult.status, 
+        signalsCount: (auditResult as any).distributedSignals?.length || 0 
+      });
     }
 
     return NextResponse.json({ status: "BATCH_PROCESSED", totalProcessed: processedResults.length, results: processedResults });

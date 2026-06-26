@@ -1,10 +1,9 @@
 // ============================================================
-// RESILIENT ORCHESTRATOR v5.5.0 — SINGLE-PASS ARCHITECTURE
-// Processamento Direto de Objetos e Eliminação de 404
+// RESILIENT ORCHESTRATOR v6.0.0 — SYNDICATE MASTER
+// Processamento Direto de Objetos e Auditoria Master v6
 // ============================================================
 
 import { ArgosOrchestratorV4 } from "@/lib/argos/orchestrator/ArgosOrchestratorV4";
-import { circuitBreakerPool } from "@/lib/core/CircuitBreaker";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 import { DataIngestionService } from "@/lib/core/DataIngestionService";
 import { BatchQueueService, QueueStatus } from "@/lib/core/BatchQueueService";
@@ -21,8 +20,7 @@ export class ResilientOrchestratorV5 {
   }
 
   /**
-   * Execução Single-Pass: Processa o objeto completo vindo da Mega Call.
-   * Elimina a necessidade de chamadas extras e erros 404.
+   * Execução Single-Pass Master v6.0.0.
    */
   async runSinglePassAudit(
     fixture: any,
@@ -30,30 +28,19 @@ export class ResilientOrchestratorV5 {
     queueItemId?: string
   ) {
     const startTime = Date.now();
-    const matchId = (fixture.id || fixture.fixture?.id || fixture.match_id).toString();
+    const matchId = (fixture.id || fixture.fixture?.id || fixture.match_id || fixture.matchId).toString();
 
     try {
-      console.log(`[Argos-SinglePass] Iniciando auditoria direta para ${matchId}...`);
+      console.log(`[Argos-v6] 🛡️ Iniciando Auditoria Master para ${matchId}...`);
 
-      // 1. INGEST DE OBJETO (Persistência + Normalização)
-      // O DataIngestionService.ingestObject agora faz o trabalho sem chamadas de API
-      const ingestedData = await this.ingestionService.ingestObject(fixture);
+      // Auditoria Master v6.0.0 (Integração de todos os motores)
+      const auditResult = await this.orchestrator.runSyndicateAudit(fixture);
 
-      // 2. AUDITORIA ZERO-TOUCH
-      // Chamamos a lógica de análise passando os dados já ingeridos
-      // Nota: Ajustamos o orchestrator para aceitar os dados injetados se necessário, 
-      // ou deixamos ele usar o matchId pois ele consultará o cache/DB que acabamos de popular.
-      const auditResult = await this.orchestrator.runZeroTouchAudit(
-        matchId,
-        requestedVerticals
-      );
-
-      // 3. ATUALIZAÇÃO DE FILA
+      // Atualização de Fila
       if (queueItemId) {
-        await this.batchQueue.updateStatus(queueItemId, QueueStatus.COMPLETED);
+        const status = auditResult.status === "SUCCESS" ? QueueStatus.COMPLETED : QueueStatus.FAILED;
+        await this.batchQueue.updateStatus(queueItemId, status);
       }
-
-      console.log(`[Argos-Processamento] Evento ${matchId} concluído com sucesso (Single-Pass).`);
 
       return {
         ...auditResult,
@@ -64,15 +51,12 @@ export class ResilientOrchestratorV5 {
       const executionTime = Date.now() - startTime;
 
       if (error.message?.includes("EXPIRED") || error.response?.status === 404) {
-        console.log(`[Argos-Resilience] Evento ${matchId} expirado ou não encontrado. Marcando como EXPIRED.`);
         if (queueItemId) {
           await this.batchQueue.updateStatus(queueItemId, QueueStatus.REJECTED, "EXPIRED");
         }
         return { status: "SUCCESS", matchId, error: "EXPIRED", executionTimeMs: executionTime };
       }
 
-      console.error(`[ResilientOrchestratorV5] Erro crítico no Single-Pass ${matchId}:`, error.message);
-      
       if (queueItemId) {
         await this.batchQueue.updateStatus(queueItemId, QueueStatus.FAILED, error.message);
       }
@@ -87,7 +71,7 @@ export class ResilientOrchestratorV5 {
   }
 
   /**
-   * Método Legado (v5.3.4): Mantido para compatibilidade com workers que ainda enviam apenas matchId.
+   * Fallback para chamadas com matchId.
    */
   async runZeroTouchAuditWithResilience(
     matchId: string,
@@ -96,7 +80,13 @@ export class ResilientOrchestratorV5 {
     liveData?: { score: { home: number; away: number }; elapsed: number },
     queueItemId?: string
   ) {
-    console.warn(`[Argos-Legacy] Usando orquestração legada para ${matchId}.`);
-    return this.runSinglePassAudit({ id: matchId }, requestedVerticals, queueItemId);
+    // Na v6.0.0, precisamos do payload completo. Se não tivermos, tentamos buscar no banco/cache.
+    const ingestedData = await this.ingestionService.getCachedMatchData(matchId);
+    
+    if (ingestedData) {
+      return this.runSinglePassAudit(ingestedData.rawData, requestedVerticals, queueItemId);
+    }
+
+    return { status: "FAILED", matchId, error: "DATA_NOT_FOUND_FOR_LEGACY_CALL" };
   }
 }
