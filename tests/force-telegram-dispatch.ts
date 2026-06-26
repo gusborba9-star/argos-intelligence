@@ -1,48 +1,60 @@
-
 import { TelegramDispatcher } from "../lib/argos/notifications/TelegramDispatcher";
+import { RegimeProfile } from "../lib/argos/regime/RegimeSchema";
 import { MarketVertical } from "../lib/core/ArgosUnifiedEngine";
-import { SignalType } from "../lib/core/SignalClassifierV4";
 
+/**
+ * SCRIPT DE TESTE FORÇADO v6.0.0 — SYNDICATE MASTER
+ * Execução via ts-node para validação rápida de canais.
+ */
 async function runTest() {
-    console.log("🚀 Iniciando Teste de Disparo Forçado do Argos...");
+    console.log("🚀 Iniciando Teste de Disparo Forçado do Argos v6.0.0...");
     
     const dispatcher = new TelegramDispatcher();
     
-    // Simulação de sinais que devem passar nos filtros
+    const mockRegime: RegimeProfile = {
+        regime: "STABLE" as any,
+        confidence: 0.95,
+        model_bias: 0,
+        variance_multiplier: 1.0,
+        reasoning_tags: ["MANUAL_TEST"],
+        explanation: "Teste manual de despacho v6.0.0"
+    };
+
     const mockSignals = [
         {
-            id: "test-vip-1",
-            vertical: MarketVertical.GOALS,
-            market: "OVER 2.5 GOALS",
-            probability: 0.85,
-            expectedValue: 0.15,
-            odds: 1.95,
-            status: "OPTIMIZED",
-            signal_type: SignalType.VALUE,
-            confidence_score: 0.90
+            id: "test-vip-manual",
+            tier: "VIP",
+            home_team: "Flamengo",
+            away_team: "Palmeiras",
+            vertical: MarketVertical.WINNER,
+            selection: "HOME_WIN",
+            line: 0,
+            odd: 1.95,
+            fairOdd: 1.80,
+            edge: 0.08,
+            probability: 0.55,
+            confidence: 0.90,
+            kellyCriterion: 0.04
         },
         {
-            id: "test-free-1",
-            vertical: MarketVertical.WINNER,
-            market: "HOME WIN",
-            probability: 0.75,
-            expectedValue: -0.05,
-            odds: 1.65,
-            status: "HEDGED",
-            signal_type: SignalType.VALIDATION,
-            confidence_score: 0.85
+            id: "test-free-manual",
+            tier: "FREE",
+            home_team: "Man City",
+            away_team: "Liverpool",
+            vertical: MarketVertical.GOALS,
+            selection: "OVER",
+            line: 2.5,
+            odd: 1.75,
+            fairOdd: 1.60,
+            edge: 0.09,
+            probability: 0.62,
+            confidence: 0.92,
+            kellyCriterion: 0.06
         }
     ];
 
-    const mockRegime = {
-        regime: "AGGRESSIVE",
-        confidence: 0.88,
-        bias: "BULLISH",
-        description: "Teste de Sistema Argos - Fluxo Operacional Validado"
-    };
-
-    console.log("📦 Despachando sinais de teste...");
-    await dispatcher.dispatch(mockSignals as any, mockRegime);
+    console.log("📦 Despachando sinais de teste v6.0.0...");
+    await dispatcher.dispatch(mockSignals, mockRegime);
     console.log("✅ Teste concluído. Verifique os canais do Telegram.");
 }
 

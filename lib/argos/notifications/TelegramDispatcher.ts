@@ -1,11 +1,10 @@
 import axios from 'axios';
-import { ArgosSignal } from '@/lib/core/contracts/SignalContract';
+import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
 
-// ============================================================
-// TELEGRAM DISPATCHER v5.1 — SYNDICATE DISTRIBUTION
-// Distribuição de sinais com variáveis cravadas e CTAs de conversão
-// ============================================================
-
+/**
+ * TELEGRAM DISPATCHER v6.0.0 — SYNDICATE MASTER DISTRIBUTION
+ * Distribuição seletiva com foco em conversão e transparência VIP.
+ */
 export class TelegramDispatcher {
   private botToken: string;
   private freeChannelId: string;
@@ -13,95 +12,78 @@ export class TelegramDispatcher {
   private readonly VIP_LINK = "https://t.me/+T_gr8u0lKTpjMmMx";
 
   constructor() {
-    // Variáveis cravadas conforme solicitado pelo Diretor
-    this.botToken = process.env.TELEGRAM_BOT_TOKEN || '';
-    this.freeChannelId = process.env.TELEGRAM_FREE_CHANNEL_ID || '';
-    this.vipChannelId = process.env.TELEGRAM_CHAT_ID || ''; 
-    
-    if (this.botToken) {
-      console.log(`[Telegram] Inicializado. VIP: ${this.vipChannelId}, FREE: ${this.freeChannelId}`);
-    } else {
-      console.error("[Telegram] ERRO: TELEGRAM_BOT_TOKEN ausente.");
-    }
+    this.botToken = process.env.TELEGRAM_BOT_TOKEN || "";
+    this.freeChannelId = process.env.TELEGRAM_FREE_CHANNEL_ID || "";
+    this.vipChannelId = process.env.TELEGRAM_CHAT_ID || ""; 
   }
 
-  public async dispatch(signals: ArgosSignal[], regimeInfo?: any): Promise<void> {
-    if (!this.botToken) return;
+  /**
+   * Despacha sinais de forma seletiva para os canais FREE e VIP.
+   */
+  async dispatch(signals: any[], regime: RegimeProfile): Promise<void> {
+    if (!this.botToken || signals.length === 0) return;
 
     for (const signal of signals) {
-      try {
-        const tier = signal.tier;
+      // 1. Envio para o VIP (Recebe TUDO: FREE + VIP)
+      if (signal.tier === "VIP" || signal.tier === "FREE") {
+        await this.sendToTelegram(this.vipChannelId, this.formatVipMessage(signal, regime), 'HTML');
+      }
 
-        // 1. VIP recebe TUDO (Varredura profunda, Multi-Vertical, Ev+)
-        if (this.vipChannelId && (tier === "VIP" || tier === "FREE")) {
-          await this.sendToVip(signal, regimeInfo);
-        }
-
-        // 2. FREE recebe apenas Isca (Alta Probabilidade, 2 Verticais, mesmo sem Ev+)
-        if (this.freeChannelId && tier === "FREE") {
-          await this.sendToFree(signal);
-        }
-      } catch (error: any) {
-        console.error(`[Telegram] Erro no sinal ${signal.market}:`, error.message);
+      // 2. Envio para o FREE (Recebe apenas o filé com CTA)
+      if (signal.tier === "FREE") {
+        await this.sendToTelegram(this.freeChannelId, this.formatFreeMessage(signal), 'HTML');
       }
     }
   }
 
-  private async sendToVip(signal: ArgosSignal, regimeInfo?: any): Promise<void> {
-    const ev = (signal.expectedValue * 100).toFixed(2);
-    const prob = (signal.probability * 100).toFixed(2);
+  private formatVipMessage(signal: any, regime: RegimeProfile): string {
+    const edgeEmoji = signal.edge > 0.1 ? "💎" : "✅";
+    const ev = (signal.edge * 100).toFixed(2);
+    const prob = (signal.probability * 100).toFixed(0);
     
-    const message = `💎 <b>ARGOS VIP | SYNDICATE INTELLIGENCE</b>
+    return `<b>${edgeEmoji} OPORTUNIDADE VIP | ARGOS v6.0</b>
 ──────────────────────
-🏟️ <b>MERCADO:</b> <code>${signal.market.toUpperCase()}</code>
-📈 <b>VERTICAL:</b> <code>${signal.vertical.replace('_', ' ')}</code>
+🏟️ <b>JOGO:</b> <code>${signal.home_team || 'Time A'} vs ${signal.away_team || 'Time B'}</code>
+🎯 <b>MERCADO:</b> <code>${signal.vertical}</code>
+📊 <b>LINHA:</b> <code>${signal.line}</code>
 ──────────────────────
-🎯 <b>PROBABILIDADE:</b> <code>${prob}%</code>
-💰 <b>ODD MÍNIMA:</b> <code>${signal.impliedOdds?.toFixed(2) || 'N/A'}</code>
-📊 <b>EXPECTED VALUE:</b> <code>${Number(ev) > 0 ? '+' : ''}${ev}%</code>
-🛡️ <b>STATUS:</b> <code>${signal.status}</code>
+💰 <b>ODD:</b> <code>${signal.odd.toFixed(2)}</code> (Fair: <code>${signal.fairOdd.toFixed(2)}</code>)
+📈 <b>EDGE:</b> <code>${Number(ev) > 0 ? '+' : ''}${ev}%</code>
+🧠 <b>CONFIANÇA:</b> <code>${prob}%</code>
 ──────────────────────
-🧠 <b>ANÁLISE PROFUNDA:</b>
-• <b>Simulação:</b> <code>10.000 Monte Carlo Runs</code>
-• <b>Regime:</b> <code>${regimeInfo?.regime || 'STABLE'}</code>
-• <b>Confiança:</b> <code>${(regimeInfo?.confidence * 100 || 85).toFixed(0)}%</code>
+🏛️ <b>REGIME:</b> <code>${regime.regime}</code>
+📐 <b>KELLY:</b> <code>${(signal.kellyCriterion * 100).toFixed(1)}%</code>
 ──────────────────────
-<i>Argos v5.1 | Industrial Syndicate Engine</i>`;
-
-    await this.sendMessage(this.vipChannelId, message);
+<i>Argos Syndicate Master Engine</i>`;
   }
 
-  private async sendToFree(signal: ArgosSignal): Promise<void> {
-    const prob = (signal.probability * 100).toFixed(2);
-    
-    const message = `🔥 <b>ARGOS FREE | ALTA ASSERTIVIDADE</b>
+  private formatFreeMessage(signal: any): string {
+    const prob = (signal.probability * 100).toFixed(0);
+    return `🔥 <b>SINAL FREE | ALTA ASSERTIVIDADE</b>
 ──────────────────────
-🏟️ <b>JOGO:</b> <code>${signal.market.toUpperCase()}</code>
-🎯 <b>ENTRADA:</b> <code>${signal.vertical.replace('_', ' ')}</code>
+🏟️ <b>JOGO:</b> <code>${signal.home_team || 'Time A'} vs ${signal.away_team || 'Time B'}</code>
+🎯 <b>ENTRADA:</b> <code>${signal.vertical}</code>
+📊 <b>CONFIANÇA:</b> <code>${prob}%</code>
 ──────────────────────
-✅ <b>CONFIANÇA:</b> <code>${prob}%</code>
-🛡️ <b>FILTRO:</b> <code>SYNDICATE QUALITY PASSED</code>
-──────────────────────
-🚀 <b>QUER O FILÉ COM EV+ E ANÁLISE PROFUNDA?</b>
-💎 <b>TENHA ACESSO AO NOSSO CÉREBRO COMPLETO.</b>
+🚀 <b>QUER O EDGE REAL E TODAS AS VERTICAIS?</b>
+As melhores oportunidades com +10% de Edge estão no VIP.
+
 👉 <b>VIP:</b> <a href="${this.VIP_LINK}">CLIQUE AQUI PARA ENTRAR</a>
 ──────────────────────
-<i>Argos v5.1 | Syndicate Marketing Layer</i>`;
-
-    await this.sendMessage(this.freeChannelId, message);
+<i>Argos Syndicate Marketing Layer</i>`;
   }
 
-  private async sendMessage(chatId: string, text: string): Promise<void> {
-    const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
+  private async sendToTelegram(chatId: string, text: string, parseMode: string): Promise<void> {
+    if (!chatId) return;
     try {
-      await axios.post(url, {
+      await axios.post(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
         chat_id: chatId,
         text: text,
-        parse_mode: 'HTML',
+        parse_mode: parseMode,
         disable_web_page_preview: true
-      }, { timeout: 10000 });
+      });
     } catch (error: any) {
-      console.error(`[Telegram] FALHA (Chat: ${chatId}):`, error.message);
+      console.error(`[Telegram-Error] Falha ao enviar para ${chatId}:`, error.message);
     }
   }
 }

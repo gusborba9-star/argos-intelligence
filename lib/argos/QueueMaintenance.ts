@@ -1,28 +1,36 @@
-import { getSupabaseClient } from "../core/SupabaseClient";
+import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 
-async function runMaintenance() {
-  const supabase = getSupabaseClient();
-  console.log("[QueueMaintenance] Iniciando verificação da fila...");
+/**
+ * QUEUE MAINTENANCE v6.0.0 — SYNDICATE EDITION
+ * Limpeza de itens expirados e otimização da fila de processamento.
+ */
+export class QueueMaintenance {
+  private static supabase = getSupabaseClient();
 
-  const { data: queuedItems, error } = await supabase
-    .from("argos_batch_queue")
-    .select("id, match_id, status")
-    .eq("match_id", "1524942");
+  public static async cleanup(): Promise<void> {
+    console.log("[Argos-Maintenance] 🧹 Iniciando limpeza de fila v6.0.0...");
+    
+    // 1. Marcar como EXPIRED itens com mais de 12h na fila
+    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+    
+    const { error: expireError } = await this.supabase
+      .from("argos_batch_queue")
+      .update({ status: "EXPIRED" })
+      .eq("status", "QUEUED")
+      .lt("created_at", twelveHoursAgo);
 
-  if (error) {
-    console.error("[QueueMaintenance] Erro ao buscar fila:", error.message);
-    return;
-  }
+    if (expireError) console.error("[Maintenance] Erro ao expirar itens:", expireError.message);
 
-  console.log(`[QueueMaintenance] Encontrados ${queuedItems?.length || 0} itens na fila.`);
-  
-  for (const item of queuedItems || []) {
-    console.log(`- Item ID: ${item.id}, Match ID: ${item.match_id}, Status: ${item.status}`);
-    if (item.match_id === "1524942") {
-      console.log(`[QueueMaintenance] Removendo ID problemático: ${item.match_id}`);
-      await supabase.from("argos_batch_queue").delete().eq("id", item.id);
-    }
+    // 2. Limpar logs de auditoria antigos (> 7 dias)
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    
+    const { error: logError } = await this.supabase
+      .from("argos_signal_ledger")
+      .delete()
+      .lt("created_at", sevenDaysAgo);
+
+    if (logError) console.error("[Maintenance] Erro ao limpar ledger:", logError.message);
+
+    console.log("[Argos-Maintenance] ✅ Limpeza concluída.");
   }
 }
-
-runMaintenance();

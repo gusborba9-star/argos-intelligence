@@ -1,7 +1,7 @@
 import crypto from "crypto";
 
 // ============================================================
-// ARGOS v5.1 — SYNDICATE QUANT ENGINE
+// ARGOS v6.0.0 — SYNDICATE QUANT ENGINE
 // Ensemble Adaptive • Multi-Vertical Scanning • Value-Focused
 // ============================================================
 
@@ -9,9 +9,9 @@ export const MIN_PROB = 0.02;
 export const MAX_PROB = 0.98;
 export const MIN_ODDS = 1.01;
 export const MAX_ODDS = 50.0;
-export const BASE_EDGE = 0.002; // Threshold reduzido para varredura profunda
+export const BASE_EDGE = 0.002; 
 export const MAX_EXPOSURE = 5.0;
-export const TOP_K = 6; // Mais sinais por vertical para o VIP
+export const TOP_K = 6; 
 
 export enum MarketVertical {
   WINNER = "WINNER",
@@ -25,14 +25,15 @@ export enum MarketVertical {
   BTTS = "BTTS",
   TACKLES = "TACKLES",
   HANDICAP = "HANDICAP",
-  SAVES = "SAVES" // Adicionado: Defesas de Goleiro
+  SAVES = "SAVES",
+  UNKNOWN = "UNKNOWN" // Adicionado para compatibilidade v6.0.0
 }
 
 export enum ModelType {
   BASE = "BASE",
   DEFENSIVE = "DEFENSIVE",
   AGGRESSIVE = "AGGRESSIVE",
-  MONTE_CARLO = "MONTE_CARLO" // Simulação de 10k partidas
+  MONTE_CARLO = "MONTE_CARLO"
 }
 
 export interface MatchContextInput {
@@ -63,7 +64,7 @@ export interface Signal {
 }
 
 export class ArgosUnifiedEngine {
-  private static readonly VERSION = "ARGOS_v5.1_SYNDICATE_CORE";
+  private static readonly VERSION = "ARGOS_v6.0.0_MASTER";
 
   public static analyze(input: MatchContextInput) {
     if (!input?.matchId) throw new Error("invalid matchId");
@@ -91,8 +92,6 @@ export class ArgosUnifiedEngine {
       for (const m of markets as any) {
         const p = this.clamp(m.probability);
         const ev = p * m.impliedOdds - 1;
-        
-        // Varredura profunda: mesmo com EV baixo, se a probabilidade for alta, mantemos para o FREE
         if (ev < BASE_EDGE && p < 0.70) continue;
 
         out.push({
@@ -109,10 +108,9 @@ export class ArgosUnifiedEngine {
   }
 
   private static fuse(signals: Signal[]): Signal[] {
-    // Lógica de consenso simplificada para v5.1
     return signals.map(s => ({
       ...s,
-      adjustedProbability: this.clamp(s.probability * 1.02) // Ajuste de confiança do Syndicate
+      adjustedProbability: this.clamp(s.probability * 1.02)
     }));
   }
 
