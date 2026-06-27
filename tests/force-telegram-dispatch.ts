@@ -1,59 +1,57 @@
-import { TelegramDispatcher } from "../lib/argos/notifications/TelegramDispatcher";
-import { RegimeProfile } from "../lib/argos/regime/RegimeSchema";
+import { TelegramDispatcher, TelegramSignalPayload } from "../lib/argos/notifications/TelegramDispatcher";
 import { MarketVertical } from "../lib/core/ArgosUnifiedEngine";
+import { RegimeProfile, MarketRegime } from "../lib/argos/regime/RegimeSchema";
 
 /**
- * SCRIPT DE TESTE FORÇADO v6.0.0 — SYNDICATE MASTER
+ * SCRIPT DE TESTE FORÇADO v6.1.0 — SYNDICATE MASTER
  * Execução via ts-node para validação rápida de canais.
  */
 async function runTest() {
-    console.log("🚀 Iniciando Teste de Disparo Forçado do Argos v6.0.0...");
+    console.log("🚀 Iniciando Teste de Disparo Forçado do Argos v6.1.0...");
     
     const dispatcher = new TelegramDispatcher();
     
     const mockRegime: RegimeProfile = {
-        regime: "STABLE" as any,
+        regime: MarketRegime.NORMAL,
         confidence: 0.95,
         model_bias: 0,
         variance_multiplier: 1.0,
         reasoning_tags: ["MANUAL_TEST"],
-        explanation: "Teste manual de despacho v6.0.0"
+        explanation: "Teste manual de despacho v6.1.0"
     };
 
-    const mockSignals = [
+    const mockSignals: TelegramSignalPayload[] = [
         {
-            id: "test-vip-manual",
-            tier: "VIP",
-            home_team: "Flamengo",
-            away_team: "Palmeiras",
+            matchName: "Flamengo vs Palmeiras",
+            leagueName: "Brasileirão",
+            kickoffTime: new Date().toISOString(),
             vertical: MarketVertical.WINNER,
-            selection: "HOME_WIN",
-            line: 0,
+            selection: "Flamengo",
             odd: 1.95,
             fairOdd: 1.80,
-            edge: 0.08,
+            expectedValue: 0.08,
             probability: 0.55,
-            confidence: 0.90,
-            kellyCriterion: 0.04
+            kellyCriterion: 0.04,
+            ratingLabel: "VALUE",
+            tier: "VIP",
+            analysisSummary: "Duelo de elite com valor no mandante."
         },
         {
-            id: "test-free-manual",
-            tier: "FREE",
-            home_team: "Man City",
-            away_team: "Liverpool",
+            matchName: "Man City vs Liverpool",
+            leagueName: "Premier League",
+            kickoffTime: new Date().toISOString(),
             vertical: MarketVertical.GOALS,
-            selection: "OVER",
-            line: 2.5,
+            selection: "Over 2.5",
             odd: 1.75,
             fairOdd: 1.60,
-            edge: 0.09,
+            expectedValue: 0.09,
             probability: 0.62,
-            confidence: 0.92,
-            kellyCriterion: 0.06
+            tier: "FREE",
+            analysisSummary: "Alta probabilidade de gols em jogo aberto."
         }
     ];
 
-    console.log("📦 Despachando sinais de teste v6.0.0...");
+    console.log("📦 Despachando sinais de teste v6.1.0...");
     await dispatcher.dispatch(mockSignals, mockRegime);
     console.log("✅ Teste concluído. Verifique os canais do Telegram.");
 }

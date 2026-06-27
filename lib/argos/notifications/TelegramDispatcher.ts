@@ -1,80 +1,129 @@
-import axios from 'axios';
+import axios from "axios";
 import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
 
-/**
- * TELEGRAM DISPATCHER v6.0.0 — SYNDICATE MASTER DISTRIBUTION
- * Distribuição seletiva com foco em conversão e transparência VIP.
- */
+// ============================================================
+// TELEGRAM DISPATCHER v6.0.0 — SYNDICATE MASTER EDITION
+// Gestão de Canais FREE e VIP com CTAs dinâmicos.
+// Formatação profissional e automação de convites.
+// ============================================================
+
+export interface TelegramSignalPayload {
+  matchName: string;
+  leagueName: string;
+  kickoffTime: string;
+  vertical: string;
+  selection: string;
+  odd: number;
+  fairOdd: number;
+  expectedValue: number;
+  probability: number;
+  kellyCriterion?: number;
+  ratingLabel?: string;
+  analysisSummary?: string;
+  tier: "FREE" | "VIP";
+  source?: string;
+  line?: number;
+}
+
 export class TelegramDispatcher {
   private botToken: string;
-  private freeChannelId: string;
-  private vipChannelId: string;
+  private vipChatId: string;
+  private freeChatId: string;
+  
   private readonly VIP_LINK = "https://t.me/+T_gr8u0lKTpjMmMx";
+  private readonly VIP_UPGRADE_URL = "https://argos-intelligence.app/upgrade";
 
   constructor() {
     this.botToken = process.env.TELEGRAM_BOT_TOKEN || "";
-    this.freeChannelId = process.env.TELEGRAM_FREE_CHANNEL_ID || "";
-    this.vipChannelId = process.env.TELEGRAM_CHAT_ID || ""; 
+    this.vipChatId = process.env.TELEGRAM_CHAT_ID || ""; 
+    this.freeChatId = process.env.TELEGRAM_FREE_CHANNEL_ID || ""; 
   }
 
   /**
    * Despacha sinais de forma seletiva para os canais FREE e VIP.
    */
-  async dispatch(signals: any[], regime: RegimeProfile): Promise<void> {
+  async dispatch(signals: TelegramSignalPayload[], regime?: RegimeProfile): Promise<void> {
     if (!this.botToken || signals.length === 0) return;
 
     for (const signal of signals) {
-      // 1. Envio para o VIP (Recebe TUDO: FREE + VIP)
-      if (signal.tier === "VIP" || signal.tier === "FREE") {
-        await this.sendToTelegram(this.vipChannelId, this.formatVipMessage(signal, regime), 'HTML');
-      }
+      // 1. Envio para o VIP (Recebe TUDO)
+      await this.sendToTelegram(this.vipChatId, this.formatVipMessage(signal, regime), 'HTML');
 
       // 2. Envio para o FREE (Recebe apenas o filé com CTA)
       if (signal.tier === "FREE") {
-        await this.sendToTelegram(this.freeChannelId, this.formatFreeMessage(signal), 'HTML');
+        await this.sendToTelegram(this.freeChatId, this.formatFreeMessage(signal), 'HTML');
       }
     }
   }
 
-  private formatVipMessage(signal: any, regime: RegimeProfile): string {
-    const edgeEmoji = signal.edge > 0.1 ? "💎" : "✅";
-    const ev = (signal.edge * 100).toFixed(2);
-    const prob = (signal.probability * 100).toFixed(0);
+  private formatVipMessage(p: TelegramSignalPayload, regime?: RegimeProfile): string {
+    const header = "💎 <b>ARGOS VIP | SYNDICATE MASTER</b>";
+    const emoji = this.getVerticalEmoji(p.vertical);
+    const rating = p.ratingLabel === "ELITE" ? "⭐️ ELITE" : "✅ VALUE";
+    const ev = (p.expectedValue * 100).toFixed(2);
+    const prob = (p.probability * 100).toFixed(0);
     
-    return `<b>${edgeEmoji} OPORTUNIDADE VIP | ARGOS v6.0</b>
-──────────────────────
-🏟️ <b>JOGO:</b> <code>${signal.source || 'Partida'}</code>
-🎯 <b>MERCADO:</b> <code>${signal.vertical}</code>
-📊 <b>LINHA:</b> <code>${signal.line}</code>
-──────────────────────
-💰 <b>ODD:</b> <code>${signal.odd.toFixed(2)}</code> (Fair: <code>${signal.fairOdd.toFixed(2)}</code>)
-📈 <b>EDGE:</b> <code>${Number(ev) > 0 ? '+' : ''}${ev}%</code>
-🧠 <b>CONFIANÇA:</b> <code>${prob}%</code>
-──────────────────────
-🏛️ <b>REGIME:</b> <code>${regime.regime}</code>
-📐 <b>KELLY:</b> <code>${(signal.kellyCriterion * 100).toFixed(1)}%</code>
-──────────────────────
-<i>Argos Syndicate Master Engine</i>`;
+    let msg = `${header}\n`;
+    msg += `──────────────────────\n`;
+    msg += `⚽️ <b>${p.matchName || p.source}</b>\n`;
+    msg += `🏆 ${p.leagueName || "Liga de Elite"}\n`;
+    msg += `⏰ ${p.kickoffTime ? new Date(p.kickoffTime).toLocaleString("pt-BR") : "Horário a confirmar"}\n\n`;
+    
+    msg += `🎯 <b>Entrada:</b> ${emoji} ${p.vertical} ${p.line ? `(${p.line})` : ""}\n`;
+    msg += `📝 <b>Seleção:</b> <code>${p.selection}</code>\n`;
+    msg += `📈 <b>Odd Atual:</b> <code>${p.odd.toFixed(2)}</code> (Fair: <code>${p.fairOdd.toFixed(2)}</code>)\n`;
+    msg += `📊 <b>Edge:</b> <code>${Number(ev) > 0 ? '+' : ''}${ev}%</code>\n`;
+    msg += `🧠 <b>Confiança:</b> <code>${prob}%</code>\n`;
+    
+    if (p.kellyCriterion) {
+      msg += `📏 <b>Kelly (1/4):</b> <code>${(p.kellyCriterion * 100).toFixed(1)}%</code>\n`;
+    }
+
+    msg += `──────────────────────\n`;
+    if (regime) {
+      msg += `🏛️ <b>REGIME:</b> <code>${regime.regime}</code>\n`;
+    }
+    msg += `🤖 <b>Análise:</b> ${p.analysisSummary || "Alta confiança baseada em Monte Carlo e Regime de Mercado."}\n`;
+    msg += `──────────────────────\n`;
+    msg += `${rating}`;
+
+    return msg;
   }
 
-  private formatFreeMessage(signal: any): string {
-    const prob = (signal.probability * 100).toFixed(0);
-    return `🔥 <b>SINAL FREE | ALTA ASSERTIVIDADE</b>
-──────────────────────
-🏟️ <b>JOGO:</b> <code>${signal.source || 'Partida'}</code>
-🎯 <b>ENTRADA:</b> <code>${signal.vertical}</code>
-📊 <b>CONFIANÇA:</b> <code>${prob}%</code>
-──────────────────────
-🚀 <b>QUER O EDGE REAL E TODAS AS VERTICAIS?</b>
-As melhores oportunidades com +10% de Edge estão no VIP.
+  private formatFreeMessage(p: TelegramSignalPayload): string {
+    const prob = (p.probability * 100).toFixed(0);
+    return `🔥 <b>SINAL FREE | ALTA ASSERTIVIDADE</b>\n` +
+    `──────────────────────\n` +
+    `🏟️ <b>JOGO:</b> <code>${p.matchName || p.source}</code>\n` +
+    `🎯 <b>ENTRADA:</b> <code>${p.vertical}</code>\n` +
+    `📊 <b>CONFIANÇA:</b> <code>${prob}%</code>\n` +
+    `──────────────────────\n` +
+    `🚀 <b>QUER O EDGE REAL E TODAS AS VERTICAIS?</b>\n` +
+    `As melhores oportunidades com +10% de Edge estão no VIP.\n\n` +
+    `👉 <b>VIP:</b> <a href="${this.VIP_LINK}">CLIQUE AQUI PARA ENTRAR</a>\n` +
+    `──────────────────────\n` +
+    `<i>Argos Syndicate Marketing Layer</i>`;
+  }
 
-👉 <b>VIP:</b> <a href="${this.VIP_LINK}">CLIQUE AQUI PARA ENTRAR</a>
-──────────────────────
-<i>Argos Syndicate Marketing Layer</i>`;
+  /**
+   * Gera link de convite único para o canal VIP
+   */
+  async createVipInviteLink(userId: string): Promise<string | null> {
+    try {
+      const response = await axios.post(`https://api.telegram.org/bot${this.botToken}/createChatInviteLink`, {
+        chat_id: this.vipChatId,
+        name: `Acesso VIP - User ${userId}`,
+        member_limit: 1, 
+      });
+      return response.data.result.invite_link;
+    } catch (error: any) {
+      console.error("[Telegram] Erro ao criar link de convite:", error.response?.data || error.message);
+      return null;
+    }
   }
 
   private async sendToTelegram(chatId: string, text: string, parseMode: string): Promise<void> {
-    if (!chatId) return;
+    if (!chatId || !this.botToken) return;
     try {
       await axios.post(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
         chat_id: chatId,
@@ -86,4 +135,21 @@ As melhores oportunidades com +10% de Edge estão no VIP.
       console.error(`[Telegram-Error] Falha ao enviar para ${chatId}:`, error.message);
     }
   }
+
+  private getVerticalEmoji(v: string): string {
+    const m: Record<string, string> = {
+      WINNER: "🏁",
+      GOALS: "⚽️",
+      GOALS_HT: "⏱",
+      CORNERS: "🚩",
+      CARDS: "🟨",
+      SHOTS: "🚀",
+      SHOTS_ON_TARGET: "🎯",
+      BTTS: "🔄",
+      HANDICAP: "⚖️",
+    };
+    return m[v] || "🔹";
+  }
 }
+
+export const telegramDispatcher = new TelegramDispatcher();

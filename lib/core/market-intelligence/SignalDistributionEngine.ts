@@ -1,21 +1,19 @@
 import { Opportunity } from "./MarketDiscoveryEngine";
 import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
+import { telegramDispatcher, TelegramSignalPayload } from "@/lib/argos/notifications/TelegramDispatcher";
 
 // ============================================================
-// SIGNAL DISTRIBUTION ENGINE v6.0.0 — SYNDICATE MASTER EDITION
+// SIGNAL DISTRIBUTION ENGINE v6.1.0 — SYNDICATE MASTER EDITION
 //
 // FREE:
 //   - Objetivo: retenção e marketing
 //   - Máximo 2 mercados por jogo
 //   - Alta probabilidade (>= 72%)
-//   - Sinais visualmente fortes
-//   - Pode existir sem EV positivo
-//   - Não entrega toda a inteligência
+//   - Pode existir sem EV positivo (foco em assertividade bruta)
 //
 // VIP:
 //   - Recebe todos os mercados com EV+
-//   - Edge, Fair Odds, análise profunda
-//   - Contexto RAG, confiança, Kelly Fractional
+//   - Edge, Fair Odds, análise profunda (Monte Carlo + RAG)
 // ============================================================
 
 export interface DistributedSignal extends Opportunity {
@@ -26,21 +24,21 @@ export interface DistributedSignal extends Opportunity {
 }
 
 // Thresholds Syndicate Master
-const FREE_MIN_PROBABILITY = 0.72;   // Prob mínima para sinal FREE (alta assertividade)
-const FREE_MAX_SIGNALS = 2;          // Máximo de sinais FREE por partida
-const VIP_MIN_PROBABILITY = 0.52;    // Prob mínima para sinal VIP
-const VIP_MIN_EV = 0.04;             // EV mínimo para sinal VIP (4%)
-const VIP_MIN_EDGE = 0.04;           // Edge mínimo para sinal VIP
+const FREE_MIN_PROBABILITY = 0.72;   
+const FREE_MAX_SIGNALS = 2;          
+const VIP_MIN_PROBABILITY = 0.52;    
+const VIP_MIN_EV = 0.02;             // Reduzido para capturar mais valor real (2%)
+const VIP_MIN_EDGE = 0.02;           
 
 export class SignalDistributionEngine {
   /**
-   * Classifica e distribui sinais com base nas regras Syndicate Master.
-   * FREE: retenção/marketing — VIP: inteligência completa com EV+.
+   * Classifica, distribui e DESPACHA sinais para o Telegram.
    */
-  public static process(
+  public static async processAndDispatch(
     opportunities: Opportunity[],
-    regime: RegimeProfile
-  ): DistributedSignal[] {
+    regime: RegimeProfile,
+    matchContext: { name: string; league: string; kickoff: string }
+  ): Promise<DistributedSignal[]> {
     const distributed: DistributedSignal[] = [];
     let freeCount = 0;
 
@@ -51,12 +49,13 @@ export class SignalDistributionEngine {
       return priorityB - priorityA;
     });
 
+    const signalsToDispatch: TelegramSignalPayload[] = [];
+
     for (const op of sortedOps) {
       const priority = op.edge * 0.6 + op.confidence * 0.4;
       let tier: "FREE" | "VIP" | "NONE" = "NONE";
 
-      // ── VIP: Todos os mercados com EV+ e edge consistente ──────────────
-      // Recebe análise profunda: EV, Edge, Fair Odds, Kelly, contexto RAG
+      // 1. VIP: Todos os mercados com EV+ consistente
       const isVip =
         op.probability >= VIP_MIN_PROBABILITY &&
         op.expectedValue >= VIP_MIN_EV &&
@@ -66,9 +65,7 @@ export class SignalDistributionEngine {
         tier = "VIP";
       }
 
-      // ── FREE: Alta probabilidade — isca de marketing ───────────────────
-      // Pode existir sem EV positivo (objetivo é retenção, não lucro direto)
-      // Limitado a no máximo FREE_MAX_SIGNALS por partida
+      // 2. FREE: Alta probabilidade — isca de marketing
       const isFree =
         op.probability >= FREE_MIN_PROBABILITY &&
         freeCount < FREE_MAX_SIGNALS;
@@ -79,30 +76,42 @@ export class SignalDistributionEngine {
       }
 
       if (tier !== "NONE") {
-        distributed.push({
+        const distSignal: DistributedSignal = {
           ...op,
           tier,
           priority,
           displayLabel: this.buildDisplayLabel(op, tier),
-          marketingCTA:
-            tier === "FREE"
-              ? "🔥 SINAL FREE DE ALTA CONFIANÇA! Acesse o VIP para todos os mercados com Edge real."
-              : undefined,
+        };
+        distributed.push(distSignal);
+
+        // Preparar para despacho Telegram
+        signalsToDispatch.push({
+          matchName: matchContext.name,
+          leagueName: matchContext.league,
+          kickoffTime: matchContext.kickoff,
+          vertical: op.vertical,
+          selection: op.selection,
+          odd: op.odd,
+          fairOdd: op.fairOdd,
+          expectedValue: op.expectedValue,
+          probability: op.probability,
+          kellyCriterion: op.kellyCriterion,
+          ratingLabel: op.ratingLabel,
+          tier: tier as "FREE" | "VIP",
+          line: op.line,
+          analysisSummary: `Análise Syndicate Master: EV+ de ${(op.expectedValue * 100).toFixed(1)}% detectado no mercado de ${op.vertical}.`
         });
       }
     }
 
-    // Ordena resultado final por prioridade (VIP primeiro, depois FREE)
-    return distributed.sort((a, b) => {
-      if (a.tier === "VIP" && b.tier === "FREE") return -1;
-      if (a.tier === "FREE" && b.tier === "VIP") return 1;
-      return b.priority - a.priority;
-    });
+    // Despacho assíncrono para o Telegram
+    if (signalsToDispatch.length > 0) {
+      await telegramDispatcher.dispatch(signalsToDispatch, regime);
+    }
+
+    return distributed;
   }
 
-  /**
-   * Constrói um label de exibição legível para o sinal.
-   */
   private static buildDisplayLabel(op: Opportunity, tier: "FREE" | "VIP"): string {
     const prob = (op.probability * 100).toFixed(0);
     const ev = (op.edgePercent ?? op.edge * 100).toFixed(1);

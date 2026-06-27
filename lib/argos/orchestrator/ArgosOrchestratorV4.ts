@@ -11,12 +11,11 @@ import { MarketNormalizer, NormalizationReport } from "@/lib/core/market-intelli
 import { MarketDiscoveryEngine, DiscoveryReport } from "@/lib/core/market-intelligence/MarketDiscoveryEngine";
 import { SignalDistributionEngine, DistributedSignal } from "@/lib/core/market-intelligence/SignalDistributionEngine";
 import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
-import { TelegramDispatcher } from "@/lib/argos/notifications/TelegramDispatcher";
 
 // ============================================================
-// ARGOS ORCHESTRATOR v6.0.0 — SYNDICATE MASTER EDITION
+// ARGOS ORCHESTRATOR v6.1.0 — SYNDICATE MASTER EDITION
 // Fluxo Único: PropLine → Normalizer → Feature Engine →
-//              RAG + Regime → Monte Carlo → Market Intelligence →
+//              RAG + Regime → Monte Carlo + Learning → Market Intelligence →
 //              Odds Value Engine → Signal Classification →
 //              Distribution Engine → Telegram
 // ============================================================
@@ -30,6 +29,7 @@ export interface SyndicateAuditResult {
   discoveryReport?: DiscoveryReport;
   regime?: RegimeProfile;
   error?: string;
+  distributedSignals?: DistributedSignal[];
 }
 
 export class ArgosOrchestratorV4 {
@@ -37,7 +37,6 @@ export class ArgosOrchestratorV4 {
   private regimeEngine: RegimeEngineV4;
   private ragEngine: RAGContextEngine;
   private ingestionService: DataIngestionService;
-  private telegramDispatcher: TelegramDispatcher;
 
   constructor(ingestionService?: DataIngestionService, supabaseClient?: SupabaseClient) {
     this.supabase = supabaseClient || getSupabaseClient();
@@ -48,11 +47,10 @@ export class ArgosOrchestratorV4 {
       process.env.GOOGLE_API_KEY!
     );
     this.ingestionService = ingestionService || new DataIngestionService();
-    this.telegramDispatcher = new TelegramDispatcher();
   }
 
   /**
-   * FLUXO SYNDICATE MASTER v6.0.0
+   * FLUXO SYNDICATE MASTER v6.1.0
    * Executa a auditoria completa de uma partida com todos os motores integrados.
    */
   async runSyndicateAudit(fixturePayload: any): Promise<SyndicateAuditResult> {
@@ -63,28 +61,18 @@ export class ArgosOrchestratorV4 {
       fixturePayload.fixture?.id
     ).toString();
 
-    console.log(`[Argos v6.0.0] 🛡️ Auditoria Master iniciada para: ${matchId}`);
+    console.log(`[Argos v6.1.0] 🛡️ Auditoria Master iniciada para: ${matchId}`);
 
     try {
-      // ── ETAPA 1: MarketNormalizer ─────────────────────────────────────────
-      // Transforma o payload PropLine em estrutura estável.
-      // Captura TODAS as casas, mercados, linhas e odds disponíveis.
+      // 1. MarketNormalizer
       const normalizedMarkets = MarketNormalizer.normalize(fixturePayload);
       const normalizationReport = MarketNormalizer.generateReport(normalizedMarkets);
-      console.log(
-        `[Argos-Normalizer] Casas: ${normalizationReport.totalBookmakers} | ` +
-        `Mercados: ${normalizationReport.totalMarkets} | ` +
-        `Sharp: ${normalizationReport.sharpBookmakers.join(", ") || "Nenhuma"}`
-      );
 
-      // ── ETAPA 2: Feature Engine ───────────────────────────────────────────
-      // Gera vetor de features a partir dos dados históricos e externos.
+      // 2. Feature Engine
       const ingestedData = await this.ingestionService.ingestObject(fixturePayload);
       const features = FeatureEngine.generateFeatureVector(ingestedData);
 
-      // ── ETAPA 3: RAG + Regime Engine ─────────────────────────────────────
-      // RAG: lesões, clima, motivação, contexto histórico
-      // Regime: classifica o estado do mercado e ajusta variância/bias do Monte Carlo
+      // 3. RAG + Regime Engine
       const context = await this.ragEngine.retrieveContext(matchId, ingestedData.leagueId);
       const regime = await this.regimeEngine.analyze({
         matchId,
@@ -92,29 +80,28 @@ export class ArgosOrchestratorV4 {
         contextEvidence: context,
         factors: ingestedData.externalFactors,
       });
-      console.log(
-        `[Argos-Regime] Regime: ${regime.regime} | Confiança: ${(regime.confidence * 100).toFixed(0)}% | ` +
-        `Bias: ${regime.model_bias} | Variância: ${regime.variance_multiplier}`
-      );
 
-      // ── ETAPA 4: Monte Carlo Simulation ──────────────────────────────────
-      // Simula TODOS os mercados obrigatórios com ajuste de regime e contexto RAG.
-      // A partida só é descartada após varredura completa.
-      const modelPredictions = await this.runFullMarketSimulation(features, regime);
+      // 4. Monte Carlo Simulation + Continuous Learning Calibration
+      const modelPredictions = await this.runFullMarketSimulation(features, regime, ingestedData.leagueId);
 
-      // ── ETAPA 5: Market Intelligence Layer (Discovery) ───────────────────
-      // Cruza probabilidades do modelo com fair odds para calcular EV real.
+      // 5. Market Intelligence Layer (Discovery)
       const opportunities = MarketDiscoveryEngine.discover(normalizedMarkets, modelPredictions);
       const discoveryReport = MarketDiscoveryEngine.generateReport(opportunities);
-      console.log(
-        `[Argos-Discovery] Oportunidades: ${discoveryReport.totalOpportunities} | ` +
-        `EV+: ${discoveryReport.positiveEVCount} | Elite: ${discoveryReport.eliteCount}`
+
+      // 6. Signal Distribution Engine (FREE vs VIP) & Telegram Dispatch
+      const matchContext = {
+        name: `${fixturePayload.teams?.home?.name || 'Home'} vs ${fixturePayload.teams?.away?.name || 'Away'}`,
+        league: fixturePayload.league?.name || "Elite League",
+        kickoff: fixturePayload.fixture?.date || new Date().toISOString()
+      };
+
+      const distributedSignals = await SignalDistributionEngine.processAndDispatch(
+        opportunities, 
+        regime,
+        matchContext
       );
 
-      // ── ETAPA 6: Signal Distribution Engine (FREE vs VIP) ────────────────
-      const distributedSignals = SignalDistributionEngine.process(opportunities, regime);
-
-      // ── ETAPA 7: Entrega & Persistência ──────────────────────────────────
+      // 7. Persistência no Ledger para Aprendizado Futuro
       if (distributedSignals.length > 0) {
         const ledgerEntries = SignalClassifierV4.prepareLedger(
           matchId,
@@ -123,10 +110,7 @@ export class ArgosOrchestratorV4 {
           regime
         );
         await this.supabase.from("argos_signal_ledger").insert(ledgerEntries);
-        await this.telegramDispatcher.dispatch(distributedSignals as any, regime);
-        console.log(`[Argos-Success] ✅ ${distributedSignals.length} sinais despachados.`);
-      } else {
-        console.log(`[Argos-NoValue] Nenhum sinal com EV+ encontrado após varredura completa de ${matchId}.`);
+        console.log(`[Argos-Success] ✅ ${distributedSignals.length} sinais processados e despachados.`);
       }
 
       return {
@@ -137,6 +121,7 @@ export class ArgosOrchestratorV4 {
         normalizationReport,
         discoveryReport,
         regime,
+        distributedSignals
       };
     } catch (error: any) {
       console.error(`[Argos-Critical] ❌ Erro na Auditoria Master para ${matchId}: ${error.message}`);
@@ -152,113 +137,67 @@ export class ArgosOrchestratorV4 {
 
   /**
    * Executa simulações Monte Carlo para TODOS os mercados obrigatórios.
-   * Integra regime (variância, bias) e contexto RAG para ajuste real.
-   * A partida só é descartada após varredura completa.
+   * Agora integra a calibração do Continuous Learning Engine.
    */
   private async runFullMarketSimulation(
     features: any,
-    regime: RegimeProfile
+    regime: RegimeProfile,
+    leagueId: string
   ): Promise<{ [key: string]: number }> {
     const predictions: { [key: string]: number } = {};
 
-    // ── WINNER (1X2) ─────────────────────────────────────────────────────
-    const winnerSim = ModelFactory.runMonteCarlo(
+    // WINNER (1X2)
+    const winnerSim = await ModelFactory.runMonteCarloWithLearning(
       { homeMean: features.homeMetrics.goals, awayMean: features.awayMetrics.goals },
-      regime, 10000, "GOALS"
+      regime, leagueId, "GOALS"
     );
     predictions[`${MarketVertical.WINNER}_Home_0`] = winnerSim.probabilities.home;
     predictions[`${MarketVertical.WINNER}_Draw_0`] = winnerSim.probabilities.draw;
     predictions[`${MarketVertical.WINNER}_Away_0`] = winnerSim.probabilities.away;
 
-    // ── HANDICAP ─────────────────────────────────────────────────────────
-    // Usa a mesma simulação de gols com ajuste de spread
+    // HANDICAP
     predictions[`${MarketVertical.HANDICAP}_Home_0`] = winnerSim.probabilities.home;
     predictions[`${MarketVertical.HANDICAP}_Away_0`] = winnerSim.probabilities.away;
 
-    // ── GOALS (Over/Under) ───────────────────────────────────────────────
-    const goalsSim = ModelFactory.runMonteCarlo(
+    // GOALS (Over/Under)
+    const goalsSim = await ModelFactory.runMonteCarloWithLearning(
       { homeMean: features.homeMetrics.goals, awayMean: features.awayMetrics.goals },
-      regime, 10000, "GOALS"
+      regime, leagueId, "GOALS"
     );
     predictions[`${MarketVertical.GOALS}_Over_2.5`] = goalsSim.probabilities.over ?? 0;
     predictions[`${MarketVertical.GOALS}_Under_2.5`] = goalsSim.probabilities.under ?? 0;
-    predictions[`${MarketVertical.GOALS}_Over_1.5`] = this.estimateOverLine(goalsSim.probabilities.over ?? 0, 2.5, 1.5);
-    predictions[`${MarketVertical.GOALS}_Under_1.5`] = 1 - predictions[`${MarketVertical.GOALS}_Over_1.5`];
-    predictions[`${MarketVertical.GOALS}_Over_3.5`] = this.estimateOverLine(goalsSim.probabilities.over ?? 0, 2.5, 3.5);
-    predictions[`${MarketVertical.GOALS}_Under_3.5`] = 1 - predictions[`${MarketVertical.GOALS}_Over_3.5`];
 
-    // ── GOALS HT ─────────────────────────────────────────────────────────
-    const goalsHTSim = ModelFactory.runMonteCarlo(
+    // GOALS HT
+    const goalsHTSim = await ModelFactory.runMonteCarloWithLearning(
       { homeMean: features.homeMetrics.goalsHT, awayMean: features.awayMetrics.goalsHT },
-      regime, 10000, "GOALS"
+      regime, leagueId, "GOALS"
     );
     predictions[`${MarketVertical.GOALS_HT}_Over_0.5`] = goalsHTSim.probabilities.over ?? 0;
     predictions[`${MarketVertical.GOALS_HT}_Under_0.5`] = goalsHTSim.probabilities.under ?? 0;
-    predictions[`${MarketVertical.GOALS_HT}_Over_1.5`] = this.estimateOverLine(goalsHTSim.probabilities.over ?? 0, 0.5, 1.5);
-    predictions[`${MarketVertical.GOALS_HT}_Under_1.5`] = 1 - predictions[`${MarketVertical.GOALS_HT}_Over_1.5`];
 
-    // ── BTTS ─────────────────────────────────────────────────────────────
-    // Probabilidade de ambas as equipes marcarem = P(home > 0) * P(away > 0)
+    // BTTS
     const pHomeScores = 1 - Math.exp(-features.homeMetrics.goals);
     const pAwayScores = 1 - Math.exp(-features.awayMetrics.goals);
     const bttsProb = pHomeScores * pAwayScores;
     predictions[`${MarketVertical.BTTS}_Yes_0`] = bttsProb;
     predictions[`${MarketVertical.BTTS}_No_0`] = 1 - bttsProb;
 
-    // ── CORNERS ──────────────────────────────────────────────────────────
-    const cornersSim = ModelFactory.runMonteCarlo(
+    // CORNERS
+    const cornersSim = await ModelFactory.runMonteCarloWithLearning(
       { homeMean: features.homeMetrics.corners, awayMean: features.awayMetrics.corners },
-      regime, 10000, "CORNERS"
+      regime, leagueId, "CORNERS"
     );
     predictions[`${MarketVertical.CORNERS}_Over_9.5`] = cornersSim.probabilities.over ?? 0;
     predictions[`${MarketVertical.CORNERS}_Under_9.5`] = cornersSim.probabilities.under ?? 0;
-    predictions[`${MarketVertical.CORNERS}_Over_8.5`] = this.estimateOverLine(cornersSim.probabilities.over ?? 0, 9.5, 8.5);
-    predictions[`${MarketVertical.CORNERS}_Under_8.5`] = 1 - predictions[`${MarketVertical.CORNERS}_Over_8.5`];
-    predictions[`${MarketVertical.CORNERS}_Over_10.5`] = this.estimateOverLine(cornersSim.probabilities.over ?? 0, 9.5, 10.5);
-    predictions[`${MarketVertical.CORNERS}_Under_10.5`] = 1 - predictions[`${MarketVertical.CORNERS}_Over_10.5`];
 
-    // ── CARDS ─────────────────────────────────────────────────────────────
-    const cardsSim = ModelFactory.runMonteCarlo(
+    // CARDS
+    const cardsSim = await ModelFactory.runMonteCarloWithLearning(
       { homeMean: features.homeMetrics.cards, awayMean: features.awayMetrics.cards },
-      regime, 10000, "CARDS"
+      regime, leagueId, "CARDS"
     );
     predictions[`${MarketVertical.CARDS}_Over_3.5`] = cardsSim.probabilities.over ?? 0;
     predictions[`${MarketVertical.CARDS}_Under_3.5`] = cardsSim.probabilities.under ?? 0;
-    predictions[`${MarketVertical.CARDS}_Over_4.5`] = this.estimateOverLine(cardsSim.probabilities.over ?? 0, 3.5, 4.5);
-    predictions[`${MarketVertical.CARDS}_Under_4.5`] = 1 - predictions[`${MarketVertical.CARDS}_Over_4.5`];
-
-    // ── SHOTS ─────────────────────────────────────────────────────────────
-    const shotsSim = ModelFactory.runMonteCarlo(
-      { homeMean: features.homeMetrics.shots, awayMean: features.awayMetrics.shots },
-      regime, 10000, "GOALS"
-    );
-    predictions[`${MarketVertical.SHOTS}_Over_22.5`] = shotsSim.probabilities.over ?? 0;
-    predictions[`${MarketVertical.SHOTS}_Under_22.5`] = shotsSim.probabilities.under ?? 0;
-
-    // ── SHOTS ON TARGET ───────────────────────────────────────────────────
-    const sotSim = ModelFactory.runMonteCarlo(
-      { homeMean: features.homeMetrics.shotsOnTarget, awayMean: features.awayMetrics.shotsOnTarget },
-      regime, 10000, "GOALS"
-    );
-    predictions[`${MarketVertical.SHOTS_ON_TARGET}_Over_7.5`] = sotSim.probabilities.over ?? 0;
-    predictions[`${MarketVertical.SHOTS_ON_TARGET}_Under_7.5`] = sotSim.probabilities.under ?? 0;
 
     return predictions;
-  }
-
-  /**
-   * Estima probabilidade Over para uma linha diferente da simulada.
-   * Usa interpolação linear simples baseada na relação entre linhas.
-   */
-  private estimateOverLine(baseOverProb: number, baseLine: number, targetLine: number): number {
-    const diff = targetLine - baseLine;
-    // Cada 1 unidade de linha reduz/aumenta a probabilidade Over em ~15%
-    const adjustment = diff * 0.15;
-    return Math.max(0.01, Math.min(0.99, baseOverProb - adjustment));
-  }
-
-  // Deprecated — mantido para compatibilidade com chamadas legadas
-  async runZeroTouchAudit(matchId: string, verticals: any) {
-    return { status: "FAILED", matchId, error: "DEPRECATED_V6" };
   }
 }

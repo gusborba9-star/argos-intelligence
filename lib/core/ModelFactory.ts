@@ -1,5 +1,11 @@
 import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
 import { OddsValueEngine, ValueAnalysis } from "./market-intelligence/OddsValueEngine";
+import { learningEngine } from "./ContinuousLearningEngine";
+
+// ============================================================
+// MODEL FACTORY v6.1.0 — SYNDICATE MASTER EDITION
+// Motor de Simulação Monte Carlo com Calibração de Aprendizado
+// ============================================================
 
 export interface MarketMetrics {
   homeMean: number;
@@ -18,14 +24,48 @@ export interface SimulationResult {
   };
   iterations: number;
   expectedGoals: number;
+  calibrationApplied?: number;
 }
 
 export class ModelFactory {
   private static readonly DEFAULT_ITERATIONS = 10000;
 
   /**
-   * Monte Carlo v6.0.0 — Motor de Simulação de Elite
-   * Integra regime, variância e contextos reais de forma estocástica.
+   * Monte Carlo v6.1.0 — Motor de Simulação de Elite
+   * Integra regime, variância, contextos reais e CALIBRAÇÃO DE APRENDIZADO.
+   */
+  static async runMonteCarloWithLearning(
+    metrics: MarketMetrics,
+    regime: RegimeProfile,
+    leagueId: string,
+    marketType: "GOALS" | "CORNERS" | "CARDS" | "SHOTS" = "GOALS",
+    iterations: number = ModelFactory.DEFAULT_ITERATIONS
+  ): Promise<SimulationResult> {
+    
+    // 1. Obter calibração do Continuous Learning Engine
+    const calibration = await learningEngine.getCalibration(leagueId, marketType);
+    
+    // 2. Executar simulação base
+    const baseResult = this.runMonteCarlo(metrics, regime, iterations, marketType);
+
+    // 3. Aplicar calibração (Ajuste fino baseado em histórico real)
+    const adj = calibration.probabilityAdjustment;
+    
+    return {
+      ...baseResult,
+      probabilities: {
+        home: Math.max(0.01, Math.min(0.99, baseResult.probabilities.home + (adj * 0.5))),
+        draw: Math.max(0.01, Math.min(0.99, baseResult.probabilities.draw - (adj * 0.2))),
+        away: Math.max(0.01, Math.min(0.99, baseResult.probabilities.away + (adj * 0.5))),
+        over: baseResult.probabilities.over ? Math.max(0.01, Math.min(0.99, baseResult.probabilities.over + adj)) : undefined,
+        under: baseResult.probabilities.under ? Math.max(0.01, Math.min(0.99, baseResult.probabilities.under - adj)) : undefined,
+      },
+      calibrationApplied: adj
+    };
+  }
+
+  /**
+   * Simulação Monte Carlo Base
    */
   static runMonteCarlo(
     metrics: MarketMetrics,
@@ -41,14 +81,10 @@ export class ModelFactory {
     let totalGoals = 0;
     let over25Count = 0;
 
-    // Fatores de Ajuste de Regime (Contexto Real)
-    // O multiplicador de variância do RegimeEngine (via Gemini) dita a volatilidade da simulação
     const variance = regime.variance_multiplier || 1.2;
     const bias = regime.model_bias || 0;
 
     for (let i = 0; i < iterations; i++) {
-      // Negative Binomial Approximation via Gamma-Poisson
-      // Aplicamos o viés do modelo (bias) para ajustar as expectativas baseadas no contexto RAG
       const hLambda = this.generateGamma(metrics.homeMean * (1 + bias), variance);
       const aLambda = this.generateGamma(metrics.awayMean * (1 - bias), variance);
 

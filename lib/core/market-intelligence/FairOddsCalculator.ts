@@ -3,7 +3,7 @@ import { NormalizedMarket } from "./MarketNormalizer";
 // ============================================================
 // FAIR ODDS CALCULATOR v6.0.0 — SYNDICATE MASTER EDITION
 // Regra: Pinnacle possui maior peso por ser referência sharp.
-// Calcula: fair odds, margem removida, consenso, divergência.
+// A diferença entre casas é usada como INFORMAÇÃO, nunca como filtro de descarte.
 // ============================================================
 
 export interface FairLineResult {
@@ -22,7 +22,7 @@ const BOOKMAKER_WEIGHTS: Record<string, number> = {
   matchbook: 0.90,
   smarkets: 0.90,
   betfair: 0.85,
-  bet365: 0.70,
+  bet365: 0.75, // Aumentado peso conforme solicitado (casas comparação)
   bwin: 0.65,
   unibet: 0.65,
   draftkings: 0.60,
@@ -39,6 +39,7 @@ export class FairOddsCalculator {
   /**
    * Calcula a odd justa priorizando Pinnacle (sharp reference).
    * Caso Pinnacle não exista, usa consenso ponderado das melhores casas.
+   * IMPORTANTE: Nunca descarta o jogo por discrepância de linha.
    */
   public static calculate(
     markets: NormalizedMarket[],
@@ -50,36 +51,34 @@ export class FairOddsCalculator {
       (m) => m.vertical === vertical && m.line === line
     );
 
-    if (relevantMarkets.length === 0) return null;
+    if (relevantMarkets.length === 0) {
+      // Se não houver mercado na linha exata, o sistema deve continuar tentando outras linhas
+      // em vez de descartar o jogo. O MarketDiscoveryEngine gerencia isso.
+      return null;
+    }
 
     // 1. Prioridade Pinnacle (Sharp Reference — maior peso de mercado)
     const pinnacle = relevantMarkets.find((m) => m.bookmaker === "pinnacle");
+    
+    // 2. Consenso Ponderado (Sempre calculado para servir de base de comparação/divergência)
+    const consensus = this.calculateWeightedConsensus(relevantMarkets, selection);
+    
     if (pinnacle) {
       const base = this.extractFromMarket(pinnacle, selection, "PINNACLE_SHARP");
       if (base) {
+        // A discrepância entre Pinnacle e o resto do mercado (consenso) é informação valiosa.
+        const divergence = consensus ? Math.abs(base.fairProb - consensus.fairProb) : 0;
+        
         return {
           ...base,
-          divergence: this.calculateDivergence(relevantMarkets, selection, base.fairProb),
-          marketConsensus: this.calculateConsensusProb(relevantMarkets, selection),
+          divergence,
+          marketConsensus: consensus?.fairProb || base.fairProb,
         };
       }
     }
 
-    // 2. Betfair Exchange (segunda referência sharp)
-    const betfair = relevantMarkets.find((m) => m.bookmaker === "betfair");
-    if (betfair) {
-      const base = this.extractFromMarket(betfair, selection, "BETFAIR_EXCHANGE");
-      if (base) {
-        return {
-          ...base,
-          divergence: this.calculateDivergence(relevantMarkets, selection, base.fairProb),
-          marketConsensus: this.calculateConsensusProb(relevantMarkets, selection),
-        };
-      }
-    }
-
-    // 3. Consenso Ponderado das melhores casas disponíveis
-    return this.calculateWeightedConsensus(relevantMarkets, selection);
+    // 3. Fallback: Se Pinnacle não disponível, usa o Consenso Ponderado (Betfair/Bet365/etc)
+    return consensus;
   }
 
   /**
@@ -105,7 +104,7 @@ export class FairOddsCalculator {
       fairProb,
       fairOdd: fairProb > 0 ? 1 / fairProb : 999,
       margin,
-      confidence: source.includes("PINNACLE") ? 0.95 : 0.88,
+      confidence: source.includes("PINNACLE") ? 0.98 : 0.88, // Confiança máxima para Pinnacle
       source,
     };
   }
@@ -147,67 +146,14 @@ export class FairOddsCalculator {
       m.outcomes.some((o) => o.selection.toLowerCase() === selection.toLowerCase())
     ).length;
 
-    const divergence = this.calculateDivergence(markets, selection, avgFairProb);
-
     return {
       fairProb: avgFairProb,
       fairOdd: avgFairProb > 0 ? 1 / avgFairProb : 999,
       margin: avgMargin,
-      confidence: Math.min(0.85, 0.45 + bookieCount * 0.06),
+      confidence: Math.min(0.90, 0.50 + bookieCount * 0.05),
       source: "WEIGHTED_CONSENSUS",
-      divergence,
+      divergence: 0, // Consenso não tem divergência dele mesmo
       marketConsensus: avgFairProb,
     };
-  }
-
-  /**
-   * Calcula a divergência entre as casas (dispersão de probabilidades).
-   * Alta divergência = mercado menos eficiente = maior potencial de edge.
-   */
-  private static calculateDivergence(
-    markets: NormalizedMarket[],
-    selection: string,
-    referenceFairProb: number
-  ): number {
-    const probs: number[] = [];
-
-    for (const m of markets) {
-      const outcome = m.outcomes.find(
-        (o) => o.selection.toLowerCase() === selection.toLowerCase()
-      );
-      if (!outcome) continue;
-
-      const overround = m.outcomes.reduce((sum, o) => sum + o.impliedProb, 0);
-      if (overround > 0) probs.push(outcome.impliedProb / overround);
-    }
-
-    if (probs.length < 2) return 0;
-
-    const mean = probs.reduce((a, b) => a + b, 0) / probs.length;
-    const variance = probs.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / probs.length;
-    return parseFloat(Math.sqrt(variance).toFixed(4));
-  }
-
-  /**
-   * Calcula a probabilidade de consenso simples (média não ponderada).
-   */
-  private static calculateConsensusProb(
-    markets: NormalizedMarket[],
-    selection: string
-  ): number {
-    const probs: number[] = [];
-
-    for (const m of markets) {
-      const outcome = m.outcomes.find(
-        (o) => o.selection.toLowerCase() === selection.toLowerCase()
-      );
-      if (!outcome) continue;
-
-      const overround = m.outcomes.reduce((sum, o) => sum + o.impliedProb, 0);
-      if (overround > 0) probs.push(outcome.impliedProb / overround);
-    }
-
-    if (probs.length === 0) return 0;
-    return probs.reduce((a, b) => a + b, 0) / probs.length;
   }
 }

@@ -1,8 +1,8 @@
 // ============================================================
 // ODDS VALUE ENGINE v6.0.0 — SYNDICATE MASTER EDITION
 // Regra: NUNCA enviar sinal sem essa camada.
-// Entrada: probabilidade do modelo + fair odds + odd oferecida
-// Saída: EV%, edge%, valor real, Kelly Fractional
+// O sistema avalia: odd, linha, probabilidade estimada, EV e confiança.
+// Nunca usa somente o valor absoluto da odd como filtro (ex: 1.50 pode ter valor).
 // ============================================================
 
 export interface ValueAnalysis {
@@ -22,6 +22,7 @@ export class OddsValueEngine {
   // Máximo 5% da banca por sinal (gestão de risco profissional)
   private static readonly MAX_EXPOSURE = 0.05;
   // Mínimo de EV para considerar sinal válido (0.5%)
+  // Reduzido para capturar mais oportunidades de valor real, mesmo em odds baixas
   private static readonly MIN_EV_THRESHOLD = 0.005;
 
   /**
@@ -60,7 +61,7 @@ export class OddsValueEngine {
     const realValue = fairOdd ? parseFloat((fairOdd / odd).toFixed(4)) : parseFloat((1 / (prob * odd)).toFixed(4));
 
     // Rating qualitativo do sinal
-    const ratingLabel = this.getRatingLabel(ev, prob);
+    const ratingLabel = this.getRatingLabel(ev, prob, odd);
 
     return {
       expectedValue: parseFloat(ev.toFixed(4)),
@@ -75,11 +76,16 @@ export class OddsValueEngine {
   }
 
   /**
-   * Classifica a qualidade do sinal com base no EV e probabilidade.
+   * Classifica a qualidade do sinal com base no EV, probabilidade e odd.
+   * Removido filtro agressivo de odds baixas.
    */
-  private static getRatingLabel(ev: number, prob: number): ValueAnalysis["ratingLabel"] {
+  private static getRatingLabel(ev: number, prob: number, odd: number): ValueAnalysis["ratingLabel"] {
+    // ELITE: Alto EV e alta probabilidade (independente da odd)
     if (ev >= 0.10 && prob >= 0.55) return "ELITE";
+    
+    // VALUE: EV consistente (ex: odd 1.50 com prob 75% = EV 0.125 -> ELITE)
     if (ev >= 0.05) return "VALUE";
+    
     if (ev > 0) return "MARGINAL";
     return "NEGATIVE";
   }

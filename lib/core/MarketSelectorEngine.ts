@@ -1,59 +1,28 @@
 import { MarketVertical } from "./ArgosUnifiedEngine";
 
-/**
- * MARKET SELECTOR ENGINE v5.1
- * Responsabilidade Única: Decidir quais mercados serão analisados.
- * Entrada: availableMarkets[] + executionMode + leagueProfile
- * Saída: selectedMarkets[]
- */
+// ============================================================
+// MARKET SELECTOR ENGINE v6.0.0 — SYNDICATE MASTER EDITION
+// Regra de Ouro: Varredura COMPLETA.
+// NUNCA descartar mercados por "tier" da liga.
+// A partida só é descartada após avaliação de valor real em todas as verticais.
+// ============================================================
+
 export class MarketSelectorEngine {
+  /**
+   * Seleciona mercados para análise.
+   * No Syndicate Master v6.0.0, SEMPRE retornamos todos os mercados disponíveis
+   * para garantir que nenhuma oportunidade seja perdida.
+   */
   public static selectMarkets(
     availableMarkets: MarketVertical[],
-    executionMode: "FULL" | "REDUCED" | "SKIP",
-    leagueProfile: any
+    executionMode: "FULL" | "REDUCED" | "SKIP" = "FULL"
   ): MarketVertical[] {
     if (executionMode === "SKIP") return [];
 
-    // Argos v5.0 Syndicate-Level: Prioridade Absoluta para Elite
-    const eliteLeagues = [1, 2, 3, 11, 13, 15, 61, 71, 72, 73, 78, 94, 140];
-    const isElite = eliteLeagues.includes(leagueProfile?.id);
-
-    if (executionMode === "FULL" || isElite) {
-      return [...availableMarkets];
-    }
-
-    const tier = leagueProfile?.tier ?? "Tier 3";
-
-    const priorityMap: Record<string, MarketVertical[]> = {
-      "Tier 1": [
-        MarketVertical.WINNER,
-        MarketVertical.GOALS,
-        MarketVertical.HANDICAP,
-        MarketVertical.GOALS_HT
-      ],
-      "Tier 2": [
-        MarketVertical.GOALS,
-        MarketVertical.CORNERS,
-        MarketVertical.BTTS,
-        MarketVertical.WINNER
-      ],
-      "Tier 3": [
-        MarketVertical.GOALS,
-        MarketVertical.WINNER,
-        MarketVertical.GOALS_HT
-      ]
-    };
-
-    const preferred = priorityMap[tier] ?? priorityMap["Tier 3"];
-
-    // mantém ordem determinística baseada no priorityMap
-    const selected = preferred.filter(v => availableMarkets.includes(v));
-
-    // fallback crítico: nunca retornar vazio em REDUCED se houver mercados disponíveis
-    if (selected.length === 0) {
-      return availableMarkets.slice(0, 3);
-    }
-
-    return selected;
+    // REGRA MASTER: Varredura completa é o padrão.
+    // Ignoramos "REDUCED" ou "Tier" da liga para não perder oportunidades em mercados secundários
+    // (ex: escanteios em ligas menores podem ter muito valor).
+    
+    return [...availableMarkets];
   }
 }
