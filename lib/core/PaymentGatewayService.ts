@@ -157,41 +157,19 @@ export class PaymentGatewayService {
 
       if (payError) throw payError;
 
-      // 2. Sincronizar Tabela 'users' (Tier principal)
-      const expiryDate = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
-      await this.supabase
-        .from("users")
-        .update({ 
-          tier: planType, 
-          payment_status: "CONFIRMED",
-          vip_access_until: expiryDate 
-        })
-        .eq("id", userId);
+      // 2. Sincronizar Tabela user_tiers (controle VIP)
+const expiryDate = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
 
-      // 3. Sincronizar Tabela 'user_tiers' (Legacy/Delivery support)
-      // Mapeia VIP/WHALE para os tiers esperados pelo ValueDeliveryService
-      const tierLevel = planType === "WHALE" ? "WHALE/VIP" : "WHALE/VIP"; 
+const { error: tierError } = await this.supabase
+  .from("user_tiers")
+  .upsert({
+    user_id: userId,
+    tier_level: planType,
+    subscribed_at: new Date().toISOString(),
+    expires_at: expiryDate,
+    efi_tx_id: txId
+  });
+
+if (tierError) throw tierError;
+
       
-      await this.supabase
-        .from("user_tiers")
-        .upsert({
-          user_id: userId,
-          tier_level: tierLevel,
-          subscribed_at: new Date().toISOString(),
-          expires_at: expiryDate
-        });
-
-      console.log(`[Efí] ✅ VIP liberado com sucesso para ${userId}.`);
-      return true;
-    } catch (error: any) {
-      console.error("[Efí] Erro no processamento pós-pagamento:", error.message);
-      return false;
-    }
-  }
-
-  getVipInviteLink(): string {
-    return this.VIP_LINK;
-  }
-}
-
-export const paymentGateway = new PaymentGatewayService();
