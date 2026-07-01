@@ -8,10 +8,20 @@ export const dynamic = "force-dynamic";
  * ARGOS V4 INGEST ENDPOINT
  * - dispara worker real
  * - usado por cron (Supabase ou externo)
- * - não depende de estado externo
+ * - protegido por API KEY
  */
-export async function GET() {
+export async function GET(request: Request) {
   const start = Date.now();
+
+  // AUTH CHECK (crítico para cron e ReqBin)
+  const auth = request.headers.get("x-argos-key");
+
+  if (auth !== process.env.ARGOS_API_KEY) {
+    return NextResponse.json(
+      { error: "Unauthorized: Missing authentication" },
+      { status: 401 }
+    );
+  }
 
   try {
     const worker = new PropLineIngestionWorker();
