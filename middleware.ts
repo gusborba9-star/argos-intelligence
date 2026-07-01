@@ -13,7 +13,7 @@ export function middleware(request: NextRequest) {
   if (pathname.startsWith("/api/argos")) {
     // Extrair token de autorização do header ou query param
     const authHeader = request.headers.get("authorization");
-    const apiKey = request.headers.get("x-api-key") || request.nextUrl.searchParams.get("apiKey");
+    const apiKey = request.headers.get("x-api-key") || request.headers.get("x-argos-key") || request.nextUrl.searchParams.get("apiKey");
 
     if (!authHeader && !apiKey) {
       console.warn(`[Middleware] Acesso negado em ${pathname}: Nenhuma credencial fornecida.`);
