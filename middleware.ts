@@ -16,6 +16,11 @@ export function middleware(request: NextRequest) {
     const apiKey = request.headers.get("x-api-key") || request.headers.get("x-argos-key") || request.nextUrl.searchParams.get("apiKey");
 
     if (!authHeader && !apiKey) {
+      // Permitir que o endpoint lide com sua própria autenticação se o header específico estiver presente
+      if (request.headers.get("x-argos-key")) {
+        return NextResponse.next();
+      }
+
       console.warn(`[Middleware] Acesso negado em ${pathname}: Nenhuma credencial fornecida.`);
       return NextResponse.json(
         { error: "Unauthorized: Missing authentication" },

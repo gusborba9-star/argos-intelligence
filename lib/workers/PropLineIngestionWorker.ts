@@ -1,5 +1,7 @@
 import axios from "axios";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
+import { BatchQueueService } from "@/lib/core/BatchQueueService";
+import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 
 // ============================================================
 // ARGOS PROPLINE INGESTION WORKER v1.0
@@ -127,6 +129,32 @@ export class PropLineIngestionWorker {
       }
 
       console.log(`[PropLineWorker] ✅ Inserted match ${matchId}`);
+
+      // ============================================================
+      // ENFILEIRAMENTO AUTOMÁTICO (Syndicate Master Pipeline)
+      // ============================================================
+      try {
+        const queueService = new BatchQueueService();
+        await queueService.enqueue(
+          matchId,
+          "ALL_MARKETS",
+          [
+            MarketVertical.WINNER,
+            MarketVertical.HANDICAP,
+            MarketVertical.GOALS,
+            MarketVertical.GOALS_HT,
+            MarketVertical.BTTS,
+            MarketVertical.CORNERS,
+            MarketVertical.CARDS,
+            MarketVertical.SHOTS,
+            MarketVertical.SHOTS_ON_TARGET,
+          ],
+          event // rawData para Single-Pass
+        );
+        console.log(`[PropLineWorker] 📥 Enqueued match ${matchId} for engine processing`);
+      } catch (queueErr: any) {
+        console.error(`[PropLineWorker] ❌ Queue error for ${matchId}:`, queueErr.message);
+      }
     }
   }
 
