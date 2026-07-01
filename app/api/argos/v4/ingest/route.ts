@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { PropLineIngestionWorker } from "@/lib/workers/PropLineIngestionWorker";
-import { BatchQueueService } from "@/lib/core/BatchQueueService";
+import { BatchQueueService, QueueStatus } from "@/lib/core/BatchQueueService";
 import { ArgosOrchestratorV4 } from "@/lib/argos/orchestrator/ArgosOrchestratorV4";
 
 export const runtime = "nodejs";
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
         
         await queueService.updateStatus(
           nextItem.id, 
-          auditResult.status === "FAILED" ? "FAILED" : "COMPLETED",
+          auditResult.status === "FAILED" ? QueueStatus.FAILED : QueueStatus.COMPLETED,
           auditResult.error
         );
 
