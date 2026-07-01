@@ -145,31 +145,44 @@ export class PaymentGatewayService {
    * Processa confirmação de pagamento (chamado pelo webhook)
    * Sincroniza as tabelas 'users' e 'user_tiers' para garantir acesso consistente.
    */
-  async processPaymentConfirmation(txId: string, userId: string, planType: "VIP" | "WHALE"): Promise<boolean> {
+    async processPaymentConfirmation(txId: string, userId: string, planType: "VIP" | "WHALE"): Promise<boolean> {
     try {
       console.log(`[Efí] Confirmando pagamento TxId: ${txId} para Usuário: ${userId}`);
 
       // 1. Atualizar Tabela de Pagamentos
       const { error: payError } = await this.supabase
         .from("argos_payments")
-        .update({ status: "PAID", paid_at: new Date().toISOString() })
+        .update({ 
+          status: "PAID", 
+          paid_at: new Date().toISOString() 
+        })
         .eq("tx_id", txId);
 
       if (payError) throw payError;
 
+
       // 2. Sincronizar Tabela user_tiers (controle VIP)
-const expiryDate = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+      const expiryDate = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
 
-const { error: tierError } = await this.supabase
-  .from("user_tiers")
-  .upsert({
-    user_id: userId,
-    tier_level: planType,
-    subscribed_at: new Date().toISOString(),
-    expires_at: expiryDate,
-    efi_tx_id: txId
-  });
+      const { error: tierError } = await this.supabase
+        .from("user_tiers")
+        .upsert({
+          user_id: userId,
+          tier_level: planType,
+          subscribed_at: new Date().toISOString(),
+          expires_at: expiryDate,
+          efi_tx_id: txId
+        });
 
-if (tierError) throw tierError;
+      if (tierError) throw tierError;
 
+
+      console.log(`[Efí] ✅ VIP liberado com sucesso para ${userId}.`);
+      return true;
+
+    } catch (error: any) {
+      console.error("[Efí] Erro no processamento pós-pagamento:", error.message);
+      return false;
+    }
+    }
       
