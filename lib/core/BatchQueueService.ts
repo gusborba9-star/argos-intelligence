@@ -74,9 +74,29 @@ export class BatchQueueService {
       .limit(1)
       .maybeSingle();
 
-    if (existing) {
+    if (existing && existing.status === QueueStatus.QUEUED) {
+      // Se já está na fila mas ainda não foi processado, atualizamos com os dados mais recentes
+      const { data: updated, error: updateErr } = await this.supabase
+        .from("argos_batch_queue")
+        .update({
+          raw_data: rawData,
+          requested_verticals: safeVerticals,
+          updated_at: new Date().toISOString(),
+          expires_at: this.calculateExpiry(QUEUE_EXPIRY_HOURS),
+        })
+        .eq("id", existing.id)
+        .select()
+        .single();
+
+      if (!updateErr) {
+        console.log(`[BatchQueue] 🔄 Item atualizado na fila: ${uniqueKey} (Odds novas)`);
+        return updated.id;
+      }
+    }
+
+    if (existing && existing.status !== QueueStatus.QUEUED) {
       console.log(
-        `[BatchQueue] Duplicidade prevenida: ${uniqueKey} já está na fila com status ${existing.status}.`
+        `[BatchQueue] ⏭️ Pulando: ${uniqueKey} está em processamento (${existing.status}).`
       );
       return existing.id;
     }
