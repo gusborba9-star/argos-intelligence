@@ -78,7 +78,7 @@ export class PropLineIngestionWorker {
 
         return (
           kickoff > now &&
-          kickoff < now + 72 * 60 * 60 * 1000 // 72h janela
+          kickoff < now + 96 * 60 * 60 * 1000 // Janela expandida para 96h (Syndicate Master)
         );
       });
     } catch (err: any) {
@@ -104,35 +104,36 @@ export class PropLineIngestionWorker {
         .eq("match_id", matchId)
         .maybeSingle();
 
-      if (existing) continue;
+      if (!existing) {
+        const payload = {
+          match_id: matchId,
+          external_provider: "PROPLINE",
+          league_id: null,
+          home_team: event.home_team,
+          away_team: event.away_team,
+          kickoff_at: event.commence_time,
+          status: "SCHEDULED",
+          raw_data: event,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
 
-      const payload = {
-        match_id: matchId,
-        external_provider: "PROPLINE",
-        league_id: null,
-        home_team: event.home_team,
-        away_team: event.away_team,
-        kickoff_at: event.commence_time,
-        status: "SCHEDULED",
-        raw_data: event,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+        const { error } = await this.supabase
+          .from("argos_matches")
+          .insert(payload);
 
-      const { error } = await this.supabase
-        .from("argos_matches")
-        .insert(payload);
-
-      if (error) {
-        console.error("[PropLineWorker] insert error:", error.message);
-        continue;
+        if (error) {
+          console.error("[PropLineWorker] insert error:", error.message);
+        } else {
+          console.log(`[PropLineWorker] ✅ Inserted match ${matchId}`);
+        }
       }
-
-      console.log(`[PropLineWorker] ✅ Inserted match ${matchId}`);
 
       // ============================================================
       // ENFILEIRAMENTO AUTOMÁTICO (Syndicate Master Pipeline)
       // ============================================================
+      // REGRA: Sempre enfileira para re-análise, mesmo que o jogo já exista.
+      // O BatchQueueService lida com a prevenção de duplicatas na fila se necessário.
       try {
         const queueService = new BatchQueueService();
         await queueService.enqueue(
