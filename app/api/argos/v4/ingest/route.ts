@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { PropLineIngestionWorker } from "@/lib/workers/PropLineIngestionWorker";
 import { BatchQueueService, QueueStatus } from "@/lib/core/BatchQueueService";
 import { ArgosOrchestratorV4 } from "@/lib/argos/orchestrator/ArgosOrchestratorV4";
+import { MarketNormalizer } from "@/lib/core/market-intelligence/MarketNormalizer";
+import { FeatureEngine } from "@/lib/core/FeatureEngine";
+import { MarketDiscoveryEngine } from "@/lib/core/market-intelligence/MarketDiscoveryEngine";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
