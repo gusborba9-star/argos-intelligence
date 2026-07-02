@@ -42,18 +42,22 @@ export class TelegramDispatcher {
   /**
    * Despacha sinais de forma seletiva para os canais FREE e VIP.
    */
-  async dispatch(signals: TelegramSignalPayload[], regime?: RegimeProfile): Promise<void> {
-    if (!this.botToken || signals.length === 0) return;
+  async dispatch(signals: TelegramSignalPayload[], regime?: RegimeProfile): Promise<any[]> {
+    if (!this.botToken || signals.length === 0) return [{ error: "Bot token missing or no signals" }];
 
+    const results = [];
     for (const signal of signals) {
       // 1. Envio para o VIP (Recebe TUDO)
-      await this.sendToTelegram(this.vipChatId, this.formatVipMessage(signal, regime), 'HTML');
+      const vipRes = await this.sendToTelegram(this.vipChatId, this.formatVipMessage(signal, regime), 'HTML');
+      results.push({ target: "VIP", ...vipRes });
 
       // 2. Envio para o FREE (Recebe apenas o filé com CTA)
       if (signal.tier === "FREE") {
-        await this.sendToTelegram(this.freeChatId, this.formatFreeMessage(signal), 'HTML');
+        const freeRes = await this.sendToTelegram(this.freeChatId, this.formatFreeMessage(signal), 'HTML');
+        results.push({ target: "FREE", ...freeRes });
       }
     }
+    return results;
   }
 
   private formatVipMessage(p: TelegramSignalPayload, regime?: RegimeProfile): string {
@@ -122,17 +126,20 @@ export class TelegramDispatcher {
     }
   }
 
-  private async sendToTelegram(chatId: string, text: string, parseMode: string): Promise<void> {
-    if (!chatId || !this.botToken) return;
+  private async sendToTelegram(chatId: string, text: string, parseMode: string): Promise<any> {
+    if (!chatId || !this.botToken) return { error: "Chat ID or Bot Token missing" };
     try {
-      await axios.post(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
+      const response = await axios.post(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
         chat_id: chatId,
         text: text,
         parse_mode: parseMode,
         disable_web_page_preview: true
       });
+      return { success: true, message_id: response.data.result.message_id };
     } catch (error: any) {
-      console.error(`[Telegram-Error] Falha ao enviar para ${chatId}:`, error.message);
+      const errorData = error.response?.data || error.message;
+      console.error(`[Telegram-Error] Falha ao enviar para ${chatId}:`, errorData);
+      return { success: false, error: errorData };
     }
   }
 

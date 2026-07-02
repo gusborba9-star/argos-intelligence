@@ -64,8 +64,12 @@ export async function GET(request: Request) {
           tier: "VIP" as const
         }
       ];
-      await telegramDispatcher.dispatch(testSignals);
-      return NextResponse.json({ status: "success", message: "Sinais de teste disparados!" });
+      const dispatchResults = await telegramDispatcher.dispatch(testSignals);
+      return NextResponse.json({ 
+        status: "success", 
+        message: "Sinais de teste disparados!",
+        dispatchResults 
+      });
     } catch (err: any) {
       return NextResponse.json({ error: err.message }, { status: 500 });
     }
