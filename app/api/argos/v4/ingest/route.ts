@@ -105,7 +105,7 @@ export async function GET(request: Request) {
         });
       } catch (itemErr: any) {
         console.error(`[Ingest-Pipeline] ❌ Error processing item ${nextItem.matchId}:`, itemErr.message);
-        await queueService.updateStatus(nextItem.id, "FAILED", itemErr.message);
+        await queueService.updateStatus(nextItem.id, QueueStatus.FAILED, itemErr.message);
       }
     }
 
