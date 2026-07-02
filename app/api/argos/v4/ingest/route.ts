@@ -45,9 +45,14 @@ export async function GET(request: Request) {
       try {
         for (const sport of sports) {
           const events = await (worker as any).getEvents(sport);
-          for (const event of events.slice(0, 10)) { // 10 jogos por liga para amostragem
-            const normalized = MarketNormalizer.normalize(event);
-            const features = FeatureEngine.generateFeatureVector(event);
+          if (!events || !Array.isArray(events)) continue;
+
+          for (const event of events.slice(0, 10)) { 
+            try {
+              if (!event || !event.teams || !event.league) continue;
+              
+              const normalized = MarketNormalizer.normalize(event);
+              const features = FeatureEngine.generateFeatureVector(event);
             const mockRegime: any = { regime: "STABLE", confidence: 0.85 };
             const predictions = await (orchestrator as any).runFullMarketSimulation(features, mockRegime, "audit");
             const opportunities = MarketDiscoveryEngine.discover(normalized, predictions);
@@ -71,6 +76,9 @@ export async function GET(request: Request) {
                 reason
               });
             }
+          } catch (innerErr) {
+            console.warn("[Audit-Skip] Skipping match due to data error:", innerErr);
+            continue;
           }
         }
         
