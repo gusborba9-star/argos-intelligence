@@ -85,7 +85,7 @@ export async function GET(request: Request) {
     const orchestrator = new ArgosOrchestratorV4();
     
     const processedResults = [];
-    const MAX_PROCESS_PER_CALL = 5; // Processa até 5 jogos por ciclo de ingestão
+    const MAX_PROCESS_PER_CALL = 12; // Aumentado para cobrir maior volume de jogos simultâneos
 
     for (let i = 0; i < MAX_PROCESS_PER_CALL; i++) {
       const nextItem = await queueService.getNextInQueue();
