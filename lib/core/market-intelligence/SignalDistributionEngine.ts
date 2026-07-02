@@ -102,7 +102,11 @@ export class SignalDistributionEngine {
           analysisSummary: `Análise Syndicate Master: EV+ de ${(op.expectedValue * 100).toFixed(1)}% detectado no mercado de ${op.vertical}.`
         });
       } else {
-        console.log(`[Distribution-Log] ⏭️ Oportunidade descartada para ${matchContext.name} (${op.vertical}): Prob: ${(op.probability*100).toFixed(1)}%, EV: ${(op.expectedValue*100).toFixed(1)}%, Edge: ${(op.edge*100).toFixed(1)}%`);
+        const reason = op.expectedValue < VIP_MIN_EV ? "EV_TOO_LOW" : 
+                       op.edge < VIP_MIN_EDGE ? "EDGE_BELOW_THRESHOLD" : 
+                       op.probability < VIP_MIN_PROBABILITY ? "PROBABILITY_FILTER" : "REJECTED";
+        
+        console.log(`[Distribution-Log] ⏭️ REJECTED: ${matchContext.name} | ${op.vertical} | Reason: ${reason} | EV: ${(op.expectedValue*100).toFixed(2)}% | Edge: ${(op.edge*100).toFixed(2)}% | Prob: ${(op.probability*100).toFixed(1)}%`);
       }
     }
 

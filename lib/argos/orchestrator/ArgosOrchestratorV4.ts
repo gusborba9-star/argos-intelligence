@@ -87,12 +87,13 @@ export class ArgosOrchestratorV4 {
       // 5. Market Intelligence Layer (Discovery)
       const opportunities = MarketDiscoveryEngine.discover(normalizedMarkets, modelPredictions);
       const discoveryReport = MarketDiscoveryEngine.generateReport(opportunities);
+      console.log(`[Orchestrator] 🔍 Discovery completed for ${matchId}: ${opportunities.length} opportunities found.`);
 
       // 6. Signal Distribution Engine (FREE vs VIP) & Telegram Dispatch
       const matchContext = {
-        name: `${fixturePayload.teams?.home?.name || 'Home'} vs ${fixturePayload.teams?.away?.name || 'Away'}`,
+        name: `${fixturePayload.home_team || fixturePayload.teams?.home?.name || 'Home'} vs ${fixturePayload.away_team || fixturePayload.teams?.away?.name || 'Away'}`,
         league: fixturePayload.league?.name || "Elite League",
-        kickoff: fixturePayload.fixture?.date || new Date().toISOString()
+        kickoff: fixturePayload.kickoff_at || fixturePayload.fixture?.date || new Date().toISOString()
       };
 
       const distributedSignals = await SignalDistributionEngine.processAndDispatch(
@@ -100,6 +101,7 @@ export class ArgosOrchestratorV4 {
         regime,
         matchContext
       );
+      console.log(`[Orchestrator] 📡 Distribution completed for ${matchId}: ${distributedSignals.length} signals approved.`);
 
       // 7. Persistência no Ledger para Aprendizado Futuro
       if (distributedSignals.length > 0) {
