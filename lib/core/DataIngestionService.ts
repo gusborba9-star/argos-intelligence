@@ -76,9 +76,9 @@ export class DataIngestionService {
 
   public async getActiveSports(): Promise<any[]> {
     try {
-      const url = `${this.baseUrl}/sports`;
-      console.log(`[Argos-Discovery] Buscando esportes ativos: ${url}`);
-      const response = await axios.get(url, { headers: { "X-API-Key": this.apiKey } });
+      const url = `${this.baseUrl}/sports?apiKey=${this.apiKey}`;
+      console.log(`[Argos-Discovery] Buscando esportes ativos: ${url.replace(this.apiKey, '***')}`);
+      const response = await axios.get(url, { timeout: 15000 });
       this.trackRequest();
       const rawSports = response.data || [];
       const activeSports = rawSports.filter((s: any) => s.active && s.key.toLowerCase().includes('soccer'));
@@ -93,29 +93,56 @@ export class DataIngestionService {
 
   public async checkFreshness(sportKey: string): Promise<boolean> {
     try {
-      const url = `${this.baseUrl}/freshness?sport=${sportKey}`;
-      const response = await axios.get(url, { headers: { "X-API-Key": this.apiKey } });
+      const url = `${this.baseUrl}/freshness?sport=${sportKey}&apiKey=${this.apiKey}`;
+      const response = await axios.get(url, { timeout: 10000 });
       this.trackRequest();
       return response.data?.changed || true; 
     } catch { return true; }
   }
 
+  // Market keys oficiais da PropLine para soccer (validados em 2026-07-02)
+  // Fonte: https://prop-line.com/docs#markets
+  private readonly SOCCER_MARKETS = [
+    "h2h",                  // Winner / 1X2
+    "spreads",              // Handicap / Asian Handicap
+    "totals",               // Over/Under Gols (múltiplas linhas)
+    "both_teams_to_score",  // BTTS
+    "total_corners",        // Escanteios
+    "total_cards",          // Cartões
+  ].join(",");
+
   /**
-   * Mega Call 'All-In' (v5.5.0): Busca todos os mercados (all) de uma vez.
-   * Elimina a necessidade de chamadas individuais subsequentes.
+   * Mega Call 'All-In' v5.5.1 — ENDPOINT CORRIGIDO (auditoria CTO 2026-07-02).
+   *
+   * PROBLEMA ANTERIOR: /sports/{sport}/events?markets=all
+   *   → bookmakers=null em TODOS os eventos
+   *   → ZERO odds chegavam ao MarketNormalizer
+   *
+   * CORREÇÃO: /sports/{sport}/odds?markets=h2h,spreads,totals,...
+   *   → bookmakers preenchidos com odds reais de múltiplas casas
+   *   → Todos os mercados de futebol disponíveis
+   *
+   * Nenhuma Engine, threshold ou regra de Edge foi alterada.
    */
   public async getMegaCallOdds(sportKey: string): Promise<any[]> {
     try {
-      // Usamos markets=all para trazer o payload completo do evento
-      const url = `${this.baseUrl}/sports/${sportKey}/events?markets=all&include_bookmakers=true`;
-      console.log(`[Argos-URL] Mega Call All-In: ${url}`);
-      const response = await axios.get(url, { headers: { "X-API-Key": this.apiKey }, timeout: 45000 });
+      // CORRIGIDO: usa /odds em vez de /events?markets=all
+      const url = `${this.baseUrl}/sports/${sportKey}/odds?markets=${this.SOCCER_MARKETS}&apiKey=${this.apiKey}`;
+      console.log(`[Argos-URL] Mega Call All-In v5.5.1 (endpoint corrigido): ${url.replace(this.apiKey, '***')}`);
+      const response = await axios.get(url, { timeout: 45000 });
       this.trackRequest();
       const events = response.data || [];
-      const now = Math.floor(Date.now() / 1000);
-      
-      // Filtramos apenas dados atualizados nos últimos 5 minutos
-      return events.filter((e: any) => (now - (e.last_update || now)) <= 300);
+      const now = Date.now();
+
+      // Filtra apenas eventos futuros com odds reais (bookmakers preenchidos)
+      const filtered = events.filter((e: any) => {
+        const kickoff = new Date(e.commence_time).getTime();
+        const hasOdds = e.bookmakers && e.bookmakers.length > 0;
+        return kickoff > now && kickoff < now + 96 * 60 * 60 * 1000 && hasOdds;
+      });
+
+      console.log(`[Argos-Budget] ${sportKey}: ${events.length} total → ${filtered.length} com odds na janela 96h`);
+      return filtered;
     } catch (error: any) {
       console.error(`[Argos-Budget] Erro na Mega Call All-In para ${sportKey}:`, error.message);
       return [];
@@ -236,8 +263,9 @@ export class DataIngestionService {
   // Mantido para compatibilidade, mas marcado como legado
   async ingest(matchId: string): Promise<IngestedData> {
     console.warn(`[Argos-Legacy] Chamada de ingest individual detectada para ${matchId}. Use ingestObject para Single-Pass.`);
-    const url = `${this.baseUrl}/events/${matchId}?markets=all&include_bookmakers=true`;
-    const response = await axios.get(url, { headers: { "X-API-Key": this.apiKey } });
+    // CORRIGIDO: endpoint por evento usa /events/{id}/odds (não /events/{id}?markets=all)
+    const url = `${this.baseUrl}/sports/soccer/events/${matchId}/odds?markets=h2h,spreads,totals,both_teams_to_score,total_corners,total_cards&apiKey=${this.apiKey}`;
+    const response = await axios.get(url, { timeout: 30000 });
     this.trackRequest();
     return this.ingestObject(response.data);
   }

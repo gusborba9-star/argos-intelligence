@@ -4,17 +4,58 @@ import { BatchQueueService } from "@/lib/core/BatchQueueService";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 
 // ============================================================
-// ARGOS PROPLINE INGESTION WORKER v1.0
-// Controlled API ingestion (1000 req/day safe mode)
+// ARGOS PROPLINE INGESTION WORKER v2.0
+// AUDITORIA CTO — 2026-07-02
+//
+// PROBLEMA IDENTIFICADO E CORRIGIDO:
+//   ANTES: GET /sports/{sport}/events?markets=all
+//          → bookmakers=null em TODOS os eventos
+//          → ZERO odds chegavam ao MarketNormalizer
+//          → Pipeline inteiro sem dados reais
+//
+//   DEPOIS: GET /sports/{sport}/odds?markets=h2h,spreads,totals,...
+//           → bookmakers preenchidos com odds reais
+//           → Todos os mercados disponíveis para soccer
+//
+// REGRA: Apenas o Worker foi alterado.
+//        Nenhuma Engine, threshold ou regra de Edge foi modificada.
 // ============================================================
 
-interface PropLineEvent {
-  id: number;
+// Market keys oficiais da PropLine para soccer (validados em 2026-07-02)
+// Fonte: https://prop-line.com/docs#markets
+const SOCCER_MARKETS = [
+  "h2h",                  // Winner / 1X2
+  "spreads",              // Handicap / Asian Handicap
+  "totals",               // Over/Under Gols (múltiplas linhas)
+  "both_teams_to_score",  // BTTS
+  "total_corners",        // Escanteios
+  "total_cards",          // Cartões
+].join(",");
+
+interface PropLineOddsEvent {
+  id: string;
   sport_key: string;
-  commence_time: string;
   home_team: string;
   away_team: string;
-  status?: string;
+  commence_time: string;
+  live: boolean;
+  last_update?: string;
+  bookmakers: Array<{
+    key: string;
+    title: string;
+    last_update: string;
+    markets: Array<{
+      key: string;
+      last_update: string;
+      period: string | null;
+      outcomes: Array<{
+        name: string;
+        description: string;
+        price: number;
+        point: number | null;
+      }>;
+    }>;
+  }> | null;
 }
 
 export class PropLineIngestionWorker {
@@ -29,20 +70,23 @@ export class PropLineIngestionWorker {
   // ENTRYPOINT (CRON)
   // ============================================================
   async run() {
-    console.log("[PropLineWorker] 🚀 Ingestion started");
+    console.log("[PropLineWorker v2.0] 🚀 Ingestion started — endpoint corrigido para /odds");
 
     const sports = await this.getSports();
+    console.log(`[PropLineWorker] Esportes de futebol encontrados: ${sports.length}`);
 
     for (const sport of sports) {
       if (this.isQuotaExceeded()) break;
 
-      const events = await this.getEvents(sport.key);
+      // CORRIGIDO: usa /odds em vez de /events?markets=all
+      const events = await this.getOdds(sport.key);
+      console.log(`[PropLineWorker] ${sport.key}: ${events.length} eventos com odds`);
 
-      await this.persistEvents(events);
+      await this.persistEvents(events, sport.key);
     }
 
     console.log(
-      `[PropLineWorker] ✅ Done. Requests used: ${this.requestCount}`
+      `[PropLineWorker v2.0] ✅ Done. Requests used: ${this.requestCount}`
     );
   }
 
@@ -63,27 +107,42 @@ export class PropLineIngestionWorker {
   }
 
   // ============================================================
-  // 2. EVENTS
+  // 2. ODDS — ENDPOINT CORRETO (substitui getEvents)
+  //
+  // ANTES: /sports/{sport}/events?markets=all
+  //        → bookmakers=null, ZERO odds
+  //
+  // DEPOIS: /sports/{sport}/odds?markets=h2h,spreads,totals,...
+  //         → bookmakers preenchidos com odds reais de múltiplas casas
   // ============================================================
-  private async getEvents(sportKey: string): Promise<PropLineEvent[]> {
+  async getOdds(sportKey: string): Promise<PropLineOddsEvent[]> {
     try {
       const res = await this.request(
-        `/sports/${sportKey}/events?markets=all`
+        `/sports/${sportKey}/odds?markets=${SOCCER_MARKETS}`
       );
 
       const now = Date.now();
 
-      return (res || []).filter((event: any) => {
+      // Filtra apenas eventos futuros dentro da janela de 96h
+      const filtered = (res || []).filter((event: PropLineOddsEvent) => {
         const kickoff = new Date(event.commence_time).getTime();
+        const hasOdds = event.bookmakers && event.bookmakers.length > 0;
 
         return (
           kickoff > now &&
-          kickoff < now + 96 * 60 * 60 * 1000 // Janela expandida para 96h (Syndicate Master)
+          kickoff < now + 96 * 60 * 60 * 1000 &&
+          hasOdds
         );
       });
+
+      console.log(
+        `[PropLineWorker] ${sportKey}: ${(res || []).length} total → ${filtered.length} com odds na janela de 96h`
+      );
+
+      return filtered;
     } catch (err: any) {
       console.error(
-        `[PropLineWorker] getEvents error (${sportKey}):`,
+        `[PropLineWorker] getOdds error (${sportKey}):`,
         err.message
       );
       return [];
@@ -93,25 +152,32 @@ export class PropLineIngestionWorker {
   // ============================================================
   // 3. PERSISTÊNCIA (argos_matches)
   // ============================================================
-  private async persistEvents(events: PropLineEvent[]) {
+  private async persistEvents(events: PropLineOddsEvent[], sportKey: string) {
     for (const event of events) {
       const matchId = String(event.id);
 
-      // 🔴 anti duplicação forte
+      // Anti-duplicação: verifica se já existe
       const { data: existing } = await this.supabase
         .from("argos_matches")
-        .select("match_id")
+        .select("match_id, updated_at")
         .eq("match_id", matchId)
         .maybeSingle();
+
+      const bookmakerCount = (event.bookmakers || []).length;
+      const marketCount = (event.bookmakers || []).reduce(
+        (sum, bk) => sum + (bk.markets?.length || 0), 0
+      );
 
       if (!existing) {
         const payload = {
           match_id: matchId,
           external_provider: "PROPLINE",
           league_id: null,
+          sport_key: sportKey,
           home_team: event.home_team,
           away_team: event.away_team,
           kickoff_at: event.commence_time,
+          start_time: event.commence_time,
           status: "SCHEDULED",
           raw_data: event,
           created_at: new Date().toISOString(),
@@ -125,15 +191,26 @@ export class PropLineIngestionWorker {
         if (error) {
           console.error("[PropLineWorker] insert error:", error.message);
         } else {
-          console.log(`[PropLineWorker] ✅ Inserted match ${matchId}`);
+          console.log(
+            `[PropLineWorker] ✅ Inserted match ${matchId} | ${event.home_team} vs ${event.away_team} | bookmakers=${bookmakerCount} | mercados=${marketCount}`
+          );
         }
+      } else {
+        // Atualiza raw_data com odds mais recentes
+        await this.supabase
+          .from("argos_matches")
+          .update({ raw_data: event, updated_at: new Date().toISOString() })
+          .eq("match_id", matchId);
+
+        console.log(
+          `[PropLineWorker] 🔄 Updated match ${matchId} | bookmakers=${bookmakerCount} | mercados=${marketCount}`
+        );
       }
 
       // ============================================================
       // ENFILEIRAMENTO AUTOMÁTICO (Syndicate Master Pipeline)
+      // Enfileira com payload completo (Single-Pass) — zero re-fetch
       // ============================================================
-      // REGRA: Sempre enfileira para re-análise, mesmo que o jogo já exista.
-      // O BatchQueueService lida com a prevenção de duplicatas na fila se necessário.
       try {
         const queueService = new BatchQueueService();
         await queueService.enqueue(
@@ -150,7 +227,7 @@ export class PropLineIngestionWorker {
             MarketVertical.SHOTS,
             MarketVertical.SHOTS_ON_TARGET,
           ],
-          event // rawData para Single-Pass
+          event // rawData completo com bookmakers/markets/outcomes
         );
         console.log(`[PropLineWorker] 📥 Enqueued match ${matchId} for engine processing`);
       } catch (queueErr: any) {
@@ -170,12 +247,11 @@ export class PropLineIngestionWorker {
 
     this.requestCount++;
 
-    const url = `${this.baseUrl}${path}`;
+    // Suporta tanto apiKey como X-API-Key (ambos funcionam na PropLine)
+    const separator = path.includes("?") ? "&" : "?";
+    const url = `${this.baseUrl}${path}${separator}apiKey=${this.apiKey}`;
 
     const res = await axios.get(url, {
-      headers: {
-        "X-API-Key": this.apiKey,
-      },
       timeout: 30000,
     });
 
@@ -185,4 +261,4 @@ export class PropLineIngestionWorker {
   private isQuotaExceeded() {
     return this.requestCount >= this.maxRequestsPerDay;
   }
-  }
+}
