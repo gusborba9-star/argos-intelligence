@@ -12,7 +12,7 @@ export class NotificationService {
     this.dispatcher = new TelegramDispatcher();
   }
 
-  public async sendToTelegram(signal: ArgosSignal, userTier: string): Promise<void> {
+  public async sendToTelegram(signal: ArgosSignal, userTier: string): Promise<any> {
     const mockRegime: any = { 
       regime: "STABLE", 
       confidence: 0.85,
