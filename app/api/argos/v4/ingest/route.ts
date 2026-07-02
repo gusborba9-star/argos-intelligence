@@ -29,8 +29,69 @@ export async function GET(request: Request) {
     );
   }
 
-  // MODO TESTE: Disparo manual para Telegram
-  if (isTest) {
+    // MODO EDGE AUDIT: Diagnóstico estatístico de EV/Edge
+    const isAudit = searchParams.get("audit") === "true";
+    if (isAudit) {
+      const worker = new PropLineIngestionWorker();
+      const orchestrator = new ArgosOrchestratorV4();
+      
+      // Capturamos eventos reais sem persistir no banco (simulação pura)
+      const sports = ["soccer_fifa_world_cup", "soccer_brazil_campeonato", "soccer_uefa_champs_league"];
+      const auditLogs: any[] = [];
+      
+      try {
+        for (const sport of sports) {
+          const events = await (worker as any).getEvents(sport);
+          for (const event of events.slice(0, 10)) { // 10 jogos por liga para amostragem
+            const normalized = MarketNormalizer.normalize(event);
+            const features = FeatureEngine.generateFeatureVector(event);
+            const mockRegime: any = { regime: "STABLE", confidence: 0.85 };
+            const predictions = await (orchestrator as any).runFullMarketSimulation(features, mockRegime, "audit");
+            const opportunities = MarketDiscoveryEngine.discover(normalized, predictions);
+            
+            for (const op of opportunities) {
+              const impliedProb = 1 / op.fairOdd;
+              const edge = op.probability - impliedProb;
+              const decision = op.expectedValue >= 0.01 && op.edge >= 0.01 ? "ACCEPT" : "REJECT";
+              const reason = decision === "REJECT" ? (op.expectedValue < 0.01 ? "EV_TOO_LOW" : "EDGE_BELOW_THRESHOLD") : "NONE";
+              
+              auditLogs.push({
+                match: `${event.home_team} vs ${event.away_team}`,
+                market: op.vertical,
+                selection: op.selection,
+                odds: op.odd,
+                model_prob: (op.probability * 100).toFixed(1) + "%",
+                implied_prob: (impliedProb * 100).toFixed(1) + "%",
+                ev: (op.expectedValue * 100).toFixed(2) + "%",
+                edge: (edge * 100).toFixed(2) + "%",
+                decision,
+                reason
+              });
+            }
+          }
+        }
+        
+        const stats = {
+          total_analyzed: auditLogs.length,
+          accepted: auditLogs.filter(l => l.decision === "ACCEPT").length,
+          rejected: auditLogs.filter(l => l.decision === "REJECT").length,
+          avg_ev: (auditLogs.reduce((acc, l) => acc + parseFloat(l.ev), 0) / auditLogs.length).toFixed(2) + "%",
+          avg_edge: (auditLogs.reduce((acc, l) => acc + parseFloat(l.edge), 0) / auditLogs.length).toFixed(2) + "%",
+          max_edge: Math.max(...auditLogs.map(l => parseFloat(l.edge))).toFixed(2) + "%",
+          rejection_reasons: {
+            ev_too_low: auditLogs.filter(l => l.reason === "EV_TOO_LOW").length,
+            edge_below_threshold: auditLogs.filter(l => l.reason === "EDGE_BELOW_THRESHOLD").length
+          }
+        };
+        
+        return NextResponse.json({ status: "audit_completed", stats, logs: auditLogs.slice(0, 50) });
+      } catch (err: any) {
+        return NextResponse.json({ error: err.message }, { status: 500 });
+      }
+    }
+
+    // MODO TESTE: Disparo manual para Telegram
+    if (isTest) {
     try {
       const testSignals = [
         {
