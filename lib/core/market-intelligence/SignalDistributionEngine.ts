@@ -24,11 +24,11 @@ export interface DistributedSignal extends Opportunity {
 }
 
 // Thresholds Syndicate Master
-const FREE_MIN_PROBABILITY = 0.72;   
-const FREE_MAX_SIGNALS = 2;          
-const VIP_MIN_PROBABILITY = 0.52;    
-const VIP_MIN_EV = 0.02;             // Reduzido para capturar mais valor real (2%)
-const VIP_MIN_EDGE = 0.02;           
+const FREE_MIN_PROBABILITY = 0.68;   
+const FREE_MAX_SIGNALS = 3;          
+const VIP_MIN_PROBABILITY = 0.50;    
+const VIP_MIN_EV = 0.01;             // Flexibilizado para 1% para Copa do Mundo
+const VIP_MIN_EDGE = 0.01;           
 
 export class SignalDistributionEngine {
   /**
@@ -101,6 +101,8 @@ export class SignalDistributionEngine {
           line: op.line,
           analysisSummary: `Análise Syndicate Master: EV+ de ${(op.expectedValue * 100).toFixed(1)}% detectado no mercado de ${op.vertical}.`
         });
+      } else {
+        console.log(`[Distribution-Log] ⏭️ Oportunidade descartada para ${matchContext.name} (${op.vertical}): Prob: ${(op.probability*100).toFixed(1)}%, EV: ${(op.expectedValue*100).toFixed(1)}%, Edge: ${(op.edge*100).toFixed(1)}%`);
       }
     }
 
