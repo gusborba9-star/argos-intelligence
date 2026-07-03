@@ -2,13 +2,15 @@ import { MarketVertical } from "./ArgosUnifiedEngine";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 
 // ============================================================
-// BATCH QUEUE SERVICE v6.0.0 — SYNDICATE MASTER EDITION
+// BATCH QUEUE SERVICE v6.0.1 — SYNDICATE MASTER EDITION
 // Single-Pass Transport com:
 //   - Payload completo (rawData) na fila
-//   - Limpeza automática de itens expirados/concluídos
-//   - Expiração configurável por item
+//   - Limpeza automática de itens concluídos
 //   - Prevenção de duplicidade por unique_key
 //   - Zero chamada desnecessária à API externa
+//
+// CORREÇÃO AUDITORIA 2026-07-02:
+//   - Removido campo 'expires_at' (não existe no schema físico do banco)
 // ============================================================
 
 export enum QueueStatus {
@@ -35,8 +37,6 @@ export interface QueueItem {
   createdAt?: string;
 }
 
-// Tempo máximo que um item pode ficar na fila antes de expirar (horas)
-const QUEUE_EXPIRY_HOURS = 6;
 // Tempo máximo que itens COMPLETED/FAILED ficam no banco antes de serem limpos (horas)
 const CLEANUP_RETENTION_HOURS = 24;
 
@@ -82,7 +82,6 @@ export class BatchQueueService {
           raw_data: rawData,
           requested_verticals: safeVerticals,
           updated_at: new Date().toISOString(),
-          expires_at: this.calculateExpiry(QUEUE_EXPIRY_HOURS),
         })
         .eq("id", existing.id)
         .select()
@@ -111,7 +110,6 @@ export class BatchQueueService {
         raw_data: rawData, // Payload completo — zero re-fetch
         status: status,
         priority: priority,
-        expires_at: this.calculateExpiry(QUEUE_EXPIRY_HOURS),
       })
       .select()
       .single();
@@ -187,25 +185,13 @@ export class BatchQueueService {
 
   /**
    * Limpeza automática da fila:
-   * 1. Marca como EXPIRED itens QUEUED/VALIDATED que ultrapassaram expires_at
-   * 2. Remove itens COMPLETED/FAILED/EXPIRED/REJECTED mais antigos que CLEANUP_RETENTION_HOURS
+   * 1. Remove itens COMPLETED/FAILED/EXPIRED/REJECTED mais antigos que CLEANUP_RETENTION_HOURS
    */
-  async cleanupQueue(): Promise<{ expired: number; removed: number }> {
-    let expired = 0;
+  async cleanupQueue(): Promise<{ removed: number }> {
     let removed = 0;
 
     try {
-      // 1. Expirar itens que ultrapassaram o tempo limite
-      const { data: expiredItems } = await this.supabase
-        .from("argos_batch_queue")
-        .update({ status: QueueStatus.EXPIRED, updated_at: new Date().toISOString() })
-        .in("status", [QueueStatus.QUEUED, QueueStatus.VALIDATED])
-        .lt("expires_at", new Date().toISOString())
-        .select("id");
-
-      expired = expiredItems?.length ?? 0;
-
-      // 2. Remover itens finalizados antigos (limpeza de histórico)
+      // Remover itens finalizados antigos (limpeza de histórico)
       const cutoffDate = new Date(
         Date.now() - CLEANUP_RETENTION_HOURS * 60 * 60 * 1000
       ).toISOString();
@@ -224,16 +210,16 @@ export class BatchQueueService {
 
       removed = removedItems?.length ?? 0;
 
-      if (expired > 0 || removed > 0) {
+      if (removed > 0) {
         console.log(
-          `[BatchQueue-Cleanup] Expirados: ${expired} | Removidos: ${removed}`
+          `[BatchQueue-Cleanup] Removidos: ${removed}`
         );
       }
     } catch (error: any) {
       console.error("[BatchQueue-Cleanup] Erro na limpeza:", error.message);
     }
 
-    return { expired, removed };
+    return { removed };
   }
 
   /**
@@ -251,9 +237,5 @@ export class BatchQueueService {
       stats[item.status] = (stats[item.status] || 0) + 1;
     }
     return stats;
-  }
-
-  private calculateExpiry(hours: number): string {
-    return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
   }
 }
