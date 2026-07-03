@@ -65,7 +65,7 @@ export class DailyIngestionScheduler {
       // ── ETAPA 1: Limpeza automática da fila ──────────────────────────────
       const cleanupResult = await this.batchQueueService.cleanupQueue();
       console.log(
-        `[Argos-Cleanup] Expirados: ${cleanupResult.expired} | Removidos: ${cleanupResult.removed}`
+        `[Argos-Cleanup] Removidos: ${cleanupResult.removed}`
       );
 
       // ── ETAPA 2: Descoberta de esportes ativos ───────────────────────────
