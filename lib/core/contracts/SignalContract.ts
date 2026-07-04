@@ -19,5 +19,5 @@ export interface ArgosSignal {
   status: "OPTIMIZED" | "HEDGED" | "PREMIUM";
   reasoning?: string;
   confidence?: "HIGH" | "MEDIUM" | "LOW" | number;
-  tier?: "FREE" | "VIP" | "NONE"; // Unificado para aceitar NONE internamente
+  tier?: "FREE" | "VIP" | "LOW" | "NOISE" | "NONE"; // Unificado para o novo sistema de ranking v6.1
 }
