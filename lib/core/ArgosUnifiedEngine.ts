@@ -1,8 +1,9 @@
 import crypto from "crypto";
 
 // ============================================================
-// ARGOS v6.0.0 — SYNDICATE QUANT ENGINE
+// ARGOS v6.1.0 — SYNDICATE QUANT ENGINE (RANKING EDITION)
 // Ensemble Adaptive • Multi-Vertical Scanning • Value-Focused
+// MUDANÇA: Calibração e Geração agora são RANKING, não bloqueio.
 // ============================================================
 
 export const MIN_PROB = 0.02;
@@ -10,8 +11,8 @@ export const MAX_PROB = 0.98;
 export const MIN_ODDS = 1.01;
 export const MAX_ODDS = 50.0;
 export const BASE_EDGE = 0.002; 
-export const MAX_EXPOSURE = 5.0;
-export const TOP_K = 6; 
+export const MAX_EXPOSURE = 10.0; // Aumentado de 5.0 para 10.0 (volume)
+export const TOP_K = 12; // Aumentado de 6 para 12 (volume)
 
 export enum MarketVertical {
   WINNER = "WINNER",
@@ -26,7 +27,7 @@ export enum MarketVertical {
   TACKLES = "TACKLES",
   HANDICAP = "HANDICAP",
   SAVES = "SAVES",
-  UNKNOWN = "UNKNOWN" // Adicionado para compatibilidade v6.0.0
+  UNKNOWN = "UNKNOWN"
 }
 
 export enum ModelType {
@@ -64,7 +65,7 @@ export interface Signal {
 }
 
 export class ArgosUnifiedEngine {
-  private static readonly VERSION = "ARGOS_v6.0.0_MASTER";
+  private static readonly VERSION = "ARGOS_v6.1.0_RANKING";
 
   public static analyze(input: MatchContextInput) {
     if (!input?.matchId) throw new Error("invalid matchId");
@@ -92,7 +93,10 @@ export class ArgosUnifiedEngine {
       for (const m of markets as any) {
         const p = this.clamp(m.probability);
         const ev = p * m.impliedOdds - 1;
-        if (ev < BASE_EDGE && p < 0.70) continue;
+        
+        // MUDANÇA: Reduzido drasticamente o filtro de geração
+        // Se tem qualquer probabilidade mínima, entra no fluxo de ranking
+        if (p < 0.10) continue; 
 
         out.push({
           vertical: vertical as MarketVertical,
@@ -115,7 +119,9 @@ export class ArgosUnifiedEngine {
   }
 
   private static calibrate(signals: Signal[]): Signal[] {
-    return signals.filter(s => s.impliedOdds >= MIN_ODDS && s.impliedOdds <= MAX_ODDS);
+    // MUDANÇA: Calibração não bloqueia mais por odds
+    // Apenas garante que os valores sejam numéricos válidos
+    return signals.filter(s => !isNaN(s.impliedOdds) && s.impliedOdds > 0);
   }
 
   private static portfolio(signals: Signal[]) {
@@ -128,7 +134,8 @@ export class ArgosUnifiedEngine {
       perVertical[s.vertical] ||= 0;
       if (perVertical[s.vertical] >= TOP_K) continue;
 
-      const units = s.ev > 0.10 ? 0.5 : 0.25;
+      // Unidades fixas menores para permitir maior volume sem estourar exposição
+      const units = 0.25;
       if (exposure + units > MAX_EXPOSURE) continue;
 
       selected.push({ ...s, units });

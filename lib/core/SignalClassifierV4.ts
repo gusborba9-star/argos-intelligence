@@ -2,115 +2,108 @@ import { ArgosSignal } from "@/lib/core/contracts/SignalContract";
 import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
 
 // ============================================================
-// SIGNAL CLASSIFIER v4.3 — CALIBRATION READY (SYNDICATE)
-// - Remove thresholds fixos rígidos
-// - Introduz base estatística (percentis externos)
-// - Mantém compatibilidade com pipeline atual
+// SIGNAL CLASSIFIER v4.4 — RANKING & CALIBRATION (SYNDICATE)
+// FILOSOFIA: "O sistema deve errar para mais, não para menos."
+// MUDANÇA: Tier vira classificação/ranking, não filtro de exclusão.
+// INTEGRADO: Agora suporta perfis de calibração dinâmica.
 // ============================================================
 
 export enum SignalType {
   VALUE = "VALUE",
   VALIDATION = "VALIDATION",
-  NOISE = "NOISE"
+  NOISE = "NOISE",
+  LOW_PRIORITY = "LOW_PRIORITY"
 }
 
 export interface ClassifiedSignal extends ArgosSignal {
   signal_type: SignalType;
   confidence_score: number;
-  tier: "FREE" | "VIP" | "NONE";
+  tier: "FREE" | "VIP" | "LOW" | "NOISE" | "NONE";
 }
-
-// ============================================================
-// CALIBRATION INTERFACE (NOW DATA-DRIVEN)
-// ============================================================
 
 export interface SignalCalibrationProfile {
   probPercentiles: {
-    free: number;  // ex: 0.65
-    vip: number;   // ex: 0.80
+    free: number;  // ex: 0.60
+    vip: number;   // ex: 0.50
   };
-  evPercentile?: number; // opcional futuro
+  evThreshold?: number; // ex: 0.02
 }
 
-// fallback seguro (evita breaking change)
 const DEFAULT_CALIBRATION: SignalCalibrationProfile = {
   probPercentiles: {
-    free: 0.60,
-    vip: 0.75
-  }
+    free: 0.70,
+    vip: 0.50
+  },
+  evThreshold: 0.02
 };
 
 export class SignalClassifierV4 {
-
   /**
-   * Classifica sinais com base em calibração estatística externa.
-   * NÃO usa thresholds fixos rígidos.
+   * Classifica uma oportunidade de mercado usando Ranking em vez de Filtro.
+   * Retorna TODOS os sinais para garantir volume e observabilidade.
    */
   static classify(
-    signals: ArgosSignal[],
+    signals: ArgosSignal[], 
     regime: RegimeProfile,
     calibration: SignalCalibrationProfile = DEFAULT_CALIBRATION
   ): ClassifiedSignal[] {
-
     if (!signals || signals.length === 0) return [];
 
-    return signals
-      .map(s => {
-        const prob = s.probability ?? 0;
-        const ev = s.expectedValue ?? 0;
-        const conf = regime?.confidence ?? 0;
+    return signals.map(s => {
+      let type = SignalType.NOISE;
+      let tier: "FREE" | "VIP" | "LOW" | "NOISE" | "NONE" = "NOISE";
+      
+      const prob = s.probability ?? 0;
+      const ev = s.expectedValue ?? 0;
+      const conf = regime?.confidence ?? 0;
 
-        let type: SignalType = SignalType.NOISE;
-        let tier: "FREE" | "VIP" | "NONE" = "NONE";
+      const freeThreshold = calibration.probPercentiles.free;
+      const vipThreshold = calibration.probPercentiles.vip;
+      const evThreshold = calibration.evThreshold ?? 0.02;
 
-        // ============================================================
-        // CALIBRATED LOGIC (DATA-DRIVEN)
-        // ============================================================
+      // ── LÓGICA DE RANKING (NÃO BLOQUEANTE) ──────────────────────────
+      
+      // 1. FREE (Assertividade Pura / Marketing)
+      const isFree = prob >= freeThreshold;
+      
+      // 2. VIP (Valor e Edge)
+      const isVip = prob >= vipThreshold && ev > evThreshold;
 
-        const freeThreshold = calibration.probPercentiles.free;
-        const vipThreshold = calibration.probPercentiles.vip;
+      // 3. LOW (Monitoramento)
+      const isLow = ev > 0;
 
-        // VIP SIGNAL (high confidence + edge presence)
-        if (prob >= vipThreshold && ev > 0) {
-          type = SignalType.VALUE;
-          tier = "VIP";
-        }
+      if (isFree) {
+        type = SignalType.VALIDATION;
+        tier = "FREE";
+      } else if (isVip) {
+        type = SignalType.VALUE;
+        tier = "VIP";
+      } else if (isLow) {
+        type = SignalType.LOW_PRIORITY;
+        tier = "LOW";
+      } else {
+        type = SignalType.NOISE;
+        tier = "NOISE";
+      }
 
-        // FREE SIGNAL (mid confidence baseline)
-        else if (prob >= freeThreshold) {
-          type = SignalType.VALIDATION;
-          tier = "FREE";
-        }
-
-        // NOISE remains NONE
-        else {
-          type = SignalType.NOISE;
-          tier = "NONE";
-        }
-
-        return {
-          ...s,
-          signal_type: type,
-          confidence_score: conf,
-          tier,
-          status: (tier === "VIP"
-            ? "OPTIMIZED"
-            : tier === "FREE"
-              ? "PREMIUM"
-              : "HEDGED") as any
-        };
-      })
-      // ⚠️ filtro continua, mas agora controlado por calibração
-      .filter(s => s.tier !== "NONE");
+      return {
+        ...s,
+        signal_type: type,
+        confidence_score: conf,
+        tier: tier,
+        status: (tier === "VIP" ? "OPTIMIZED" : tier === "FREE" ? "PREMIUM" : "HEDGED") as any
+      };
+    });
+    // RETORNA TUDO: Sem filtros agressivos para garantir volume em produção.
   }
 
   /**
-   * Prepara dados para ledger (Supabase)
+   * Prepara os dados para o Ledger do Supabase
    */
   static prepareLedger(
-    matchId: string,
-    leagueId: string | undefined,
-    signals: ClassifiedSignal[],
+    matchId: string, 
+    leagueId: string | undefined, 
+    signals: ClassifiedSignal[], 
     regime: RegimeProfile
   ) {
     return signals.map(s => ({
@@ -127,4 +120,4 @@ export class SignalClassifierV4 {
       created_at: new Date().toISOString()
     }));
   }
-              }
+}
