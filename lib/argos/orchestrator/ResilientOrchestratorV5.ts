@@ -1,6 +1,6 @@
 // ============================================================
-// RESILIENT ORCHESTRATOR v6.0.1 — SYNDICATE MASTER
-// Processamento Direto de Objetos e Auditoria Master v6
+// RESILIENT ORCHESTRATOR v6.2.0 — SYNDICATE MASTER
+// Arquitetura: Zero Veto • Decision Graph • Continuous Learning
 // Instrumentação Completa de Fluxo (STEP 1-13)
 // ============================================================
 
@@ -27,7 +27,8 @@ export class ResilientOrchestratorV5 {
   }
 
   /**
-   * Execução Single-Pass Master v6.0.0.
+   * Execução Single-Pass Master v6.2.0.
+   * Filosofia: TODO sinal sobrevive ao pipeline.
    */
   async runSinglePassAudit(
     fixture: any,
@@ -41,19 +42,19 @@ export class ResilientOrchestratorV5 {
     this.logStep("STEP 1 - queue item received", qid, startTime, { matchId });
 
     try {
-      console.log(`[Argos-v6] 🛡️ Iniciando Auditoria Master para ${matchId}...`);
+      console.log(`[Argos-v6.2] 🛡️ Iniciando Auditoria Master Zero-Veto para ${matchId}...`);
 
-      // Auditoria Master v6.0.0 (Integração de todos os motores)
-      // Nota: O ArgosOrchestratorV4 será instrumentado internamente para os STEPS 2-11
+      // 1. Executa Auditoria Master (Motores Internos Instrumentados)
       const auditResult = await this.orchestrator.runSyndicateAudit(fixture, qid);
 
-      // Atualização de Fila
+      // 2. Atualização de Fila com novos status de observabilidade
       if (queueItemId) {
         let finalStatus: QueueStatus;
         if (auditResult.status === "SUCCESS") {
           finalStatus = QueueStatus.COMPLETED;
           this.logStep("STEP 12 - updateStatus(COMPLETED)", qid, startTime);
         } else if (auditResult.status === "NO_VALUE") {
+          // Na v6.2, NO_VALUE é SKIPPED, mas o sinal ainda foi processado
           finalStatus = QueueStatus.SKIPPED;
           this.logStep("STEP 12 - updateStatus(SKIPPED)", qid, startTime);
         } else {
@@ -69,7 +70,7 @@ export class ResilientOrchestratorV5 {
         executionTimeMs: Date.now() - startTime
       };
 
-      this.logStep("STEP 13 - finished", qid, startTime, { status: result.status });
+      this.logStep("STEP 13 - finished", qid, startTime, { status: result.status, signals: result.signals });
       return result;
 
     } catch (error: any) {
@@ -79,13 +80,6 @@ export class ResilientOrchestratorV5 {
         stack: error.stack,
         matchId
       });
-
-      if (error.message?.includes("EXPIRED") || error.response?.status === 404) {
-        if (queueItemId) {
-          await this.batchQueue.updateStatus(queueItemId, QueueStatus.REJECTED, "EXPIRED");
-        }
-        return { status: "SUCCESS", matchId, error: "EXPIRED", executionTimeMs: executionTime };
-      }
 
       if (queueItemId) {
         this.logStep("STEP 12 (ERROR) - updateStatus(FAILED)", qid, startTime, { error: error.message });
@@ -115,7 +109,6 @@ export class ResilientOrchestratorV5 {
     const qid = queueItemId || "DIRECT";
     this.logStep("STARTING runZeroTouchAuditWithResilience", qid, startTime, { matchId });
 
-    // Na v6.0.0, precisamos do payload completo. Se não tivermos, tentamos buscar no banco/cache.
     const ingestedData = await this.ingestionService.getCachedMatchData(matchId);
     
     if (ingestedData) {
