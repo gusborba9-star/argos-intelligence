@@ -1,4 +1,7 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 /**
  * Utilitário para sanitizar a URL do Supabase e evitar erro PGRST125

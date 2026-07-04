@@ -22,6 +22,7 @@ export enum QueueStatus {
   FAILED = "FAILED",
   REJECTED = "REJECTED",
   EXPIRED = "EXPIRED",
+  SKIPPED = "SKIPPED",
 }
 
 export interface QueueItem {
@@ -204,6 +205,7 @@ export class BatchQueueService {
           QueueStatus.FAILED,
           QueueStatus.EXPIRED,
           QueueStatus.REJECTED,
+          QueueStatus.SKIPPED,
         ])
         .lt("updated_at", cutoffDate)
         .select("id");
