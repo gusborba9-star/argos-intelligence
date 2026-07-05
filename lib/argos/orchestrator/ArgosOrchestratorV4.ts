@@ -218,7 +218,7 @@ export class ArgosOrchestratorV4 {
   }
 
     // ... (aqui está o final do seu método anterior: runFullMarketSimulation)
-  } 
+  
 
   // Este é o ÚNICO método que deve permanecer:
   private async persistSignalsToQueue(
