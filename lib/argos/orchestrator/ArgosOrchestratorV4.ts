@@ -113,7 +113,7 @@ export class ArgosOrchestratorV4 {
         matchContext
       );
       this.logStep("STEP 11 - SignalDistribution finished", queueItemId, startTime, { signals: distributedSignals.length });
-            // 7. Persistência no Ledger e na Fila
+                  // 7. Persistência no Ledger e na Fila
       if (distributedSignals.length > 0) {
         const ledgerEntries = SignalClassifierV4.prepareLedger(
           matchId,
@@ -130,6 +130,7 @@ export class ArgosOrchestratorV4 {
         
         console.log(`[Argos-Success] ✅ ${distributedSignals.length} sinais processados e despachados.`);
       }
+
 
       return {
         matchId,
@@ -235,6 +236,30 @@ export class ArgosOrchestratorV4 {
     }
     console.log(`[Argos-Success] ✅ ${signals.length} sinais injetados na fila.`);
   }
+    private async persistSignalsToQueue(
+    matchId: string,
+    signals: any[],
+    regime: RegimeProfile
+  ) {
+    for (const signal of signals) {
+      const payload = {
+        tier: signal.tier || "FREE",
+        mensagem: `Aposta: ${signal.vertical} | Seleção: ${signal.market} | Odd: ${signal.impliedOdds.toFixed(2)} | Edge: ${(signal.expectedValue * 100).toFixed(2)}%`,
+        regime: regime.regime,
+        confidence: regime.confidence
+      };
+
+      await this.supabase.from("argos_batch_queue").insert({
+        match_id: matchId,
+        status: "QUEUED",
+        requested_verticals: [signal.vertical],
+        market_family: "ALL_MARKETS",
+        raw_data: payload
+      });
+    }
+    console.log(`[Argos-Success] ✅ ${signals.length} sinais injetados no raw_data.`);
+    }
+  
         }
       
       
