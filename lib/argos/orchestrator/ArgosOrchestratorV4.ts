@@ -113,8 +113,7 @@ export class ArgosOrchestratorV4 {
         matchContext
       );
       this.logStep("STEP 11 - SignalDistribution finished", queueItemId, startTime, { signals: distributedSignals.length });
-
-      // 7. Persistência no Ledger para Aprendizado Futuro
+            // 7. Persistência no Ledger e na Fila
       if (distributedSignals.length > 0) {
         const ledgerEntries = SignalClassifierV4.prepareLedger(
           matchId,
@@ -122,7 +121,13 @@ export class ArgosOrchestratorV4 {
           distributedSignals as any,
           regime
         );
+
+        // Grava no Ledger para histórico
         await this.supabase.from("argos_signal_ledger").insert(ledgerEntries);
+
+        // Dispara o envio para a Fila (que ativa a Trigger do Telegram)
+        await this.persistSignalsToQueue(matchId, distributedSignals, regime);
+        
         console.log(`[Argos-Success] ✅ ${distributedSignals.length} sinais processados e despachados.`);
       }
 
@@ -149,10 +154,6 @@ export class ArgosOrchestratorV4 {
     }
   }
 
-  /**
-   * Executa simulações Monte Carlo para TODOS os mercados obrigatórios.
-   * Agora integra a calibração do Continuous Learning Engine.
-   */
   private async runFullMarketSimulation(
     features: any,
     regime: RegimeProfile,
@@ -214,4 +215,27 @@ export class ArgosOrchestratorV4 {
 
     return predictions;
   }
-}
+
+  private async persistSignalsToQueue(
+    matchId: string,
+    signals: any[],
+    regime: RegimeProfile
+  ) {
+    for (const signal of signals) {
+      await this.supabase.from("argos_batch_queue").insert({
+        match_id: matchId,
+        status: "QUEUED",
+        requested_verticals: [signal.vertical],
+        market_family: "ALL_MARKETS",
+        raw_data: {
+          tier: signal.tier || "FREE",
+          mensagem: `Aposta: ${signal.vertical} | Seleção: ${signal.market} | Odd: ${signal.impliedOdds.toFixed(2)} | Edge: ${(signal.expectedValue * 100).toFixed(2)}%`
+        }
+      });
+    }
+    console.log(`[Argos-Success] ✅ ${signals.length} sinais injetados na fila.`);
+  }
+        }
+      
+      
+    
