@@ -221,29 +221,37 @@ export class ArgosOrchestratorV4 {
   
 
   // Este é o ÚNICO método que deve permanecer:
-  private async persistSignalsToQueue(
+    private async persistSignalsToQueue(
     matchId: string,
     signals: any[],
     regime: RegimeProfile
   ) {
     for (const signal of signals) {
-      const payload = {
+      // Garantimos que estamos enviando um objeto puro e limpo
+      const rawPayload = {
         tier: signal.tier || "FREE",
-        mensagem: `Aposta: ${signal.vertical} | Seleção: ${signal.market} | Odd: ${signal.impliedOdds.toFixed(2)} | Edge: ${(signal.expectedValue * 100).toFixed(2)}%`,
+        mensagem: `Aposta: ${signal.vertical} | Seleção: ${signal.market} | Odd: ${signal.impliedOdds?.toFixed(2) ?? "0.00"} | Edge: ${((signal.expectedValue || 0) * 100).toFixed(2)}%`,
         regime: regime.regime,
         confidence: regime.confidence
       };
 
-      await this.supabase.from("argos_batch_queue").insert({
-        match_id: matchId,
-        status: "QUEUED",
-        requested_verticals: [signal.vertical],
-        market_family: "ALL_MARKETS",
-        raw_data: payload
-      });
+      const { error } = await this.supabase
+        .from("argos_batch_queue")
+        .insert({
+          match_id: matchId,
+          status: "QUEUED",
+          requested_verticals: [signal.vertical],
+          market_family: "ALL_MARKETS",
+          raw_data: rawPayload // Passamos o objeto direto aqui
+        });
+
+      if (error) {
+        console.error(`[Argos-Error] Falha ao injetar fila para ${matchId}:`, error);
+      }
     }
-    console.log(`[Argos-Success] ✅ ${signals.length} sinais injetados no raw_data.`);
+    console.log(`[Argos-Success] Sinais injetados para ${matchId}.`);
   }
+
 
 } // <--- Esta é a ÚNICA chave que fecha a classe ArgosOrchestratorV4
 
