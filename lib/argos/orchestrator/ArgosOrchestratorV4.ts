@@ -217,26 +217,11 @@ export class ArgosOrchestratorV4 {
     return predictions;
   }
 
+    // ... (aqui está o final do seu método anterior: runFullMarketSimulation)
+  } 
+
+  // Este é o ÚNICO método que deve permanecer:
   private async persistSignalsToQueue(
-    matchId: string,
-    signals: any[],
-    regime: RegimeProfile
-  ) {
-    for (const signal of signals) {
-      await this.supabase.from("argos_batch_queue").insert({
-        match_id: matchId,
-        status: "QUEUED",
-        requested_verticals: [signal.vertical],
-        market_family: "ALL_MARKETS",
-        raw_data: {
-          tier: signal.tier || "FREE",
-          mensagem: `Aposta: ${signal.vertical} | Seleção: ${signal.market} | Odd: ${signal.impliedOdds.toFixed(2)} | Edge: ${(signal.expectedValue * 100).toFixed(2)}%`
-        }
-      });
-    }
-    console.log(`[Argos-Success] ✅ ${signals.length} sinais injetados na fila.`);
-  }
-    private async persistSignalsToQueue(
     matchId: string,
     signals: any[],
     regime: RegimeProfile
@@ -258,9 +243,10 @@ export class ArgosOrchestratorV4 {
       });
     }
     console.log(`[Argos-Success] ✅ ${signals.length} sinais injetados no raw_data.`);
-    }
-  
-        }
+  }
+
+} // <--- Esta é a ÚNICA chave que fecha a classe ArgosOrchestratorV4
+
       
       
     
