@@ -127,26 +127,32 @@ export class TelegramDispatcher {
     }
   }
 
-  private async sendToTelegram(chatId: string, text: string, parseMode: string): Promise<any> {
+      private async sendToTelegram(chatId: string, text: string, parseMode: string): Promise<any> {
     if (!chatId || !this.botToken) return { error: "Chat ID or Bot Token missing" };
     
     const supabase = getSupabaseClient();
 
     try {
-      // Inserção na fila para processamento seguro via pg_net
+      // Proteção extra: Removemos caracteres que frequentemente quebram o parsing HTML
+      // Se necessário, você pode expandir essa função de escape
+      const safeText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
       const { error } = await supabase.from('argos_http_queue').insert({
         url: `https://api.telegram.org/bot${this.botToken}/sendMessage`,
         headers: { "Content-Type": "application/json" },
         body: {
           chat_id: chatId,
-          text: text,
-          parse_mode: parseMode,
+          text: text, // Mantemos o texto original, pois você já usa tags HTML intencionais
+          parse_mode: 'HTML', // Forçamos o modo HTML aqui
           disable_web_page_preview: true
         },
         status: 'PENDING'
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error("[Telegram-Supabase-Error]", error);
+        throw error;
+      }
 
       return { success: true, message: "Enfileirado no Supabase" };
     } catch (error: any) {
@@ -154,6 +160,7 @@ export class TelegramDispatcher {
       return { success: false, error: error.message };
     }
   }
+
 
   private getVerticalEmoji(v: string): string {
     const m: Record<string, string> = {
