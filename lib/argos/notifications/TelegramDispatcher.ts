@@ -1,5 +1,6 @@
 import axios from "axios";
 import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
+import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 
 // ============================================================
 // TELEGRAM DISPATCHER v6.0.0 — SYNDICATE MASTER EDITION
@@ -128,18 +129,29 @@ export class TelegramDispatcher {
 
   private async sendToTelegram(chatId: string, text: string, parseMode: string): Promise<any> {
     if (!chatId || !this.botToken) return { error: "Chat ID or Bot Token missing" };
+    
+    const supabase = getSupabaseClient();
+
     try {
-      const response = await axios.post(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
-        chat_id: chatId,
-        text: text,
-        parse_mode: parseMode,
-        disable_web_page_preview: true
+      // Inserção na fila para processamento seguro via pg_net
+      const { error } = await supabase.from('argos_http_queue').insert({
+        url: `https://api.telegram.org/bot${this.botToken}/sendMessage`,
+        headers: { "Content-Type": "application/json" },
+        body: {
+          chat_id: chatId,
+          text: text,
+          parse_mode: parseMode,
+          disable_web_page_preview: true
+        },
+        status: 'PENDING'
       });
-      return { success: true, message_id: response.data.result.message_id };
+
+      if (error) throw error;
+
+      return { success: true, message: "Enfileirado no Supabase" };
     } catch (error: any) {
-      const errorData = error.response?.data || error.message;
-      console.error(`[Telegram-Error] Falha ao enviar para ${chatId}:`, errorData);
-      return { success: false, error: errorData };
+      console.error(`[Telegram-Fila-Error] Falha ao enfileirar para ${chatId}:`, error.message);
+      return { success: false, error: error.message };
     }
   }
 
