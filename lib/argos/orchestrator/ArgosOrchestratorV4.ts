@@ -99,6 +99,13 @@ export class ArgosOrchestratorV4 {
       const discoveryReport = MarketDiscoveryEngine.generateReport(opportunities);
       this.logStep("STEP 9 - MarketDiscovery finished", queueItemId, startTime, { opportunities: opportunities.length });
 
+          this.logStep("STEP 9 - MarketDiscovery finished", queueItemId, startTime, { opportunities: opportunities.length });
+
+    // --- LINHA 101 ---
+    console.log(`[DEBUG] Auditoria: ${matchId} | Oportunidades detectadas: ${opportunities.length}`); 
+
+    // 6. Signal Distribution Engine (FREE vs VIP) & Telegram Dispatch (STEP 10-11)
+      
       // 6. Signal Distribution Engine (FREE vs VIP) & Telegram Dispatch (STEP 10-11)
       this.logStep("STEP 10 - SignalDistribution started", queueItemId, startTime);
       const matchContext = {
