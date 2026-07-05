@@ -113,7 +113,8 @@ export class ArgosOrchestratorV4 {
         matchContext
       );
       this.logStep("STEP 11 - SignalDistribution finished", queueItemId, startTime, { signals: distributedSignals.length });
-                  // 7. Persistência no Ledger e na Fila
+
+      // 7. Persistência no Ledger e na Fila
       if (distributedSignals.length > 0) {
         const ledgerEntries = SignalClassifierV4.prepareLedger(
           matchId,
@@ -130,7 +131,6 @@ export class ArgosOrchestratorV4 {
         
         console.log(`[Argos-Success] ✅ ${distributedSignals.length} sinais processados e despachados.`);
       }
-
 
       return {
         matchId,
@@ -217,17 +217,14 @@ export class ArgosOrchestratorV4 {
     return predictions;
   }
 
-    // ... (aqui está o final do seu método anterior: runFullMarketSimulation)
-  
-
-  // Este é o ÚNICO método que deve permanecer:
-    private async persistSignalsToQueue(
+  private async persistSignalsToQueue(
     matchId: string,
     signals: any[],
     regime: RegimeProfile
   ) {
+    console.log(`[DEBUG] Auditoria: ${matchId} | Sinais recebidos: ${signals.length}`);
+    
     for (const signal of signals) {
-      // Garantimos que estamos enviando um objeto puro e limpo
       const rawPayload = {
         tier: signal.tier || "FREE",
         mensagem: `Aposta: ${signal.vertical} | Seleção: ${signal.market} | Odd: ${signal.impliedOdds?.toFixed(2) ?? "0.00"} | Edge: ${((signal.expectedValue || 0) * 100).toFixed(2)}%`,
@@ -242,19 +239,15 @@ export class ArgosOrchestratorV4 {
           status: "QUEUED",
           requested_verticals: [signal.vertical],
           market_family: "ALL_MARKETS",
-          raw_data: rawPayload // Passamos o objeto direto aqui
+          raw_data: rawPayload
         });
 
       if (error) {
         console.error(`[Argos-Error] Falha ao injetar fila para ${matchId}:`, error);
+      } else {
+        console.log(`[Argos-Success] Sinais injetados para ${matchId}.`);
       }
     }
-    console.log(`[Argos-Success] Sinais injetados para ${matchId}.`);
   }
-
-
-} // <--- Esta é a ÚNICA chave que fecha a classe ArgosOrchestratorV4
-
-      
-      
-    
+      }
+  
