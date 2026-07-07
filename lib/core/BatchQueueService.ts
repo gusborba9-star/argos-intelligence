@@ -52,7 +52,7 @@ export class BatchQueueService {
    * Enfileira um item com payload completo (Single-Pass).
    * Prevenção de duplicidade: retorna o ID existente se unique_key já existe.
    */
-  async enqueue(
+    async enqueue(
     matchId: string,
     marketFamily: string,
     verticals: string[],
@@ -64,6 +64,15 @@ export class BatchQueueService {
     const safeVerticals = (verticals || []).filter((v) =>
       Object.values(MarketVertical).includes(v as MarketVertical)
     );
+
+    // --- PROTEÇÃO CONTRA DADOS CORROMPIDOS ---
+    // Impede a entrada de sinais sem matchName, vertical ou odd no banco.
+    if (!rawData || !rawData.matchName || !rawData.vertical || rawData.odd === undefined) {
+      console.error(`[BatchQueue] ⚠️ Registro rejeitado: Payload incompleto para ${uniqueKey}`, { rawData });
+      throw new Error(`[BatchQueue] Dados de sinal inválidos para ${uniqueKey}`);
+    }
+    // ------------------------------------------
+
 
     // Verificar se já existe item ativo (QUEUED, VALIDATED, PROCESSING)
     const { data: existing } = await this.supabase
