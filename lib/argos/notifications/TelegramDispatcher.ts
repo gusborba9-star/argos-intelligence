@@ -130,36 +130,37 @@ export class TelegramDispatcher {
       private async sendToTelegram(chatId: string, text: string, parseMode: string): Promise<any> {
     if (!chatId || !this.botToken) return { error: "Chat ID or Bot Token missing" };
     
+    // PROTEÇÃO: Se o texto contiver a palavra "null", aborta o envio para não poluir o canal
+    if (text.includes("null") || text.includes("undefined")) {
+      console.error("[Telegram] Abortando envio: mensagem contém dados vazios (null/undefined)");
+      return { success: false, error: "Data incomplete" };
+    }
+
     const supabase = getSupabaseClient();
 
     try {
-      // Proteção extra: Removemos caracteres que frequentemente quebram o parsing HTML
-      // Se necessário, você pode expandir essa função de escape
-      const safeText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      // Nota: Não use o replace que você fez antes, pois ele destrói suas tags <b> e <code>.
+      // O ideal é validar os dados ANTES de chamar esta função.
 
       const { error } = await supabase.from('argos_http_queue').insert({
         url: `https://api.telegram.org/bot${this.botToken}/sendMessage`,
         headers: { "Content-Type": "application/json" },
         body: {
           chat_id: chatId,
-          text: text, // Mantemos o texto original, pois você já usa tags HTML intencionais
-          parse_mode: 'HTML', // Forçamos o modo HTML aqui
+          text: text, 
+          parse_mode: 'HTML',
           disable_web_page_preview: true
         },
         status: 'PENDING'
       });
 
-      if (error) {
-        console.error("[Telegram-Supabase-Error]", error);
-        throw error;
-      }
-
-      return { success: true, message: "Enfileirado no Supabase" };
+      if (error) throw error;
+      return { success: true };
     } catch (error: any) {
-      console.error(`[Telegram-Fila-Error] Falha ao enfileirar para ${chatId}:`, error.message);
       return { success: false, error: error.message };
     }
-  }
+}
+
 
 
   private getVerticalEmoji(v: string): string {
