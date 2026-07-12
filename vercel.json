@@ -21,10 +21,6 @@
     "GOOGLE_API_KEY",
     "ARGOS_API_KEY"
   ],
-  "github": {
-    "enabled": false,
-    "autoAlias": false
-  },
   "headers": [
     {
       "source": "/api/argos/:path*",
