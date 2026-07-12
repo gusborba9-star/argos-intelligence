@@ -134,33 +134,33 @@ CREATE TABLE IF NOT EXISTS public.argos_model_config (
 -- PHASE 2: CREATE INDEXES (PERFORMANCE OPTIMIZATION)
 -- ============================================================
 
-CREATE INDEX idx_argos_matches_league_id ON public.argos_matches(league_id);
-CREATE INDEX idx_argos_matches_start_time ON public.argos_matches(start_time DESC);
-CREATE INDEX idx_argos_matches_status ON public.argos_matches(status);
-CREATE INDEX idx_argos_matches_processed ON public.argos_matches(processed);
+CREATE INDEX IF NOT EXISTS idx_argos_matches_league_id ON public.argos_matches(league_id);
+CREATE INDEX IF NOT EXISTS idx_argos_matches_start_time ON public.argos_matches(start_time DESC);
+CREATE INDEX IF NOT EXISTS idx_argos_matches_status ON public.argos_matches(status);
+CREATE INDEX IF NOT EXISTS idx_argos_matches_processed ON public.argos_matches(processed);
 
-CREATE INDEX idx_argos_signal_ledger_match_id ON public.argos_signal_ledger(match_id);
-CREATE INDEX idx_argos_signal_ledger_tier ON public.argos_signal_ledger(tier);
-CREATE INDEX idx_argos_signal_ledger_status ON public.argos_signal_ledger(status);
-CREATE INDEX idx_argos_signal_ledger_created_at ON public.argos_signal_ledger(created_at DESC);
-CREATE INDEX idx_argos_signal_ledger_vertical ON public.argos_signal_ledger(vertical);
+CREATE INDEX IF NOT EXISTS idx_argos_signal_ledger_match_id ON public.argos_signal_ledger(match_id);
+CREATE INDEX IF NOT EXISTS idx_argos_signal_ledger_tier ON public.argos_signal_ledger(tier);
+CREATE INDEX IF NOT EXISTS idx_argos_signal_ledger_status ON public.argos_signal_ledger(status);
+CREATE INDEX IF NOT EXISTS idx_argos_signal_ledger_created_at ON public.argos_signal_ledger(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_argos_signal_ledger_vertical ON public.argos_signal_ledger(vertical);
 
-CREATE INDEX idx_argos_http_queue_status ON public.argos_http_queue(status);
-CREATE INDEX idx_argos_http_queue_created_at ON public.argos_http_queue(created_at DESC);
-CREATE INDEX idx_argos_http_queue_retry ON public.argos_http_queue(next_retry_at) WHERE status = 'RETRY';
+CREATE INDEX IF NOT EXISTS idx_argos_http_queue_status ON public.argos_http_queue(status);
+CREATE INDEX IF NOT EXISTS idx_argos_http_queue_created_at ON public.argos_http_queue(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_argos_http_queue_retry ON public.argos_http_queue(next_retry_at) WHERE status = 'RETRY';
 
-CREATE INDEX idx_argos_batch_queue_status ON public.argos_batch_queue(status);
-CREATE INDEX idx_argos_batch_queue_match_id ON public.argos_batch_queue(match_id);
-CREATE INDEX idx_argos_batch_queue_created_at ON public.argos_batch_queue(created_at DESC);
-CREATE INDEX idx_argos_batch_queue_priority ON public.argos_batch_queue(priority DESC, created_at ASC) WHERE status = 'QUEUED';
+CREATE INDEX IF NOT EXISTS idx_argos_batch_queue_status ON public.argos_batch_queue(status);
+CREATE INDEX IF NOT EXISTS idx_argos_batch_queue_match_id ON public.argos_batch_queue(match_id);
+CREATE INDEX IF NOT EXISTS idx_argos_batch_queue_created_at ON public.argos_batch_queue(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_argos_batch_queue_priority ON public.argos_batch_queue(priority DESC, created_at ASC) WHERE status = 'QUEUED';
 
-CREATE INDEX idx_argos_telegram_log_signal_id ON public.argos_telegram_log(signal_id);
-CREATE INDEX idx_argos_telegram_log_tier ON public.argos_telegram_log(tier);
-CREATE INDEX idx_argos_telegram_log_delivery_status ON public.argos_telegram_log(delivery_status);
+CREATE INDEX IF NOT EXISTS idx_argos_telegram_log_signal_id ON public.argos_telegram_log(signal_id);
+CREATE INDEX IF NOT EXISTS idx_argos_telegram_log_tier ON public.argos_telegram_log(tier);
+CREATE INDEX IF NOT EXISTS idx_argos_telegram_log_delivery_status ON public.argos_telegram_log(delivery_status);
 
-CREATE INDEX idx_argos_predictions_match_id ON public.argos_predictions(match_id);
-CREATE INDEX idx_argos_predictions_league_id ON public.argos_predictions(league_id);
-CREATE INDEX idx_argos_predictions_created_at ON public.argos_predictions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_argos_predictions_match_id ON public.argos_predictions(match_id);
+CREATE INDEX IF NOT EXISTS idx_argos_predictions_league_id ON public.argos_predictions(league_id);
+CREATE INDEX IF NOT EXISTS idx_argos_predictions_created_at ON public.argos_predictions(created_at DESC);
 
 -- ============================================================
 -- PHASE 3: CREATE FUNCTIONS (BUSINESS LOGIC)
@@ -270,9 +270,7 @@ BEGIN
     body,
     status
   ) VALUES (
-    FORMAT('https://api.telegram.org/bot%s/sendMessage',
-           CURRENT_SETTING('argos.telegram_bot_token', true))
-    ,
+    'https://api.telegram.org/bot8700765166:AAGE2K_inKiWKdj5vIaZm8SmsQuiY7Byi1M/sendMessage',
     '{"Content-Type": "application/json"}'::jsonb,
     jsonb_build_object(
       'chat_id', v_channel_id,
@@ -388,6 +386,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_signal_dispatch_on_insert ON public.argos_signal_ledger;
 CREATE TRIGGER trigger_signal_dispatch_on_insert
 AFTER INSERT ON public.argos_signal_ledger
 FOR EACH ROW
@@ -404,30 +403,35 @@ ALTER TABLE public.argos_http_queue ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.argos_telegram_log ENABLE ROW LEVEL SECURITY;
 
 -- Política: service_role pode ler/escrever tudo
+DROP POLICY IF EXISTS "service_role_full_access" ON public.argos_matches;
 CREATE POLICY "service_role_full_access"
   ON public.argos_matches
   FOR ALL
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
 
+DROP POLICY IF EXISTS "service_role_full_access_signals" ON public.argos_signal_ledger;
 CREATE POLICY "service_role_full_access_signals"
   ON public.argos_signal_ledger
   FOR ALL
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
 
+DROP POLICY IF EXISTS "service_role_full_access_queue" ON public.argos_batch_queue;
 CREATE POLICY "service_role_full_access_queue"
   ON public.argos_batch_queue
   FOR ALL
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
 
+DROP POLICY IF EXISTS "service_role_full_access_http" ON public.argos_http_queue;
 CREATE POLICY "service_role_full_access_http"
   ON public.argos_http_queue
   FOR ALL
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
 
+DROP POLICY IF EXISTS "service_role_full_access_telegram" ON public.argos_telegram_log;
 CREATE POLICY "service_role_full_access_telegram"
   ON public.argos_telegram_log
   FOR ALL
@@ -455,35 +459,4 @@ INSERT INTO public.argos_model_config (
 ON CONFLICT (league_id, vertical) DO UPDATE SET
   updated_at = CURRENT_TIMESTAMP;
 
--- ============================================================
--- VERIFICATION QUERIES
--- ============================================================
-
--- Verificar tabelas criadas
-SELECT table_name FROM information_schema.tables 
-WHERE table_schema = 'public' 
-AND table_name LIKE 'argos_%'
-ORDER BY table_name;
-
--- Verificar índices
-SELECT indexname FROM pg_indexes 
-WHERE schemaname = 'public' 
-AND tablename LIKE 'argos_%'
-ORDER BY indexname;
-
--- Verificar funções
-SELECT routine_name FROM information_schema.routines 
-WHERE routine_schema = 'public' 
-AND routine_type = 'FUNCTION'
-ORDER BY routine_name;
-
--- ============================================================
--- FINAL: COMMIT & VERIFY
--- ============================================================
--- Status: ✅ READY FOR PRODUCTION
--- Total Tables: 7
--- Total Indexes: 15+
--- Total Functions: 5
--- Total Triggers: 2
--- RLS Policies: 5
--- ============================================================
+SELECT 'ARGOS v7.0 SQL SCHEMA - DEPLOYMENT COMPLETE' AS status;
