@@ -1,0 +1,39 @@
+{
+  "$schema": "https://openapi.vercel.sh",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install --prefer-offline --no-audit",
+  "framework": "nextjs",
+  "regions": ["sfo1", "iad1"],
+  "functions": {
+    "app/api/**/*.ts": {
+      "maxDuration": 60,
+      "memory": 3008
+    }
+  },
+  "env": [
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "PROPLINE_API_KEY",
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_FREE_CHANNEL_ID",
+    "TELEGRAM_CHAT_ID",
+    "GOOGLE_API_KEY",
+    "ARGOS_API_KEY"
+  ],
+  "headers": [
+    {
+      "source": "/api/argos/:path*",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
+    }
+  ]
+}

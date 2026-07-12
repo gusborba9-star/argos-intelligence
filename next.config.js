@@ -1,7 +1,25 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Isso garante que o projeto rode em modo Serverless compatível com Vercel
-  output: 'standalone', 
+  output: 'standalone',
+  poweredByHeader: false,
+  compress: true,
+  swcMinify: true,
+  productionBrowserSourceMaps: false,
+  optimizeFonts: true,
+  reactStrictMode: true,
+  headers: async () => {
+    return [
+      {
+        source: '/api/argos/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=0, must-revalidate'
+          }
+        ]
+      }
+    ];
+  }
 };
 
 module.exports = nextConfig;
