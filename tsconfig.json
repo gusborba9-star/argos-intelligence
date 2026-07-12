@@ -13,9 +13,7 @@
     "moduleResolution": "bundler",
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./*"]
     },
     "resolveJsonModule": true,
     "isolatedModules": true,
@@ -27,7 +25,10 @@
     ],
     "allowJs": true,
     "incremental": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
   },
   "include": [
     "next-env.d.ts",
@@ -37,6 +38,9 @@
   ],
   "exclude": [
     "node_modules",
-    "lib/tests"
+    "lib/tests",
+    ".next",
+    "dist",
+    "build"
   ]
 }
