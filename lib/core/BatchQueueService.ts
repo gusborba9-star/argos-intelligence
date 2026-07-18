@@ -66,10 +66,10 @@ export class BatchQueueService {
     );
 
     // --- PROTEÇÃO CONTRA DADOS CORROMPIDOS ---
-    // Impede a entrada de sinais sem matchName, vertical ou odd no banco.
-    if (!rawData || !rawData.matchName || !rawData.vertical || rawData.odd === undefined) {
-      console.error(`[BatchQueue] ⚠️ Registro rejeitado: Payload incompleto para ${uniqueKey}`, { rawData });
-      throw new Error(`[BatchQueue] Dados de sinal inválidos para ${uniqueKey}`);
+    // Na v6, o rawData é o payload bruto da PropLine, não o objeto de sinal final.
+    if (!rawData || (!rawData.id && !rawData.match_id)) {
+      console.error(`[BatchQueue] ⚠️ Registro rejeitado: Payload bruto incompleto para ${uniqueKey}`, { rawData });
+      throw new Error(`[BatchQueue] Dados brutos inválidos para ${uniqueKey}`);
     }
     // ------------------------------------------
 

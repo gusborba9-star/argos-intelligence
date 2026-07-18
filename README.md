@@ -1,173 +1,78 @@
-# Argos Intelligence v5.0 — Syndicate-Level Market Auditor
+# Argos Intelligence v6.0.0 — Syndicate Master Edition
 
-🏆 **Status**: Production Ready | **Version**: 5.0-Syndicate | **Author**: CTO Engenheiro Sênior (Manus AI)
+🏆 **Status**: Production Ready | **Version**: 6.0.0-Master | **Author**: CTO Senior Engineer (Manus AI) | **Email**: gusborba9@gmail.com
 
-O Argos v5.0 é um motor matemático quantitativo de **MÁXIMA ASSERTIVIDADE**, projetado para atuar como um **Caçador de Oportunidades**, integrando inteligência contextual (RAG), simulações estocásticas (Monte Carlo), e descoberta **DINÂMICA** de mercados. A visão é comparável apenas aos **Syndicates Americanos de Elite**.
+O Argos v6.0.0 é a evolução definitiva do sistema, transformando-o em um motor de inteligência de nível **Syndicate Americano**. Esta versão foca em **Single-Pass Ingestion**, **Pinnacle-Heavy Fair Lines** e **Zero Veto Distribution**.
 
-## 🚀 Pilares Revolucionários da v5.0
+## 🚀 Fluxo Mestre Syndicate (v6.0.0)
 
-### 1. **Adaptação Dinâmica de Cenários**
-- ❌ Sem fixação em ligas específicas
-- ✅ Descobre automaticamente os MELHORES jogos em tempo real
-- ✅ Copa do Mundo? 100% de prioridade
-- ✅ Copa acaba? Migra AUTOMATICAMENTE para ligas domésticas
-- ✅ Calendário muda? Se adapta em segundos
+O sistema opera em um fluxo linear e otimizado para eliminar redundâncias e garantir EV+ em cada sinal:
 
-### 2. **Caçador de Oportunidades (Market Agnostic)**
-- ✅ Não descarta nenhum jogo por mercado espremido
-- ✅ Se Winner tem odd ruim → varre TODOS os outros mercados:
-  - Under/Over, Cantos, Cartões, Gols, BTTs, HT
-  - Superioridade, Chutes, Faltas, Defesas, Impedimentos
-  - TUDO que PropLine disponibilizar
-- ✅ Zero processamento de lixo (Tier 4 bloqueado)
-- ✅ Apenas jogos a serem iniciados (no histórico descartado)
+1.  **PropLine Mega Call All-In**: Ingestão completa de todos os mercados disponíveis em uma única chamada.
+2.  **MarketNormalizer**: Transformação do payload bruto em estrutura estável, capturando TODAS as casas (Pinnacle, Betfair, etc).
+3.  **Feature Engine**: Geração de vetores estatísticos com decaimento exponencial (jogos recentes valem mais).
+4.  **RAG + Monte Carlo**: Integração de contexto (lesões, clima, motivação via RAG) com simulações estocásticas de 10.000 iterações.
+5.  **Odds Value Engine**: Cálculo de EV%, Edge% e Real Value. NUNCA um sinal é enviado sem EV positivo.
+6.  **Signal Distribution Engine**: Classificação automática entre canais **FREE** (Alta Probabilidade/Elite) e **VIP** (Full EV+).
 
-### 3. **Cérebro Que Aprende**
-- ✅ Histórico completo persiste no Supabase (pgvector + RAG)
-- ✅ A cada jogo processado, o modelo melhora
-- ✅ Auto-tuning via Brier Score histórico
-- ✅ Regressão em tempo real dos thresholds
-
-### 4. **Entrega Estratificada (Free vs VIP)**
-- ✅ Canal FREE: Assertividade Extrema (apenas sinais com prob > 75%)
-- ✅ Canal VIP: EV+ Completo (margem de lucro calculada via Kelly)
-- ✅ Sincronização perfeita: Zero duplicatas, Zero falhas
-
-## 🏛️ Estrutura de Diretórios
+## 🏛️ Arquitetura de Pastas (v6.0.0)
 
 ```text
 argos-intelligence/
 ├── app/
 │   └── api/
 │       └── argos/
-│           └── v4/
-│               └── route.ts              ← Endpoint Unificado (Vercel)
+│           └── v6/
+│               └── route.ts              ← Novo Endpoint Master (Single-Pass)
 ├── lib/
 │   ├── argos/
-│   │   ├── ingestion/
-│   │   │   ├── DynamicFixtureScanner.ts  ← NEW: Descoberta automática
-│   │   │   ├── LeagueValueScoreEngine.ts ← Elite curation
-│   │   │   └── DailyIngestionScheduler.ts
 │   │   ├── orchestrator/
+│   │   │   └── ArgosMasterOrchestrator.ts ← O Cérebro do Sistema
 │   │   ├── regime/
-│   │   ├── delivery/
-│   │   ├── notifications/
-│   │   └── analytics/
+│   │   │   └── RAGContextEngine.ts       ← Recuperação de Contexto Semântico
+│   │   └── delivery/
+│   │       └── ValueDeliveryService.ts   ← Gestão de Tiers (FREE/VIP)
 │   └── core/
-│       ├── PropLineConfigManager.ts      ← NEW: Config singleton
-│       ├── DataIngestionService.ts       ← PropLine-ready
-│       ├── FeatureEngine.ts
-│       ├── ArgosValidation.ts
-│       ├── PredictiveMaintenanceService.ts
-│       └── ...
-└── docs/
-    └── ARCHITECTURE_V5.md
+│       ├── market-intelligence/
+│       │   ├── MarketNormalizer.ts       ← Normalização Universal
+│       │   ├── FairOddsCalculator.ts     ← Pinnacle-Heavy Engine
+│       │   ├── OddsValueEngine.ts        ← EV & Kelly Calculator
+│       │   └── SignalDistributionEngine.ts ← Telegram Dispatcher
+│       ├── ModelFactory.ts               ← Monte Carlo & Poisson
+│       └── FeatureEngine.ts              ← Estatística Avançada
+└── supabase/
+    └── migrations/
+        └── v6_master_perfect_flow.sql    ← Schema Consolidado
 ```
 
-## 🛠️ Instalação & Deploy
+## 🛠️ Configuração e Build
 
-### 1. Clone & Setup
+### 1. Variáveis de Ambiente (.env)
 ```bash
-git clone https://github.com/gusborba9-star/argos-intelligence.git
-cd argos-intelligence
+PROPLINE_API_KEY=sua_chave
+TELEGRAM_BOT_TOKEN=seu_token
+TELEGRAM_FREE_CHANNEL_ID=id_canal_free
+TELEGRAM_CHAT_ID=id_canal_vip
+NEXT_PUBLIC_SUPABASE_URL=url_supabase
+SUPABASE_SERVICE_ROLE_KEY=key_service_role
+GOOGLE_AI_API_KEY=chave_gemini_rag
+```
+
+### 2. Build de Produção
+```bash
 npm install
-# ou
-pnpm install
-```
-
-### 2. Configure Variáveis de Ambiente
-```bash
-cp .env.example .env
-# Edite .env com suas credenciais:
-# - PROPLINE_API_KEY
-# - TELEGRAM_BOT_TOKEN
-# - TELEGRAM_FREE_CHANNEL_ID
-# - TELEGRAM_CHAT_ID
-# - SUPABASE_*
-# - GOOGLE_API_KEY
-```
-
-### 3. Deploy na Vercel
-```bash
 npm run build
-npm run start
 ```
 
-Ou diretamente via GitHub (Vercel GitHub App):
-1. Conecte seu repositório
-2. Configure as variáveis de ambiente no painel Vercel
-3. Deploy automático a cada push em `main`
+## 🎯 Regras de Ouro do Syndicate Master
 
-## 🎯 Fluxo Operacional
+- **Pinnacle como Âncora**: A Pinnacle possui o maior peso no cálculo de Fair Odds por ser a referência mundial de mercado sharp.
+- **Varredura Total**: O Argos nunca analisa apenas o vencedor. Se o mercado 1X2 não tem valor, ele varre Handicap, Gols, Cantos, Cartões e Props.
+- **Single-Pass**: O dado entra uma vez e percorre todo o pipeline sem re-fetch, garantindo velocidade e economia de API.
+- **FREE vs VIP**:
+    - **FREE**: Vitrine de assertividade. Sinais com Probabilidade > 70% ou Rating ELITE.
+    - **VIP**: Inteligência completa. Todos os mercados com EV+ e gestão de banca via Kelly Fractional.
 
-### Ingestão de Dados
-```
-1. DynamicFixtureScanner inicia a cada 5 min
-2. Varre TODOS os eventos da PropLine
-3. Filtra por Elite Leagues (Copa, Champions, Premier, etc)
-4. Calcula Operational Density para cada jogo
-5. Enfileira jogos com density >= 45
-```
-
-### Processamento de Sinais
-```
-1. Orquestrador recebe matchId da fila
-2. DataIngestionService coleta dados (PropLine)
-3. FeatureEngine gera vetores de features (xG, Corner, Card, etc)
-4. RegimeEngine + RAG analisa contexto
-5. ModelFactory roda Monte Carlo (1.500 iterações/vertical)
-6. AnomalyDetectionService (Vigilante) compara com odds reais
-7. SignalClassifierV4 classifica em VALUE, VALIDATION, NOISE
-8. TelegramDispatcher envia para FREE ou VIP
-```
-
-### Canais Telegram
-```
-FREE Channel (TELEGRAM_FREE_CHANNEL_ID)
-├─ Sinais com prob > 75% (Assertividade Extrema)
-├─ Apenas 1-2 por dia (máxima qualidade)
-└─ ROI esperado: +3-5% ao mês
-
-VIP Channel (TELEGRAM_CHAT_ID)
-├─ Todos os EV+ detectados
-├─ Kelly Criterion calculado
-├─ 5-15 sinais por dia (volume estratégico)
-└─ ROI esperado: +5-10% ao mês
-```
-
-## 📊 Roadmap v5.0 → v6.0
-
-- [x] **Phase 1**: PropLine Migration (✅ COMPLETO)
-- [x] **Phase 2**: DynamicFixtureScanner (✅ COMPLETO)
-- [x] **Phase 3**: Configuration Manager (✅ COMPLETO)
-- [ ] **Phase 4**: MarketVerticalScanner (Em desenvolvimento)
-- [ ] **Phase 5**: RealTimeOddsComparison (Bookmaker detection)
-- [ ] **Phase 6**: EVPlusHuntingEngine (Value maximization)
-- [ ] **Phase 7**: TelegramDispatcherV5.1 (KellyCriterion)
-- [ ] **Phase 8**: ROI Dashboard (Payment integration)
-
-## 🔒 Segurança
-
-- ✅ API Key protection (x-api-key header)
-- ✅ Circuit Breaker automático (PropLine failover)
-- ✅ Rate limiting (100 req/dia)
-- ✅ Supabase RLS (Row-Level Security)
-- ✅ Redis encryption (Upstash)
-
-## 📈 Performance Benchmarks
-
-- **Latência média**: 1.1s (match -> signal)
-- **Taxa de assertividade**: >80% (em ligas Elite)
-- **Throughput**: 50 req/s (Vercel serverless)
-- **Uptime**: 99.9% (SLA Vercel + Upstash)
-
-## 🤝 Contribuindo
-
-Este projeto é mantido por CTO Engenheiro Sênior (Manus AI).
-
-Para reportar bugs ou sugerir features: [GitHub Issues](https://github.com/gusborba9-star/argos-intelligence/issues)
-
----
-
-**Argos v5.0**: O próximo passo em inteligência de mercado.
-*Sindicalizado, adaptável, assertivo, implacável.*
+## 🤝 Manutenção
+Sistema mantido sob supervisão de **gusborba9@gmail.com**.
+Para auditorias técnicas, consulte os relatórios na pasta `docs/`.

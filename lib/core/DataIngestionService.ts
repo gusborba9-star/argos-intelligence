@@ -178,10 +178,9 @@ export class DataIngestionService {
         external_provider: "PROPLINE", 
         match_id: matchId,
         league_id: leagueId,
-        sport_key: fixture.sport_key || "soccer",
         home_team: fixture.home_team || fixture.teams?.home?.name || "Unknown",
         away_team: fixture.away_team || fixture.teams?.away?.name || "Unknown",
-        start_time: startTime,
+        kickoff_at: startTime,
         status: fixture.status?.short || fixture.fixture?.status?.short || "NS",
         raw_data: fixture, 
         updated_at: new Date().toISOString()

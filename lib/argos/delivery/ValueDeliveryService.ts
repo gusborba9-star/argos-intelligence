@@ -2,7 +2,12 @@ import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 import { ArgosSignal } from "@/lib/core/contracts/SignalContract";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 import { NotificationService } from "@/lib/argos/notifications/NotificationService";
-import { ClassifiedSignal, SignalType } from "@/lib/core/SignalClassifierV4";
+// SignalClassifierV4 removido na v6.0.0.
+export enum SignalType {
+  VALUE = "VALUE",
+  VALIDATION = "VALIDATION",
+  NOISE = "NOISE"
+}
 
 export interface UserTier {
   user_id: string;
@@ -54,28 +59,14 @@ export class ValueDeliveryService {
   ): any[] {
     switch (userTier) {
       case 'FREE':
-        // 1. Regras para Usuários FREE (Relaxed Confidence Protocol):
-        // Objetivo: Vitrine de Assertividade e Entrega de Tendência.
-        // Relaxamos o critério: Probabilidade Bruta > 51% já é entregue como "Opinião do Argos".
-        // Ignoramos o EV (Value Expected) para focar em Probabilidade Concreta.
-        return signals.filter(s => {
-          const isBasicMarket = s.vertical === MarketVertical.WINNER || s.vertical === MarketVertical.GOALS;
-          
-          // Se o RAG indicar favoritismo claro ou contexto favorável, podemos ser ainda mais flexíveis
-          const confidenceThreshold = 0.51; 
-          
-          return isBasicMarket && s.probability >= confidenceThreshold;
-        });
+        // Na v6.0.0, FREE recebe apenas sinais de alta probabilidade ou ELITE.
+        return signals.filter(s => s.probability >= 0.70 || s.ratingLabel === "ELITE");
       case 'PRO':
-        // PRO: Sinais de 'Value' + 'Validation' em mercados padrão.
-        return signals.filter(s => 
-          (s.signal_type === SignalType.VALUE || s.signal_type === SignalType.VALIDATION || s.status === 'OPTIMIZED' || s.status === 'HEDGED')
-        );
+        // PRO recebe sinais de valor real.
+        return signals.filter(s => s.expectedValue > 0.02);
       case 'WHALE/VIP':
-        // 2. Regras para Usuários VIP (Inteligência Completa):
-        // Sem Limitações: Recebe todas as verticais (WINNER, GOALS, CORNERS, CARDS, etc.).
-        // Qualidade: Prioriza alta assertividade e EV+ (VALUE).
-        return signals;
+        // VIP recebe tudo que tem valor positivo.
+        return signals.filter(s => s.expectedValue > 0);
       default:
         return [];
     }
@@ -89,7 +80,7 @@ export class ValueDeliveryService {
    * @returns A fração da banca a ser apostada.
    */
   public calculateKellyCriterion(signal: any, bankroll: number): number {
-    if ((signal.signal_type !== SignalType.VALUE && signal.status !== 'OPTIMIZED') || !signal.impliedOdds || signal.expectedValue <= 0) {
+    if (signal.expectedValue <= 0) {
       return 0; // Kelly só se aplica a apostas de valor com EV positivo
     }
 

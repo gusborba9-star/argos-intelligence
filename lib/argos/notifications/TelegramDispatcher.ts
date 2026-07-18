@@ -1,11 +1,9 @@
 import axios from "axios";
-import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 
 // ============================================================
-// TELEGRAM DISPATCHER v6.0.0 — SYNDICATE MASTER EDITION
-// Gestão de Canais FREE e VIP com CTAs dinâmicos.
-// Formatação profissional e automação de convites.
+// TELEGRAM DISPATCHER v6.1.0 — SYNDICATE MASTER EDITION
+// Gestão de Canais FREE e VIP com Informações Totais e Agrupamento.
 // ============================================================
 
 export interface TelegramSignalPayload {
@@ -18,155 +16,139 @@ export interface TelegramSignalPayload {
   fairOdd: number;
   expectedValue: number;
   probability: number;
-  kellyCriterion?: number;
-  ratingLabel?: string;
-  analysisSummary?: string;
+  kellyCriterion: number;
+  ratingLabel: string;
   tier: "FREE" | "VIP";
-  source?: string;
   line?: number;
+  analysisSummary?: string;
 }
 
 export class TelegramDispatcher {
-  private botToken: string;
-  private vipChatId: string;
-  private freeChatId: string;
-  
+  private botToken = process.env.TELEGRAM_BOT_TOKEN;
+  private freeChannelId = process.env.TELEGRAM_FREE_CHANNEL_ID;
+  private vipChannelId = process.env.TELEGRAM_CHAT_ID;
   private readonly VIP_LINK = "https://t.me/+T_gr8u0lKTpjMmMx";
-  private readonly VIP_UPGRADE_URL = "https://argos-intelligence.app/upgrade";
-
-  constructor() {
-    this.botToken = process.env.TELEGRAM_BOT_TOKEN || "";
-    this.vipChatId = process.env.TELEGRAM_CHAT_ID || ""; 
-    this.freeChatId = process.env.TELEGRAM_FREE_CHANNEL_ID || ""; 
-  }
 
   /**
-   * Despacha sinais de forma seletiva para os canais FREE e VIP.
+   * Despacha múltiplos sinais para os canais específicos, agrupando por partida.
    */
-  async dispatch(signals: TelegramSignalPayload[], regime?: RegimeProfile): Promise<any[]> {
-    if (!this.botToken || signals.length === 0) return [{ error: "Bot token missing or no signals" }];
-
-    const results = [];
-    for (const signal of signals) {
-      // 1. Envio para o VIP (Recebe TUDO)
-      const vipRes = await this.sendToTelegram(this.vipChatId, this.formatVipMessage(signal, regime), 'HTML');
-      results.push({ target: "VIP", ...vipRes });
-
-      // 2. Envio para o FREE (Recebe apenas o filé com CTA)
-      if (signal.tier === "FREE") {
-        const freeRes = await this.sendToTelegram(this.freeChatId, this.formatFreeMessage(signal), 'HTML');
-        results.push({ target: "FREE", ...freeRes });
-      }
+  public async dispatch(payloads: TelegramSignalPayload[], regime?: any) {
+    if (!this.botToken) {
+      console.error("[Telegram] ❌ Bot Token ausente.");
+      return;
     }
-    return results;
+
+    // Agrupar sinais por partida para enviar um único post rico por jogo
+    const matchGroups: Record<string, TelegramSignalPayload[]> = {};
+    
+    for (const p of payloads) {
+      const key = `${p.matchName}_${p.tier}`;
+      if (!matchGroups[key]) matchGroups[key] = [];
+      matchGroups[key].push(p);
+    }
+
+    for (const [key, signals] of Object.entries(matchGroups)) {
+      const first = signals[0];
+      const tier = first.tier;
+      const channelId = tier === "FREE" ? this.freeChannelId : this.vipChannelId;
+
+      if (!channelId) {
+        console.error(`[Telegram] ❌ Canal ${tier} não configurado.`);
+        continue;
+      }
+
+      const message = tier === "FREE" 
+        ? this.formatFreeMessage(signals) 
+        : this.formatVipMessage(signals, regime);
+
+      await this.sendToQueue(channelId, message);
+    }
   }
 
-  private formatVipMessage(p: TelegramSignalPayload, regime?: RegimeProfile): string {
-    const header = "💎 <b>ARGOS VIP | SYNDICATE MASTER</b>";
-    const emoji = this.getVerticalEmoji(p.vertical);
-    const rating = p.ratingLabel === "ELITE" ? "⭐️ ELITE" : "✅ VALUE";
-    const ev = (p.expectedValue * 100).toFixed(2);
-    const prob = (p.probability * 100).toFixed(0);
+  private formatFreeMessage(signals: TelegramSignalPayload[]): string {
+    const s = signals[0];
+    const kickoff = new Date(s.kickoffTime).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     
-    let msg = `${header}\n`;
-    msg += `──────────────────────\n`;
-    msg += `⚽️ <b>${p.matchName || p.source}</b>\n`;
-    msg += `🏆 ${p.leagueName || "Liga de Elite"}\n`;
-    msg += `⏰ ${p.kickoffTime ? new Date(p.kickoffTime).toLocaleString("pt-BR") : "Horário a confirmar"}\n\n`;
-    
-    msg += `🎯 <b>Entrada:</b> ${emoji} ${p.vertical} ${p.line ? `(${p.line})` : ""}\n`;
-    msg += `📝 <b>Seleção:</b> <code>${p.selection}</code>\n`;
-    msg += `📈 <b>Odd Atual:</b> <code>${p.odd.toFixed(2)}</code> (Fair: <code>${p.fairOdd.toFixed(2)}</code>)\n`;
-    msg += `📊 <b>Edge:</b> <code>${Number(ev) > 0 ? '+' : ''}${ev}%</code>\n`;
-    msg += `🧠 <b>Confiança:</b> <code>${prob}%</code>\n`;
-    
-    if (p.kellyCriterion) {
-      msg += `📏 <b>Kelly (1/4):</b> <code>${(p.kellyCriterion * 100).toFixed(1)}%</code>\n`;
-    }
+    // FREE: Máximo 2 mercados de alta probabilidade
+    const topSignals = signals
+      .sort((a, b) => b.probability - a.probability)
+      .slice(0, 2);
 
-    msg += `──────────────────────\n`;
-    if (regime) {
-      msg += `🏛️ <b>REGIME:</b> <code>${regime.regime}</code>\n`;
-    }
-    msg += `🤖 <b>Análise:</b> ${p.analysisSummary || "Alta confiança baseada em Monte Carlo e Regime de Mercado."}\n`;
-    msg += `──────────────────────\n`;
-    msg += `${rating}`;
+    let msg = `🆓 <b>ARGOS FREE SIGNAL</b> 🆓\n\n`;
+    msg += `⚽ <b>Jogo</b>: <code>${s.matchName}</code>\n`;
+    msg += `🏆 <b>Liga</b>: ${s.leagueName}\n`;
+    msg += `📅 <b>Data/Hora</b>: ${kickoff}\n\n`;
+    msg += `🎯 <b>Sugestões de Alta Probabilidade</b>:\n`;
 
+    topSignals.forEach(sig => {
+      const probLabel = sig.probability >= 0.75 ? "🔥 ALTA" : "⚡ MÉDIA";
+      msg += `• ${this.getVerticalEmoji(sig.vertical)} ${sig.vertical}: <b>${sig.selection}</b> @ ${sig.odd.toFixed(2)}\n`;
+      msg += `  └ Probabilidade: ${probLabel} (<b>${(sig.probability * 100).toFixed(1)}%</b>)\n`;
+    });
+
+    msg += `\n🚀 <a href="${this.VIP_LINK}">QUER ANÁLISE PROFUNDA E TODOS OS MERCADOS? ENTRE NO VIP!</a>`;
     return msg;
   }
 
-  private formatFreeMessage(p: TelegramSignalPayload): string {
-    const prob = (p.probability * 100).toFixed(0);
-    return `🔥 <b>SINAL FREE | ALTA ASSERTIVIDADE</b>\n` +
-    `──────────────────────\n` +
-    `🏟️ <b>JOGO:</b> <code>${p.matchName || p.source}</code>\n` +
-    `🎯 <b>ENTRADA:</b> <code>${p.vertical}</code>\n` +
-    `📊 <b>CONFIANÇA:</b> <code>${prob}%</code>\n` +
-    `──────────────────────\n` +
-    `🚀 <b>QUER O EDGE REAL E TODAS AS VERTICAIS?</b>\n` +
-    `As melhores oportunidades com +10% de Edge estão no VIP.\n\n` +
-    `👉 <b>VIP:</b> <a href="${this.VIP_LINK}">CLIQUE AQUI PARA ENTRAR</a>\n` +
-    `──────────────────────\n` +
-    `<i>Argos Syndicate Marketing Layer</i>`;
-  }
-
-  /**
-   * Gera link de convite único para o canal VIP
-   */
-  async createVipInviteLink(userId: string): Promise<string | null> {
-    try {
-      const response = await axios.post(`https://api.telegram.org/bot${this.botToken}/createChatInviteLink`, {
-        chat_id: this.vipChatId,
-        name: `Acesso VIP - User ${userId}`,
-        member_limit: 1, 
-      });
-      return response.data.result.invite_link;
-    } catch (error: any) {
-      console.error("[Telegram] Erro ao criar link de convite:", error.response?.data || error.message);
-      return null;
-    }
-  }
-
-      private async sendToTelegram(chatId: string, text: string, parseMode: string): Promise<any> {
-    if (!chatId || !this.botToken) return { error: "Chat ID or Bot Token missing" };
+  private formatVipMessage(signals: TelegramSignalPayload[], regime?: any): string {
+    const s = signals[0];
+    const kickoff = new Date(s.kickoffTime).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     
-    // PROTEÇÃO: Se o texto contiver a palavra "null", aborta o envio para não poluir o canal
-    if (text.includes("null") || text.includes("undefined")) {
-      console.error("[Telegram] Abortando envio: mensagem contém dados vazios (null/undefined)");
-      return { success: false, error: "Data incomplete" };
+    let msg = `💎 <b>ARGOS SYNDICATE VIP</b> 💎\n\n`;
+    msg += `⚽ <b>Jogo</b>: <code>${s.matchName}</code>\n`;
+    msg += `🏆 <b>Liga</b>: ${s.leagueName}\n`;
+    msg += `📅 <b>Data/Hora</b>: ${kickoff}\n`;
+    msg += `📊 <b>Regime</b>: <code>${regime?.market_regime || 'ESTÁVEL'}</code> | Var: <code>${regime?.variance_multiplier || '1.1'}x</code>\n\n`;
+    
+    msg += `📑 <b>VARREDURA TOTAL DE MERCADOS</b>:\n`;
+
+    signals.forEach(sig => {
+      const evLabel = (sig.expectedValue * 100).toFixed(1);
+      const ratingEmoji = sig.ratingLabel === "ELITE" ? "🌟" : "✅";
+      
+      msg += `──────────────────────\n`;
+      msg += `${ratingEmoji} <b>${sig.vertical}</b>\n`;
+      msg += `   Seleção: <code>${sig.selection}</code> ${sig.line ? `(${sig.line})` : ''}\n`;
+      msg += `   Odd: <b>${sig.odd.toFixed(2)}</b> | Fair: <code>${sig.fairOdd.toFixed(2)}</code>\n`;
+      msg += `   EV: <b>+${evLabel}%</b> | Prob: <b>${(sig.probability * 100).toFixed(1)}%</b>\n`;
+      msg += `   Kelly Sugerido: <code>${(sig.kellyCriterion * 100).toFixed(1)}%</code>\n`;
+    });
+
+    if (s.analysisSummary) {
+      msg += `\n🧠 <b>Análise Profunda</b>:\n<i>${s.analysisSummary}</i>\n`;
     }
 
+    msg += `\n🛡️ <i>Gestão de banca é obrigatória. Siga o Kelly.</i>`;
+    return msg;
+  }
+
+  private async sendToQueue(chatId: string, text: string) {
     const supabase = getSupabaseClient();
-
     try {
-      // Nota: Não use o replace que você fez antes, pois ele destrói suas tags <b> e <code>.
-      // O ideal é validar os dados ANTES de chamar esta função.
-
+      // Usar a fila de mensagens do Supabase para garantir entrega e evitar rate limit do Telegram
       const { error } = await supabase.from('argos_http_queue').insert({
         url: `https://api.telegram.org/bot${this.botToken}/sendMessage`,
         headers: { "Content-Type": "application/json" },
         body: {
           chat_id: chatId,
-          text: text, 
-          parse_mode: 'HTML',
+          text: text,
+          parse_mode: "HTML",
           disable_web_page_preview: true
         },
         status: 'PENDING'
       });
 
       if (error) throw error;
-      return { success: true };
+      console.log(`[Telegram] ✅ Mensagem enfileirada para ${chatId}`);
     } catch (error: any) {
-      return { success: false, error: error.message };
+      console.error(`[Telegram] ❌ Erro ao enfileirar mensagem:`, error.message);
     }
-}
-
-
+  }
 
   private getVerticalEmoji(v: string): string {
     const m: Record<string, string> = {
       WINNER: "🏁",
-      GOALS: "⚽️",
+      GOALS: "⚽",
       GOALS_HT: "⏱",
       CORNERS: "🚩",
       CARDS: "🟨",

@@ -1,8 +1,8 @@
 import { Opportunity } from "./MarketDiscoveryEngine";
 import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
 import { telegramDispatcher, TelegramSignalPayload } from "@/lib/argos/notifications/TelegramDispatcher";
-import { DecisionGraphEngine, DecisionState } from "../DecisionGraphEngine";
-import { SignalClassifierV4 } from "../SignalClassifierV4";
+// DecisionGraphEngine removido na v6.0.0.
+// SignalClassifierV4 removido na v6.0.0. A classificação agora é feita no Master Orchestrator.
 
 // ============================================================
 // SIGNAL DISTRIBUTION ENGINE v6.2.0 — ZERO VETO EDITION
@@ -27,22 +27,23 @@ export class SignalDistributionEngine {
     matchContext: { name: string; league: string; kickoff: string }
   ): Promise<DistributedSignal[]> {
     
-    // 1. Classificação via Ranking (v4.4)
-    const classifiedSignals = SignalClassifierV4.classify(opportunities as any, regime);
-    
-    // 2. Processamento via Decision Graph (v1.0)
-    const decisionNodes = DecisionGraphEngine.process(classifiedSignals);
+    // Na v6.0.0, as oportunidades já chegam classificadas e com rating do OddsValueEngine.
+    const classifiedSignals = opportunities;
     
     const distributed: DistributedSignal[] = [];
     const signalsToDispatch: TelegramSignalPayload[] = [];
 
     for (let i = 0; i < classifiedSignals.length; i++) {
       const s = classifiedSignals[i];
-      const node = decisionNodes[i];
       const op = opportunities[i];
 
-      const tier = s.tier as any;
-      const priority = s.probability * 0.6 + (s.expectedValue || 0) * 0.4;
+      // Lógica de Tier Syndicate: 
+      // FREE: Alta probabilidade (>70%) ou Rating ELITE.
+      // VIP: Todos os sinais com EV+.
+      const isFreeTier = op.probability >= 0.70 || op.ratingLabel === "ELITE";
+      const tier = isFreeTier ? "FREE" : "VIP";
+      
+      const priority = op.probability * 0.6 + (op.expectedValue || 0) * 0.4;
 
       const distSignal: DistributedSignal = {
         ...op,
@@ -52,11 +53,6 @@ export class SignalDistributionEngine {
       };
       distributed.push(distSignal);
 
-      // Mapeamento de DecisionState para Tiers de Entrega
-      // ACCEPT_VIP -> Canal VIP
-      // ACCEPT_FREE -> Canal FREE
-      // OBSERVE -> Canal de Monitoramento (Enviado como VIP com label de observação)
-      
       signalsToDispatch.push({
         matchName: matchContext.name,
         leagueName: matchContext.league,
@@ -67,11 +63,11 @@ export class SignalDistributionEngine {
         fairOdd: op.fairOdd,
         expectedValue: op.expectedValue,
         probability: op.probability,
-        kellyCriterion: op.kellyCriterion,
-        ratingLabel: op.ratingLabel,
-        tier: node.finalDecision === DecisionState.ACCEPT_FREE ? "FREE" : "VIP",
+        kellyCriterion: op.kellyCriterion || 0,
+        ratingLabel: op.ratingLabel || "VALUE",
+        tier: tier,
         line: op.line,
-        analysisSummary: `Análise Argos DecisionGraph [${node.finalDecision}]: Probabilidade de ${(op.probability * 100).toFixed(1)}% com Edge de ${(op.edge * 100).toFixed(1)}%.`
+        analysisSummary: `Análise Argos Syndicate Master: Probabilidade de ${(op.probability * 100).toFixed(1)}% com Edge de ${(op.edge * 100).toFixed(1)}%.`
       });
     }
 
