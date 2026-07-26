@@ -128,13 +128,16 @@ export class TelegramDispatcher {
       // Usar a fila de mensagens do Supabase para garantir entrega e evitar rate limit do Telegram
       const { error } = await supabase.from('argos_http_queue').insert({
         url: `https://api.telegram.org/bot${this.botToken}/sendMessage`,
+        method: 'POST',
         headers: { "Content-Type": "application/json" },
-        body: {
+        // A coluna `body` é do tipo TEXT no banco — precisa ir serializada.
+        // O argos-http-worker (edge function) já faz JSON.parse/stringify corretamente ao ler.
+        body: JSON.stringify({
           chat_id: chatId,
           text: text,
           parse_mode: "HTML",
           disable_web_page_preview: true
-        },
+        }),
         status: 'PENDING'
       });
 
