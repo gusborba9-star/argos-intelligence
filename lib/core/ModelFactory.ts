@@ -51,14 +51,19 @@ export class ModelFactory {
     // 3. Aplicar calibração (Ajuste fino baseado em histórico real)
     const adj = calibration.probabilityAdjustment;
     
+    const clamp = (v: number) => Math.max(0.01, Math.min(0.99, v));
+
     return {
       ...baseResult,
       probabilities: {
-        home: Math.max(0.01, Math.min(0.99, baseResult.probabilities.home + (adj * 0.5))),
-        draw: Math.max(0.01, Math.min(0.99, baseResult.probabilities.draw - (adj * 0.2))),
-        away: Math.max(0.01, Math.min(0.99, baseResult.probabilities.away + (adj * 0.5))),
-        over: baseResult.probabilities.over ? Math.max(0.01, Math.min(0.99, baseResult.probabilities.over + adj)) : undefined,
-        under: baseResult.probabilities.under ? Math.max(0.01, Math.min(0.99, baseResult.probabilities.under - adj)) : undefined,
+        // Preserva todas as linhas/BTTS calculadas na simulação base — só ajusta
+        // as 3 dimensões que o Continuous Learning Engine calibra hoje (Winner + 2.5).
+        ...baseResult.probabilities,
+        home: clamp(baseResult.probabilities.home + (adj * 0.5)),
+        draw: clamp(baseResult.probabilities.draw - (adj * 0.2)),
+        away: clamp(baseResult.probabilities.away + (adj * 0.5)),
+        over: baseResult.probabilities.over !== undefined ? clamp(baseResult.probabilities.over + adj) : undefined,
+        under: baseResult.probabilities.under !== undefined ? clamp(baseResult.probabilities.under - adj) : undefined,
       },
       calibrationApplied: adj
     };
@@ -79,7 +84,14 @@ export class ModelFactory {
     let draws = 0;
     let awayWins = 0;
     let totalGoals = 0;
-    let over25Count = 0;
+    let bttsYes = 0;
+
+    // Linhas de Goals realmente ofertadas pelo mercado variam por liga/casa.
+    // Simulamos todas as linhas comuns numa única passada de Monte Carlo,
+    // em vez de fixar apenas 2.5.
+    const GOAL_LINES = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5];
+    const overCounts: Record<string, number> = {};
+    GOAL_LINES.forEach((l) => (overCounts[l] = 0));
 
     const variance = regime.variance_multiplier || 1.2;
     const bias = regime.model_bias || 0;
@@ -96,21 +108,32 @@ export class ModelFactory {
       const matchTotal = finalHome + finalAway;
 
       totalGoals += (hScore + aScore);
-      if (matchTotal > 2.5) over25Count++;
+      GOAL_LINES.forEach((l) => {
+        if (matchTotal > l) overCounts[l]++;
+      });
+      if (finalHome > 0 && finalAway > 0) bttsYes++;
 
       if (finalHome > finalAway) homeWins++;
       else if (finalHome === finalAway) draws++;
       else awayWins++;
     }
 
+    const probabilities: SimulationResult["probabilities"] = {
+      home: homeWins / iterations,
+      draw: draws / iterations,
+      away: awayWins / iterations,
+      over: overCounts[2.5] / iterations,
+      under: 1 - overCounts[2.5] / iterations,
+      btts_yes: bttsYes / iterations,
+      btts_no: 1 - bttsYes / iterations,
+    };
+    GOAL_LINES.forEach((l) => {
+      probabilities[`over_${l}`] = overCounts[l] / iterations;
+      probabilities[`under_${l}`] = 1 - overCounts[l] / iterations;
+    });
+
     return {
-      probabilities: {
-        home: homeWins / iterations,
-        draw: draws / iterations,
-        away: awayWins / iterations,
-        over: over25Count / iterations,
-        under: 1 - (over25Count / iterations)
-      },
+      probabilities,
       iterations,
       expectedGoals: totalGoals / iterations
     };

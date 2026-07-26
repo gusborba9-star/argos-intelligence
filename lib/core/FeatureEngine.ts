@@ -31,7 +31,14 @@ export class FeatureEngine {
       externalFactors: rawData.externalFactors,
       leagueProfile: this.normalizeLeagueProfile(
         rawData.fixture?.league ?? rawData.league ?? {
-          name: rawData.sport_title || rawData.league_name || "Unknown League",
+          // PropLine real só manda `sport_key` (ex: "soccer_copa_sudamericana"),
+          // não `sport_title`. Deixa legível: "Copa Sudamericana".
+          name:
+            rawData.sport_title ||
+            rawData.league_name ||
+            (rawData.sport_key
+              ? rawData.sport_key.replace(/^soccer_/, "").replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())
+              : "Unknown League"),
           id: rawData.league_id ?? rawData.sport_key ?? null,
         }
       ),

@@ -72,15 +72,25 @@ export class ArgosMasterOrchestrator {
       );
 
       // 4. Fair Line & Value Engine (Pinnacle-heavy)
-      // Para cada seleção no mercado (ex: Home, Draw, Away)
-      const selections = this.getSelectionsForVertical(vertical);
-      
+      // Seleções descobertas dinamicamente a partir do que a PropLine realmente
+      // ofertou nessa partida (todas as linhas de Goals, Winner, BTTS) — em vez
+      // de uma lista fixa que ignorava as linhas reais do mercado.
+      const selections = this.getSelectionsForVertical(vertical, normalizedMarkets);
+
       for (const selection of selections) {
         const fairLine = FairOddsCalculator.calculate(normalizedMarkets, vertical, selection.label, selection.line);
-        
+
         if (fairLine) {
-          const prob = simulation.probabilities[selection.key] || 0;
-          const valueAnalysis = OddsValueEngine.calculateValue(prob, fairLine.fairOdd, fairLine.fairOdd);
+          const prob = simulation.probabilities[selection.key];
+          if (prob === undefined) continue; // Modelo ainda não calibrado pra essa seleção — não inventa sinal.
+
+          // Odd real de mercado (melhor preço disponível entre as casas), separada
+          // da fair odd (referência sharp) — antes o código comparava fair com a
+          // própria fair, o que nunca representa valor real.
+          const marketOdd = this.getBestMarketOdd(normalizedMarkets, vertical, selection.label, selection.line);
+          if (marketOdd === null) continue;
+
+          const valueAnalysis = OddsValueEngine.calculateValue(prob, marketOdd, fairLine.fairOdd);
 
           if (valueAnalysis.isPositive) {
             opportunities.push({
@@ -89,7 +99,7 @@ export class ArgosMasterOrchestrator {
               line: selection.line,
               probability: prob,
               fairOdd: fairLine.fairOdd,
-              odd: fairLine.fairOdd, // No Master, usamos a odd de referência se não houver uma específica
+              odd: marketOdd,
               expectedValue: valueAnalysis.expectedValue,
               edge: valueAnalysis.edge,
               edgePercent: valueAnalysis.edgePercent,
@@ -115,10 +125,10 @@ export class ArgosMasterOrchestrator {
       await SignalDistributionEngine.processAndDispatch(
         opportunitiesWithAnalysis,
         regime as any,
-        { 
-          name: `${rawData.home_team} vs ${rawData.away_team}`, 
-          league: features.leagueProfile.name, 
-          kickoff: rawData.kickoff_at 
+        {
+          name: `${rawData.home_team} vs ${rawData.away_team}`,
+          league: features.leagueProfile.name,
+          kickoff: rawData.commence_time || rawData.kickoff_at || null
         }
       );
     }
@@ -132,17 +142,67 @@ export class ArgosMasterOrchestrator {
     };
   }
 
-  private static getSelectionsForVertical(vertical: MarketVertical) {
+  /**
+   * Descobre as seleções a avaliar a partir do que a PropLine realmente
+   * ofertou (todas as linhas de Goals, não só 2.5), mapeando para as chaves
+   * de probabilidade que o Monte Carlo sabe calcular hoje (Winner, Goals
+   * qualquer linha, BTTS). Handicap/Corners/Cards/Goals-HT ainda não têm
+   * modelo de probabilidade próprio — normalizamos os mercados pra auditoria,
+   * mas não inventamos sinal onde não há calibração real (ver checagem
+   * `prob === undefined` no chamador).
+   */
+  private static getSelectionsForVertical(vertical: MarketVertical, normalizedMarkets: any[]) {
     switch (vertical) {
       case MarketVertical.WINNER:
-        return [{ key: 'home', label: 'Home', line: 0 }, { key: 'draw', label: 'Draw', line: 0 }, { key: 'away', label: 'Away', line: 0 }];
-      case MarketVertical.GOALS:
-        return [{ key: 'over', label: 'Over', line: 2.5 }, { key: 'under', label: 'Under', line: 2.5 }];
+        return [
+          { key: "home", label: "Home", line: 0 },
+          { key: "draw", label: "Draw", line: 0 },
+          { key: "away", label: "Away", line: 0 },
+        ];
+      case MarketVertical.GOALS: {
+        const lines = new Set<number>(
+          normalizedMarkets
+            .filter((m) => m.vertical === MarketVertical.GOALS)
+            .map((m) => m.line)
+            .filter((l: number) => !!l)
+        );
+        const selections: { key: string; label: string; line: number }[] = [];
+        lines.forEach((line) => {
+          selections.push({ key: `over_${line}`, label: "Over", line });
+          selections.push({ key: `under_${line}`, label: "Under", line });
+        });
+        return selections;
+      }
       case MarketVertical.BTTS:
-        return [{ key: 'yes', label: 'Yes', line: 0 }, { key: 'no', label: 'No', line: 0 }];
+        return [
+          { key: "btts_yes", label: "Yes", line: 0 },
+          { key: "btts_no", label: "No", line: 0 },
+        ];
       default:
         return [];
     }
+  }
+
+  /**
+   * Melhor preço real disponível no mercado (decimal, já convertido de
+   * formato americano) para a seleção/linha pedida — usado como odd de
+   * mercado real na comparação de valor, em vez de reusar a fair odd.
+   */
+  private static getBestMarketOdd(
+    normalizedMarkets: any[],
+    vertical: MarketVertical,
+    selectionLabel: string,
+    line: number
+  ): number | null {
+    const candidates = normalizedMarkets
+      .filter((m) => m.vertical === vertical && m.line === line)
+      .flatMap((m) => m.outcomes)
+      .filter((o: any) => o.selection.toLowerCase() === selectionLabel.toLowerCase())
+      .map((o: any) => o.odd)
+      .filter((odd: number) => odd > 1 && odd < 100); // descarta lixo/sentinelas
+
+    if (candidates.length === 0) return null;
+    return Math.max(...candidates);
   }
 
   private static generateDeepAnalysis(context: any, features: any, opportunities: any[]): string {

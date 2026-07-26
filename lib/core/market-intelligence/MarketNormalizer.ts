@@ -15,6 +15,7 @@ export interface NormalizedMarket {
     selection: string;
     odd: number;
     impliedProb: number;
+    point?: number;
   }[];
   bookmaker: string;
   bookmakerTitle: string;
@@ -54,11 +55,17 @@ export class MarketNormalizer {
         // Mercados UNKNOWN são normalizados com vertical UNKNOWN para auditoria posterior.
 
         const outcomes = (market.outcomes || []).map((o: any) => {
-          const price = typeof o.price === "number" ? o.price : 1.01;
+          const rawPrice = typeof o.price === "number" ? o.price : 100;
+          // PropLine entrega odds em formato AMERICANO (ex: -174, +130), não decimal.
+          // Conversão correta: negativo = favorito, positivo = underdog.
+          const decimalOdd = rawPrice > 0
+            ? 1 + rawPrice / 100
+            : 1 + 100 / Math.abs(rawPrice);
           return {
             selection: o.name || o.description || "Unknown",
-            odd: price,
-            impliedProb: price > 0 ? 1 / price : 0,
+            odd: parseFloat(decimalOdd.toFixed(4)),
+            impliedProb: decimalOdd > 0 ? 1 / decimalOdd : 0,
+            point: typeof o.point === "number" ? o.point : undefined,
           };
         });
 
