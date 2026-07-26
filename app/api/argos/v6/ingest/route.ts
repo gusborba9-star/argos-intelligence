@@ -7,11 +7,11 @@ import { DailyIngestionScheduler } from "@/lib/argos/ingestion/DailyIngestionSch
  */
 export async function GET(req: Request) {
   try {
-    // Proteção básica via API Key (opcional, mas recomendada)
+    // Proteção via ARGOS_API_KEY — aceita header x-api-key (usado pelo pg_net/cron) ou ?key= (fallback manual)
     const { searchParams } = new URL(req.url);
-    const key = searchParams.get("key");
-    if (key !== process.env.PROPLINE_API_KEY) {
-      // return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const key = req.headers.get("x-api-key") || searchParams.get("key");
+    if (key !== process.env.ARGOS_API_KEY) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const scheduler = new DailyIngestionScheduler();
