@@ -29,7 +29,12 @@ export class FeatureEngine {
       homeMetrics,
       awayMetrics,
       externalFactors: rawData.externalFactors,
-      leagueProfile: this.normalizeLeagueProfile(rawData.fixture.league),
+      leagueProfile: this.normalizeLeagueProfile(
+        rawData.fixture?.league ?? rawData.league ?? {
+          name: rawData.sport_title || rawData.league_name || "Unknown League",
+          id: rawData.league_id ?? rawData.sport_key ?? null,
+        }
+      ),
       historicalContext: {
         headToHead: rawData.headToHead || [],
         homeRecentForm: this.calculateForm(rawData.homeHistory),

@@ -18,6 +18,14 @@ export class ArgosMasterOrchestrator {
   public static async run(matchId: string, rawData: any) {
     console.log(`[ArgosMaster] 🚀 Iniciando análise v${this.VERSION} para: ${matchId}`);
 
+    // Payload real da PropLine não tem `league_id` (formato antigo api-football) —
+    // usa `sport_key`/`sport_title`. Normaliza aqui pra manter compatibilidade com
+    // ambos os formatos.
+    const leagueIdentifier = String(
+      rawData.league_id ?? rawData.sport_key ?? rawData.sport_title ?? "unknown_league"
+    );
+
+
     // 1. Normalização Total (Zero Descarte)
     const normalizedMarkets = MarketNormalizer.normalize(rawData);
     const report = MarketNormalizer.generateReport(normalizedMarkets);
@@ -29,7 +37,7 @@ export class ArgosMasterOrchestrator {
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       process.env.GOOGLE_AI_API_KEY!
     );
-    const context = await ragEngine.retrieveContext(matchId, String(rawData.league_id));
+    const context = await ragEngine.retrieveContext(matchId, leagueIdentifier);
 
     // O regime agora é influenciado pelos dados do RAG
     const regime = {
@@ -59,7 +67,7 @@ export class ArgosMasterOrchestrator {
       const simulation = await ModelFactory.runMonteCarloWithLearning(
         { homeMean: features.homeMetrics.goals, awayMean: features.awayMetrics.goals }, // Exemplo simplificado
         regime as any,
-        String(rawData.league_id),
+        leagueIdentifier,
         vertical as any
       );
 
