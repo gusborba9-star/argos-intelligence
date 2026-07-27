@@ -92,21 +92,24 @@ export class ArgosMasterOrchestrator {
 
           const valueAnalysis = OddsValueEngine.calculateValue(prob, marketOdd, fairLine.fairOdd);
 
-          if (valueAnalysis.isPositive) {
-            opportunities.push({
-              vertical,
-              selection: selection.label,
-              line: selection.line,
-              probability: prob,
-              fairOdd: fairLine.fairOdd,
-              odd: marketOdd,
-              expectedValue: valueAnalysis.expectedValue,
-              edge: valueAnalysis.edge,
-              edgePercent: valueAnalysis.edgePercent,
-              kellyCriterion: valueAnalysis.kellyCriterion,
-              ratingLabel: valueAnalysis.ratingLabel
-            });
-          }
+          // Antes: só entrava na lista se tivesse EV+, o que tornava impossível
+          // o FREE mostrar "alta probabilidade mesmo sem EV+" (nunca chegava a
+          // existir esse dado). Agora toda seleção avaliada entra, marcada com
+          // `hasEdge` — o VIP filtra por hasEdge, o FREE filtra por probabilidade.
+          opportunities.push({
+            vertical,
+            selection: selection.label,
+            line: selection.line,
+            probability: prob,
+            fairOdd: fairLine.fairOdd,
+            odd: marketOdd,
+            expectedValue: valueAnalysis.expectedValue,
+            edge: valueAnalysis.edge,
+            edgePercent: valueAnalysis.edgePercent,
+            kellyCriterion: valueAnalysis.kellyCriterion,
+            ratingLabel: valueAnalysis.ratingLabel,
+            hasEdge: valueAnalysis.isPositive
+          });
         }
       }
     }

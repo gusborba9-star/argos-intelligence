@@ -32,6 +32,7 @@ export interface Opportunity {
   divergence?: number;
   kellyCriterion?: number;
   ratingLabel?: string;
+  hasEdge?: boolean;
 }
 
 export interface DiscoveryReport {

@@ -69,10 +69,17 @@ export class TelegramDispatcher {
     const s = signals[0];
     const kickoff = new Date(s.kickoffTime).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     
-    // FREE: Máximo 2 mercados de alta probabilidade
-    const topSignals = signals
-      .sort((a, b) => b.probability - a.probability)
-      .slice(0, 2);
+    // FREE: Máximo 2 mercados de alta probabilidade — priorizando MERCADOS
+    // DIFERENTES (ex: Winner + BTTS), não duas linhas do mesmo mercado
+    // (ex: Over 2.5 e Over 5.5 contam como um só "GOALS").
+    const seenVerticals = new Set<string>();
+    const topSignals: TelegramSignalPayload[] = [];
+    for (const sig of [...signals].sort((a, b) => b.probability - a.probability)) {
+      if (seenVerticals.has(sig.vertical)) continue;
+      seenVerticals.add(sig.vertical);
+      topSignals.push(sig);
+      if (topSignals.length === 2) break;
+    }
 
     let msg = `🆓 <b>ARGOS FREE SIGNAL</b> 🆓\n\n`;
     msg += `⚽ <b>Jogo</b>: <code>${s.matchName}</code>\n`;
@@ -86,6 +93,7 @@ export class TelegramDispatcher {
       msg += `  └ Probabilidade: ${probLabel} (<b>${(sig.probability * 100).toFixed(1)}%</b>)\n`;
     });
 
+    msg += `\n🧠 <i>Análise rápida: seleção com maior probabilidade de acerto do nosso modelo pra esse jogo — sem considerar o valor da odd (isso é feito só na varredura completa do VIP).</i>\n`;
     msg += `\n🚀 <a href="${this.VIP_LINK}">QUER ANÁLISE PROFUNDA E TODOS OS MERCADOS? ENTRE NO VIP!</a>`;
     return msg;
   }

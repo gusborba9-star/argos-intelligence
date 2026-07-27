@@ -28,47 +28,44 @@ export class SignalDistributionEngine {
   ): Promise<DistributedSignal[]> {
     
     // Na v6.0.0, as oportunidades já chegam classificadas e com rating do OddsValueEngine.
-    const classifiedSignals = opportunities;
-    
     const distributed: DistributedSignal[] = [];
     const signalsToDispatch: TelegramSignalPayload[] = [];
 
-    for (let i = 0; i < classifiedSignals.length; i++) {
-      const s = classifiedSignals[i];
-      const op = opportunities[i];
+    // VIP: TODA seleção com edge real (EV+) — varredura completa, como pedido.
+    const vipOps = opportunities.filter(op => op.hasEdge);
 
-      // Lógica de Tier Syndicate: 
-      // FREE: Alta probabilidade (>70%) ou Rating ELITE.
-      // VIP: Todos os sinais com EV+.
-      const isFreeTier = op.probability >= 0.70 || op.ratingLabel === "ELITE";
-      const tier = isFreeTier ? "FREE" : "VIP";
-      
+    // FREE: as seleções de MAIOR probabilidade, mesmo sem EV+ — é vitrine de
+    // assertividade, existe só "quando existir" algo de fato alto (>=70%).
+    const freeOps = [...opportunities]
+      .filter(op => op.probability >= 0.70)
+      .sort((a, b) => b.probability - a.probability);
+
+    const buildPayload = (op: Opportunity, tier: "FREE" | "VIP", matchContext: { name: string; league: string; kickoff: string }): TelegramSignalPayload => ({
+      matchName: matchContext.name,
+      leagueName: matchContext.league,
+      kickoffTime: matchContext.kickoff,
+      vertical: op.vertical,
+      selection: op.selection,
+      odd: op.odd,
+      fairOdd: op.fairOdd,
+      expectedValue: op.expectedValue,
+      probability: op.probability,
+      kellyCriterion: op.kellyCriterion || 0,
+      ratingLabel: op.ratingLabel || "VALUE",
+      tier,
+      line: op.line,
+      analysisSummary: `Análise Argos Syndicate Master: Probabilidade de ${(op.probability * 100).toFixed(1)}% com Edge de ${(op.edge * 100).toFixed(1)}%.`
+    });
+
+    for (const op of vipOps) {
       const priority = op.probability * 0.6 + (op.expectedValue || 0) * 0.4;
-
-      const distSignal: DistributedSignal = {
-        ...op,
-        tier,
-        priority,
-        displayLabel: this.buildDisplayLabel(op, tier),
-      };
-      distributed.push(distSignal);
-
-      signalsToDispatch.push({
-        matchName: matchContext.name,
-        leagueName: matchContext.league,
-        kickoffTime: matchContext.kickoff,
-        vertical: op.vertical,
-        selection: op.selection,
-        odd: op.odd,
-        fairOdd: op.fairOdd,
-        expectedValue: op.expectedValue,
-        probability: op.probability,
-        kellyCriterion: op.kellyCriterion || 0,
-        ratingLabel: op.ratingLabel || "VALUE",
-        tier: tier,
-        line: op.line,
-        analysisSummary: `Análise Argos Syndicate Master: Probabilidade de ${(op.probability * 100).toFixed(1)}% com Edge de ${(op.edge * 100).toFixed(1)}%.`
-      });
+      distributed.push({ ...op, tier: "VIP", priority, displayLabel: this.buildDisplayLabel(op, "VIP") });
+      signalsToDispatch.push(buildPayload(op, "VIP", matchContext));
+    }
+    for (const op of freeOps) {
+      const priority = op.probability;
+      distributed.push({ ...op, tier: "FREE", priority, displayLabel: this.buildDisplayLabel(op, "FREE") });
+      signalsToDispatch.push(buildPayload(op, "FREE", matchContext));
     }
 
     // Despacho assíncrono para o Telegram (100% dos sinais)
