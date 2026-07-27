@@ -101,19 +101,40 @@ export class TelegramDispatcher {
   private formatVipMessage(signals: TelegramSignalPayload[], regime?: any): string {
     const s = signals[0];
     const kickoff = new Date(s.kickoffTime).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-    
+
+    // Mercados de linha (Goals, Handicap) podem gerar várias linhas próximas
+    // e correlacionadas (Over 1.5/2.5/3.5...) — isso lota a mensagem com o
+    // mesmo mercado repetido. Mantém só a de MAIOR EV por mercado, abrindo
+    // espaço pra diversidade real (Vencedor, BTTS, Escanteios, Cartões...).
+    const LINE_BASED_VERTICALS = new Set(["GOALS", "HANDICAP"]);
+    const bestByVertical = new Map<string, TelegramSignalPayload>();
+    const passthrough: TelegramSignalPayload[] = [];
+
+    for (const sig of signals) {
+      if (LINE_BASED_VERTICALS.has(sig.vertical)) {
+        const current = bestByVertical.get(sig.vertical);
+        if (!current || sig.expectedValue > current.expectedValue) {
+          bestByVertical.set(sig.vertical, sig);
+        }
+      } else {
+        passthrough.push(sig);
+      }
+    }
+    const displaySignals = [...bestByVertical.values(), ...passthrough]
+      .sort((a, b) => b.expectedValue - a.expectedValue);
+
     let msg = `💎 <b>ARGOS SYNDICATE VIP</b> 💎\n\n`;
     msg += `⚽ <b>Jogo</b>: <code>${s.matchName}</code>\n`;
     msg += `🏆 <b>Liga</b>: ${s.leagueName}\n`;
     msg += `📅 <b>Data/Hora</b>: ${kickoff}\n`;
     msg += `📊 <b>Regime</b>: <code>${regime?.market_regime || 'ESTÁVEL'}</code> | Var: <code>${regime?.variance_multiplier || '1.1'}x</code>\n\n`;
-    
+
     msg += `📑 <b>VARREDURA TOTAL DE MERCADOS</b>:\n`;
 
-    signals.forEach(sig => {
+    displaySignals.forEach(sig => {
       const evLabel = (sig.expectedValue * 100).toFixed(1);
       const ratingEmoji = sig.ratingLabel === "ELITE" ? "🌟" : "✅";
-      
+
       msg += `──────────────────────\n`;
       msg += `${ratingEmoji} <b>${sig.vertical}</b>\n`;
       msg += `   Seleção: <code>${sig.selection}</code> ${sig.line ? `(${sig.line})` : ''}\n`;

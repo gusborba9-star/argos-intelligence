@@ -19,6 +19,17 @@ export class ArgosMasterOrchestrator {
   public static async run(matchId: string, rawData: any) {
     console.log(`[ArgosMaster] 🚀 Iniciando análise v${this.VERSION} para: ${matchId}`);
 
+    // Trava de segurança: nunca gerar/despachar sinal pra um jogo cujo
+    // horário de início já passou (feed da fonte pode ficar com kickoff
+    // desatualizado). Sem isso, um jogo já encerrado pode continuar
+    // recebendo sinal.
+    const kickoffCheck = rawData.commence_time ? new Date(rawData.commence_time).getTime() : null;
+    if (kickoffCheck && kickoffCheck < Date.now() - 10 * 60 * 1000) {
+      console.warn(`[ArgosMaster] ⏭️ Abortado ${matchId}: kickoff (${rawData.commence_time}) já passou.`);
+      return { status: "SKIPPED_EXPIRED", matchId };
+    }
+
+
     // Payload real da PropLine não tem `league_id` (formato antigo api-football) —
     // usa `sport_key`/`sport_title`. Normaliza aqui pra manter compatibilidade com
     // ambos os formatos.

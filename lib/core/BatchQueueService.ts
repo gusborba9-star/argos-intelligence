@@ -73,16 +73,38 @@ export class BatchQueueService {
     }
     // ------------------------------------------
 
+    // --- TRAVA: nunca reanalisar/reenfileirar um jogo cujo kickoff já passou ---
+    // Sem isso, se a PropLine mantiver um evento "preso" no feed de odds
+    // (kickoff desatualizado/errado), o sistema fica reenviando sinal pra
+    // sempre de uma partida que já aconteceu.
+    const kickoff = rawData.commence_time ? new Date(rawData.commence_time).getTime() : null;
+    if (kickoff && kickoff < Date.now() - 10 * 60 * 1000) {
+      console.warn(`[BatchQueue] ⏭️ Ignorado ${uniqueKey}: kickoff (${rawData.commence_time}) já passou.`);
+      throw new Error(`[BatchQueue] Kickoff expirado para ${uniqueKey}`);
+    }
 
-    // Verificar se já existe item ativo (QUEUED, VALIDATED, PROCESSING)
+    // Verificar se já existe item ativo (QUEUED, VALIDATED, PROCESSING) OU
+    // recém-concluído (COMPLETED/FAILED dentro do cooldown) — antes só
+    // checava os status ativos, então uma vez COMPLETED o mesmo jogo era
+    // reinserido do zero a cada ciclo de ingest, gerando sinal duplicado
+    // pra sempre (era exatamente o bug que já tínhamos corrigido do lado
+    // do SQL, só que esse caminho em TS nunca tinha sido corrigido).
+    const COOLDOWN_MS = 60 * 60 * 1000;
     const { data: existing } = await this.supabase
       .from("argos_batch_queue")
-      .select("id, status, created_at")
+      .select("id, status, created_at, updated_at")
       .eq("unique_key", uniqueKey)
-      .in("status", [QueueStatus.QUEUED, QueueStatus.VALIDATED, QueueStatus.PROCESSING])
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+
+    if (existing && [QueueStatus.COMPLETED, QueueStatus.FAILED].includes(existing.status as QueueStatus)) {
+      const lastUpdate = new Date(existing.updated_at || existing.created_at).getTime();
+      if (Date.now() - lastUpdate < COOLDOWN_MS) {
+        console.log(`[BatchQueue] ⏭️ Cooldown ativo para ${uniqueKey} (processado há menos de 60min).`);
+        return existing.id;
+      }
+    }
 
     if (existing && existing.status === QueueStatus.QUEUED) {
       // Se já está na fila mas ainda não foi processado, atualizamos com os dados mais recentes
@@ -103,7 +125,7 @@ export class BatchQueueService {
       }
     }
 
-    if (existing && existing.status !== QueueStatus.QUEUED) {
+    if (existing && [QueueStatus.VALIDATED, QueueStatus.PROCESSING].includes(existing.status as QueueStatus)) {
       console.log(
         `[BatchQueue] ⏭️ Pulando: ${uniqueKey} está em processamento (${existing.status}).`
       );
