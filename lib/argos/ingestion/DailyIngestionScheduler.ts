@@ -100,6 +100,13 @@ export class DailyIngestionScheduler {
         const events = await this.dataIngestionService.getMegaCallOdds(sportKey);
         console.log(`[Argos-Discovery] ${sportKey}: ${events.length} eventos encontrados.`);
 
+        // Coleta de resultados reais (para calibrar o modelo com histórico
+        // verdadeiro em vez de médias genéricas). Throttled a 1x/hora — o
+        // ingest roda a cada 5 min, isso evita estourar o budget da API.
+        if (new Date().getMinutes() < 5) {
+          await this.dataIngestionService.updateTeamFormFromScores(sportKey);
+        }
+
         // ── ETAPA 5: Avaliação de liquidez e priorização ─────────────────
         const scoredEvents = events
           .map((event: any) => ({

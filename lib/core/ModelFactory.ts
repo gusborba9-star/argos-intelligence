@@ -93,6 +93,12 @@ export class ModelFactory {
     const overCounts: Record<string, number> = {};
     GOAL_LINES.forEach((l) => (overCounts[l] = 0));
 
+    // Linhas de Handicap Asiático comuns (baseadas na diferença de gols
+    // simulada) — mesma passada, sem custo extra de simulação.
+    const HANDICAP_LINES = [-2, -1.5, -1, -0.5, 0.5, 1, 1.5, 2];
+    const homeCoversCounts: Record<string, number> = {};
+    HANDICAP_LINES.forEach((l) => (homeCoversCounts[l] = 0));
+
     const variance = regime.variance_multiplier || 1.2;
     const bias = regime.model_bias || 0;
 
@@ -106,10 +112,15 @@ export class ModelFactory {
       const finalHome = currentScore.home + hScore;
       const finalAway = currentScore.away + aScore;
       const matchTotal = finalHome + finalAway;
+      const goalDiff = finalHome - finalAway;
 
       totalGoals += (hScore + aScore);
       GOAL_LINES.forEach((l) => {
         if (matchTotal > l) overCounts[l]++;
+      });
+      HANDICAP_LINES.forEach((l) => {
+        // Handicap do time da casa: casa cobre se (diferença + linha) > 0
+        if (goalDiff + l > 0) homeCoversCounts[l]++;
       });
       if (finalHome > 0 && finalAway > 0) bttsYes++;
 
@@ -130,6 +141,10 @@ export class ModelFactory {
     GOAL_LINES.forEach((l) => {
       probabilities[`over_${l}`] = overCounts[l] / iterations;
       probabilities[`under_${l}`] = 1 - overCounts[l] / iterations;
+    });
+    HANDICAP_LINES.forEach((l) => {
+      probabilities[`home_handicap_${l}`] = homeCoversCounts[l] / iterations;
+      probabilities[`away_handicap_${l}`] = 1 - homeCoversCounts[l] / iterations;
     });
 
     return {

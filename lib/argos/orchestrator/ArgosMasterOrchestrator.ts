@@ -3,6 +3,7 @@ import { FairOddsCalculator } from "../../core/market-intelligence/FairOddsCalcu
 import { OddsValueEngine } from "../../core/market-intelligence/OddsValueEngine";
 import { ModelFactory } from "../../core/ModelFactory";
 import { FeatureEngine } from "../../core/FeatureEngine";
+import { DataIngestionService } from "../../core/DataIngestionService";
 import { RAGContextEngine } from "../regime/RAGContextEngine";
 // RegimeEngineV4 removido. O regime agora é extraído do RAGContextEngine.
 import { SignalDistributionEngine } from "../../core/market-intelligence/SignalDistributionEngine";
@@ -47,7 +48,19 @@ export class ArgosMasterOrchestrator {
     };
 
     // 3. Feature Engineering & Monte Carlo Simulation
-    const features = FeatureEngine.generateFeatureVector(rawData);
+    // Busca histórico real de gols (acumulado dia a dia via /scores da PropLine).
+    // Se ainda não há dados reais pra esse time, cai no default genérico do
+    // FeatureEngine — não trava, só ainda não está calibrado com dado real.
+    const dataService = new DataIngestionService();
+    const [homeHistory, awayHistory] = await Promise.all([
+      dataService.getRealTeamHistory(rawData.sport_key || leagueIdentifier, rawData.home_team),
+      dataService.getRealTeamHistory(rawData.sport_key || leagueIdentifier, rawData.away_team),
+    ]);
+    const features = FeatureEngine.generateFeatureVector({
+      ...rawData,
+      homeHistory: rawData.homeHistory?.length ? rawData.homeHistory : homeHistory,
+      awayHistory: rawData.awayHistory?.length ? rawData.awayHistory : awayHistory,
+    });
     
     // Analisar todos os mercados obrigatórios
     const verticalsToAnalyze = [
@@ -75,7 +88,7 @@ export class ArgosMasterOrchestrator {
       // Seleções descobertas dinamicamente a partir do que a PropLine realmente
       // ofertou nessa partida (todas as linhas de Goals, Winner, BTTS) — em vez
       // de uma lista fixa que ignorava as linhas reais do mercado.
-      const selections = this.getSelectionsForVertical(vertical, normalizedMarkets);
+      const selections = this.getSelectionsForVertical(vertical, normalizedMarkets, rawData.home_team, rawData.away_team);
 
       for (const selection of selections) {
         const fairLine = FairOddsCalculator.calculate(normalizedMarkets, vertical, selection.label, selection.line);
@@ -154,7 +167,12 @@ export class ArgosMasterOrchestrator {
    * mas não inventamos sinal onde não há calibração real (ver checagem
    * `prob === undefined` no chamador).
    */
-  private static getSelectionsForVertical(vertical: MarketVertical, normalizedMarkets: any[]) {
+  private static getSelectionsForVertical(
+    vertical: MarketVertical,
+    normalizedMarkets: any[],
+    homeTeam?: string,
+    awayTeam?: string
+  ) {
     switch (vertical) {
       case MarketVertical.WINNER:
         return [
@@ -181,6 +199,30 @@ export class ArgosMasterOrchestrator {
           { key: "btts_yes", label: "Yes", line: 0 },
           { key: "btts_no", label: "No", line: 0 },
         ];
+      case MarketVertical.HANDICAP: {
+        // Handicap identifica a seleção pelo nome do próprio time (convenção
+        // the-odds-api/PropLine), não por "Home"/"Away" — por isso precisa
+        // do nome real dos times pra casar com o outcome certo.
+        if (!homeTeam || !awayTeam) return [];
+        const selections: { key: string; label: string; line: number }[] = [];
+        const seen = new Set<string>();
+        normalizedMarkets
+          .filter((m) => m.vertical === MarketVertical.HANDICAP)
+          .forEach((m) => {
+            m.outcomes.forEach((o: any) => {
+              const dedupeKey = `${o.selection}|${o.point ?? m.line}`;
+              if (seen.has(dedupeKey)) return;
+              seen.add(dedupeKey);
+              const line = o.point ?? m.line;
+              if (o.selection === homeTeam) {
+                selections.push({ key: `home_handicap_${line}`, label: homeTeam, line });
+              } else if (o.selection === awayTeam) {
+                selections.push({ key: `away_handicap_${line}`, label: awayTeam, line });
+              }
+            });
+          });
+        return selections;
+      }
       default:
         return [];
     }

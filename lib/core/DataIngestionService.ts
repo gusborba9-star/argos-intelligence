@@ -272,4 +272,87 @@ export class DataIngestionService {
   public getLeagueProfile(leagueId: number, leagueName?: string): LeagueProfile {
     return { id: leagueId, name: leagueName || "Unknown", tier: "Tier 1", historicalLiquidity: 1000000, oddsDispersion: 0.5, avgGoals: 2.5, avgCorners: 9.5, avgCards: 4.5, historicalEVPlus: 0.05, confidenceScore: 0.8 };
   }
+
+  /**
+   * Busca resultados reais (completed) via endpoint /scores da PropLine
+   * (compatível com the-odds-api) e atualiza o histórico rolling de cada
+   * time em `argos_team_form`. Isso substitui aos poucos os defaults
+   * genéricos do FeatureEngine por médias reais — não é instantâneo
+   * (a janela do /scores só cobre os últimos dias), mas acumula com o
+   * tempo a cada execução do ingest.
+   */
+  public async updateTeamFormFromScores(sportKey: string, daysFrom: number = 3): Promise<number> {
+    try {
+      const url = `${this.baseUrl}/sports/${sportKey}/scores?daysFrom=${daysFrom}&apiKey=${this.apiKey}`;
+      const response = await axios.get(url, { timeout: 20000 });
+      this.trackRequest();
+      const events = response.data || [];
+
+      let updated = 0;
+      for (const ev of events) {
+        if (!ev.completed || !Array.isArray(ev.scores) || ev.scores.length < 2) continue;
+
+        const homeScore = ev.scores.find((s: any) => s.name === ev.home_team);
+        const awayScore = ev.scores.find((s: any) => s.name === ev.away_team);
+        if (!homeScore || !awayScore) continue;
+
+        const homeGoals = parseInt(homeScore.score, 10);
+        const awayGoals = parseInt(awayScore.score, 10);
+        if (isNaN(homeGoals) || isNaN(awayGoals)) continue;
+
+        await this.pushTeamResult(sportKey, ev.home_team, homeGoals, awayGoals);
+        await this.pushTeamResult(sportKey, ev.away_team, awayGoals, homeGoals);
+        updated++;
+      }
+      console.log(`[Argos-TeamForm] ${sportKey}: ${updated} resultados reais processados.`);
+      return updated;
+    } catch (error: any) {
+      console.error(`[Argos-TeamForm] Erro ao buscar scores de ${sportKey}:`, error.message);
+      return 0;
+    }
+  }
+
+  private async pushTeamResult(sportKey: string, teamName: string, goalsFor: number, goalsAgainst: number): Promise<void> {
+    const { data: existing } = await this.supabase
+      .from("argos_team_form")
+      .select("recent_goals_for, recent_goals_against, sample_size")
+      .eq("sport_key", sportKey)
+      .eq("team_name", teamName)
+      .maybeSingle();
+
+    const MAX_HISTORY = 10;
+    const forArr = [goalsFor, ...(existing?.recent_goals_for || [])].slice(0, MAX_HISTORY);
+    const againstArr = [goalsAgainst, ...(existing?.recent_goals_against || [])].slice(0, MAX_HISTORY);
+
+    await this.supabase.from("argos_team_form").upsert({
+      sport_key: sportKey,
+      team_name: teamName,
+      recent_goals_for: forArr,
+      recent_goals_against: againstArr,
+      sample_size: forArr.length,
+      updated_at: new Date().toISOString()
+    }, { onConflict: "sport_key,team_name" });
+  }
+
+  /**
+   * Lê o histórico real acumulado de um time (se existir) no formato que
+   * o FeatureEngine já espera (`{ goals: { home, away } }[]`).
+   */
+  public async getRealTeamHistory(sportKey: string, teamName: string): Promise<{ goals: { home: number; away: number } }[]> {
+    const { data } = await this.supabase
+      .from("argos_team_form")
+      .select("recent_goals_for, recent_goals_against")
+      .eq("sport_key", sportKey)
+      .eq("team_name", teamName)
+      .maybeSingle();
+
+    if (!data || !data.recent_goals_for?.length) return [];
+
+    // FeatureEngine só soma home+away, então basta preencher os dois campos
+    // com gols-a-favor/gols-contra desse time — o resultado da soma é o
+    // mesmo e mantém o peso exponencial por posição (mais recente primeiro).
+    return data.recent_goals_for.map((gf: number, i: number) => ({
+      goals: { home: gf, away: data.recent_goals_against[i] ?? 0 }
+    }));
+  }
 }
