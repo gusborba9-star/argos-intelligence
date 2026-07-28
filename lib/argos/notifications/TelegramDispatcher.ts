@@ -30,6 +30,28 @@ export class TelegramDispatcher {
   private readonly VIP_LINK = "https://t.me/+T_gr8u0lKTpjMmMx";
 
   /**
+   * Bilhete do Dia: combo de partidas de alta probabilidade combinadas
+   * numa odd só (5.00–15.00). Vai pros dois canais — é a peça de maior
+   * apelo de marketing do FREE e o "filé" adicional do VIP.
+   */
+  public async dispatchDailyTicket(legs: any[], combinedOdd: number, combinedProb: number) {
+    if (!this.botToken) return;
+
+    let msg = `🎟️ <b>BILHETE DO DIA — ARGOS SYNDICATE</b> 🎟️\n\n`;
+    msg += `Combo de ${legs.length} jogos de alta probabilidade, combinados numa odd só:\n\n`;
+    legs.forEach((leg, i) => {
+      msg += `${i + 1}️⃣ <b>${leg.home_team} vs ${leg.away_team}</b>\n`;
+      msg += `   ${this.getVerticalEmoji(leg.vertical)} ${leg.vertical}: <b>${leg.selection}</b> ${leg.line ? `(${leg.line})` : ''} @ ${leg.odd.toFixed(2)} (${(leg.probability * 100).toFixed(0)}%)\n\n`;
+    });
+    msg += `🎯 <b>Odd combinada</b>: <code>${combinedOdd.toFixed(2)}</code>\n`;
+    msg += `📊 <b>Probabilidade conjunta estimada</b>: <code>${(combinedProb * 100).toFixed(1)}%</code>\n\n`;
+    msg += `🛡️ <i>Combo = risco maior que aposta única. Gestão de banca ainda mais importante aqui — nunca aposte o que não pode perder.</i>`;
+
+    if (this.freeChannelId) await this.sendToQueue(this.freeChannelId, msg);
+    if (this.vipChannelId) await this.sendToQueue(this.vipChannelId, msg);
+  }
+
+  /**
    * Despacha múltiplos sinais para os canais específicos, agrupando por partida.
    */
   public async dispatch(payloads: TelegramSignalPayload[], regime?: any) {

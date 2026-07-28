@@ -1,6 +1,7 @@
 import { Opportunity } from "./MarketDiscoveryEngine";
 import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
 import { telegramDispatcher, TelegramSignalPayload } from "@/lib/argos/notifications/TelegramDispatcher";
+import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 // DecisionGraphEngine removido na v6.0.0.
 // SignalClassifierV4 removido na v6.0.0. A classificação agora é feita no Master Orchestrator.
 
@@ -24,7 +25,7 @@ export class SignalDistributionEngine {
   public static async processAndDispatch(
     opportunities: Opportunity[],
     regime: RegimeProfile,
-    matchContext: { name: string; league: string; kickoff: string }
+    matchContext: { matchId: string; name: string; homeTeam: string; awayTeam: string; league: string; kickoff: string }
   ): Promise<DistributedSignal[]> {
     
     // Na v6.0.0, as oportunidades já chegam classificadas e com rating do OddsValueEngine.
@@ -72,6 +73,34 @@ export class SignalDistributionEngine {
     if (signalsToDispatch.length > 0) {
       console.log(`[SignalDistribution] 🚀 Despachando ${signalsToDispatch.length} sinais para Telegram.`);
       await telegramDispatcher.dispatch(signalsToDispatch, regime);
+    }
+
+    // Grava cada sinal no ledger — sem isso, o aprendizado contínuo nunca
+    // teve dado real pra aprender, e o bilhete do dia não tinha de onde
+    // puxar os sinais de hoje.
+    if (distributed.length > 0) {
+      try {
+        const supabase = getSupabaseClient();
+        const rows = distributed.map(d => ({
+          match_id: matchContext.matchId,
+          league_name: matchContext.league,
+          home_team: matchContext.homeTeam,
+          away_team: matchContext.awayTeam,
+          kickoff_at: matchContext.kickoff,
+          vertical: d.vertical,
+          market: d.vertical,
+          selection: d.selection,
+          odd: d.odd,
+          probability: d.probability,
+          expected_value: d.expectedValue,
+          confidence: d.probability,
+          regime: (regime as any)?.market_regime || "NEUTRAL",
+          tier: d.tier,
+        }));
+        await supabase.from("argos_signal_ledger").insert(rows);
+      } catch (err: any) {
+        console.error("[SignalDistribution] ⚠️ Falha ao gravar ledger:", err.message);
+      }
     }
 
     return distributed;

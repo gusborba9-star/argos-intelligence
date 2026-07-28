@@ -175,7 +175,10 @@ export class ArgosMasterOrchestrator {
         opportunitiesWithAnalysis,
         regime as any,
         {
+          matchId,
           name: `${rawData.home_team} vs ${rawData.away_team}`,
+          homeTeam: rawData.home_team,
+          awayTeam: rawData.away_team,
           league: features.leagueProfile.name,
           kickoff: rawData.commence_time || rawData.kickoff_at || null
         }
