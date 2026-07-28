@@ -58,14 +58,14 @@ export class TelegramDispatcher {
       }
 
       const message = tier === "FREE" 
-        ? this.formatFreeMessage(signals) 
+        ? this.formatFreeMessage(signals, regime) 
         : this.formatVipMessage(signals, regime);
 
       await this.sendToQueue(channelId, message);
     }
   }
 
-  private formatFreeMessage(signals: TelegramSignalPayload[]): string {
+  private formatFreeMessage(signals: TelegramSignalPayload[], regime?: any): string {
     const s = signals[0];
     const kickoff = new Date(s.kickoffTime).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     
@@ -89,13 +89,34 @@ export class TelegramDispatcher {
 
     topSignals.forEach(sig => {
       const probLabel = sig.probability >= 0.75 ? "🔥 ALTA" : "⚡ MÉDIA";
-      msg += `• ${this.getVerticalEmoji(sig.vertical)} ${sig.vertical}: <b>${sig.selection}</b> @ ${sig.odd.toFixed(2)}\n`;
+      msg += `\n• ${this.getVerticalEmoji(sig.vertical)} <b>${sig.vertical}</b>: <b>${sig.selection}</b> ${sig.line ? `(${sig.line})` : ''} @ ${sig.odd.toFixed(2)}\n`;
       msg += `  └ Probabilidade: ${probLabel} (<b>${(sig.probability * 100).toFixed(1)}%</b>)\n`;
+      msg += `  └ <i>${this.buildFreeRationale(sig)}</i>\n`;
     });
 
-    msg += `\n🧠 <i>Análise rápida: seleção com maior probabilidade de acerto do nosso modelo pra esse jogo — sem considerar o valor da odd (isso é feito só na varredura completa do VIP).</i>\n`;
+    msg += `\n🧠 <b>Leitura do jogo</b>: <i>Regime ${regime?.market_regime === 'VOLATILE' ? 'volátil (mais variância que o normal)' : 'estável'} para essa partida — a seleção acima foi a de maior probabilidade calculada pelo nosso modelo, sem considerar se a odd paga bem ou não (isso é o trabalho do VIP: achar onde a odd paga MAIS do que deveria).</i>\n`;
     msg += `\n🚀 <a href="${this.VIP_LINK}">QUER ANÁLISE PROFUNDA E TODOS OS MERCADOS? ENTRE NO VIP!</a>`;
     return msg;
+  }
+
+  private buildFreeRationale(sig: TelegramSignalPayload): string {
+    const pct = (sig.probability * 100).toFixed(0);
+    switch (sig.vertical) {
+      case "GOALS":
+        return sig.selection === "Over"
+          ? `Modelo aponta ${pct}% de chance desse jogo passar de ${sig.line} gols.`
+          : `Modelo aponta ${pct}% de chance desse jogo ficar abaixo de ${sig.line} gols.`;
+      case "BTTS":
+        return sig.selection === "Yes"
+          ? `Modelo aponta ${pct}% de chance de AMBOS os times marcarem.`
+          : `Modelo aponta ${pct}% de chance de pelo menos um time NÃO marcar.`;
+      case "WINNER":
+        return `Modelo aponta ${pct}% de chance de vitória para ${sig.selection === "Home" ? "o mandante" : sig.selection === "Away" ? "o visitante" : "empate"}.`;
+      case "HANDICAP":
+        return `Modelo aponta ${pct}% de chance de ${sig.selection} cobrir o handicap de ${sig.line}.`;
+      default:
+        return `Modelo aponta ${pct}% de probabilidade para essa seleção.`;
+    }
   }
 
   private formatVipMessage(signals: TelegramSignalPayload[], regime?: any): string {

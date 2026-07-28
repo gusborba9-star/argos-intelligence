@@ -106,6 +106,31 @@ export class BatchQueueService {
       }
     }
 
+    // --- TRAVA EXTRA: dedup por nome dos times, não só por match_id ---
+    // A PropLine já demonstrou reaproveitar/reenviar match_id com
+    // commence_time desatualizado. Isso protege contra o mesmo confronto
+    // (mesmos 2 times) ser analisado de novo dentro de uma janela de 18h,
+    // mesmo que o match_id ou o kickoff informado sejam diferentes/errados.
+    if (rawData.home_team && rawData.away_team) {
+      const TEAM_PAIR_COOLDOWN_MS = 18 * 60 * 60 * 1000;
+      const { data: recentSameTeams } = await this.supabase
+        .from("argos_batch_queue")
+        .select("id, updated_at, created_at")
+        .eq("status", QueueStatus.COMPLETED)
+        .contains("raw_data", { home_team: rawData.home_team, away_team: rawData.away_team })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (recentSameTeams) {
+        const last = new Date(recentSameTeams.updated_at || recentSameTeams.created_at).getTime();
+        if (Date.now() - last < TEAM_PAIR_COOLDOWN_MS) {
+          console.warn(`[BatchQueue] ⏭️ ${rawData.home_team} vs ${rawData.away_team} já analisado nas últimas 18h (proteção por confronto, não só match_id).`);
+          throw new Error(`[BatchQueue] Confronto já analisado recentemente: ${rawData.home_team} vs ${rawData.away_team}`);
+        }
+      }
+    }
+
     if (existing && existing.status === QueueStatus.QUEUED) {
       // Se já está na fila mas ainda não foi processado, atualizamos com os dados mais recentes
       const { data: updated, error: updateErr } = await this.supabase
