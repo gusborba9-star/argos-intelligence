@@ -101,9 +101,11 @@ export class DailyIngestionScheduler {
         console.log(`[Argos-Discovery] ${sportKey}: ${events.length} eventos encontrados.`);
 
         // Coleta de resultados reais (para calibrar o modelo com histórico
-        // verdadeiro em vez de médias genéricas). Throttled a 1x/hora — o
-        // ingest roda a cada 5 min, isso evita estourar o budget da API.
-        if (new Date().getMinutes() < 5) {
+        // verdadeiro em vez de médias genéricas). Throttled a 4x/dia
+        // (00h,06h,12h,18h) — cada chamada de scores gasta ~1 request de
+        // budget por esporte, então isso soma esse custo ao invés de
+        // multiplicar por cron.
+        if ([0, 6, 12, 18].includes(new Date().getUTCHours())) {
           await this.dataIngestionService.updateTeamFormFromScores(sportKey);
         }
 
