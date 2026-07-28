@@ -67,6 +67,21 @@ export class ArgosMasterOrchestrator {
       dataService.getRealTeamHistory(rawData.sport_key || leagueIdentifier, rawData.home_team),
       dataService.getRealTeamHistory(rawData.sport_key || leagueIdentifier, rawData.away_team),
     ]);
+
+    // TRAVA DE PRECISÃO: sem uma amostra mínima real de jogos pra AMBOS os
+    // times, o modelo cai no default genérico (1.5 gols) e pode divergir
+    // brutalmente do mercado (ex: modelo 55%, mercado real ~15%) — foi
+    // exatamente isso que gerou sinal inflado em jogos como Coleraine vs
+    // HJK. Preferimos NÃO gerar sinal de Gols/BTTS/Handicap a gerar um
+    // inflado. Segue rodando (Winner ainda sai, é mais robusto ao default),
+    // mas os mercados sensíveis à média de gols ficam de fora até haver
+    // amostra real.
+    const MIN_REAL_SAMPLE = 3;
+    const hasRealData = homeHistory.length >= MIN_REAL_SAMPLE && awayHistory.length >= MIN_REAL_SAMPLE;
+    if (!hasRealData) {
+      console.warn(`[ArgosMaster] ⚠️ ${matchId}: sem amostra real suficiente (home:${homeHistory.length}, away:${awayHistory.length}) — Gols/BTTS/Handicap suprimidos pra evitar sinal inflado.`);
+    }
+
     const features = FeatureEngine.generateFeatureVector({
       ...rawData,
       homeHistory: rawData.homeHistory?.length ? rawData.homeHistory : homeHistory,
@@ -87,6 +102,13 @@ export class ArgosMasterOrchestrator {
     const opportunities: any[] = [];
 
     for (const vertical of verticalsToAnalyze) {
+      // Sem amostra real, Gols/BTTS/Handicap ficam de fora (dependem
+      // diretamente da média de gols, que sem dado real é só um chute
+      // genérico). Vencedor/Corners/Cards seguem normalmente.
+      if (!hasRealData && [MarketVertical.GOALS, MarketVertical.GOALS_HT, MarketVertical.BTTS, MarketVertical.HANDICAP].includes(vertical)) {
+        continue;
+      }
+
       // Simulação Monte Carlo calibrada
       const simulation = await ModelFactory.runMonteCarloWithLearning(
         { homeMean: features.homeMetrics.goals, awayMean: features.awayMetrics.goals }, // Exemplo simplificado
@@ -255,7 +277,7 @@ export class ArgosMasterOrchestrator {
       .flatMap((m) => m.outcomes)
       .filter((o: any) => o.selection.toLowerCase() === selectionLabel.toLowerCase())
       .map((o: any) => o.odd)
-      .filter((odd: number) => odd > 1 && odd < 100); // descarta lixo/sentinelas
+      .filter((odd: number) => odd >= 1.35 && odd < 100); // piso de 1.35 — sem sinal de odd curtíssima
 
     if (candidates.length === 0) return null;
     return Math.max(...candidates);
