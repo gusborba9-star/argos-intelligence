@@ -3,6 +3,7 @@ import { getRedisCacheInstance } from "@/lib/core/RedisCache";
 import { circuitBreakerPool } from "@/lib/core/CircuitBreaker";
 import { LeagueProfile } from "@/lib/argos/ingestion/LeagueValueScoreEngine";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
+import { normalizeTeamName } from "@/lib/core/normalizeTeamName";
 
 // ============================================================
 // DATA INGESTION SERVICE v5.5.0 — SINGLE-PASS ARCHITECTURE
@@ -312,12 +313,15 @@ export class DataIngestionService {
     }
   }
 
-  private async pushTeamResult(sportKey: string, teamName: string, goalsFor: number, goalsAgainst: number): Promise<void> {
+  public async pushTeamResult(sportKey: string, teamName: string, goalsFor: number, goalsAgainst: number): Promise<void> {
+    const canonicalName = normalizeTeamName(teamName);
+    if (!canonicalName) return;
+
     const { data: existing } = await this.supabase
       .from("argos_team_form")
       .select("recent_goals_for, recent_goals_against, sample_size")
       .eq("sport_key", sportKey)
-      .eq("team_name", teamName)
+      .eq("team_name", canonicalName)
       .maybeSingle();
 
     const MAX_HISTORY = 10;
@@ -326,7 +330,7 @@ export class DataIngestionService {
 
     await this.supabase.from("argos_team_form").upsert({
       sport_key: sportKey,
-      team_name: teamName,
+      team_name: canonicalName,
       recent_goals_for: forArr,
       recent_goals_against: againstArr,
       sample_size: forArr.length,
@@ -339,11 +343,12 @@ export class DataIngestionService {
    * o FeatureEngine já espera (`{ goals: { home, away } }[]`).
    */
   public async getRealTeamHistory(sportKey: string, teamName: string): Promise<{ goals: { home: number; away: number } }[]> {
+    const canonicalName = normalizeTeamName(teamName);
     const { data } = await this.supabase
       .from("argos_team_form")
       .select("recent_goals_for, recent_goals_against")
       .eq("sport_key", sportKey)
-      .eq("team_name", teamName)
+      .eq("team_name", canonicalName)
       .maybeSingle();
 
     if (!data || !data.recent_goals_for?.length) return [];
