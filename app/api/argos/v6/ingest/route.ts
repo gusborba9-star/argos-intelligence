@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { DailyIngestionScheduler } from "@/lib/argos/ingestion/DailyIngestionScheduler";
 
+// Escaneia ~28 esportes com 2 chamadas externas cada (checkFreshness + odds),
+// mais scores 4x/dia — facilmente passa do timeout padrão de 10s da Vercel.
+export const maxDuration = 60;
+
 /**
  * ARGOS v6.0.0 — DISCOVERY & INGESTION
  * Endpoint acionado por CRON para descobrir e enfileirar jogos de elite.
