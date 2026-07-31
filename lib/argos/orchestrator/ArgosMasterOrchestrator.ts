@@ -76,7 +76,10 @@ export class ArgosMasterOrchestrator {
     // inflado. Segue rodando (Winner ainda sai, é mais robusto ao default),
     // mas os mercados sensíveis à média de gols ficam de fora até haver
     // amostra real.
-    const MIN_REAL_SAMPLE = 3;
+    const MIN_REAL_SAMPLE = 1; // temporário: reduzido de 3 pra 1 em 31/07/2026 — a coleta de
+    // histórico ficou 2 dias travada (bug de timeout do pg_net, corrigido agora), então
+    // exigir 3 jogos manteria o sistema mudo por mais alguns dias. Subir de volta pra 3
+    // conforme a cobertura de times aumentar.
     const hasRealData = homeHistory.length >= MIN_REAL_SAMPLE && awayHistory.length >= MIN_REAL_SAMPLE;
     if (!hasRealData) {
       console.warn(`[ArgosMaster] ⚠️ ${matchId}: sem amostra real suficiente (home:${homeHistory.length}, away:${awayHistory.length}) — Gols/BTTS/Handicap suprimidos pra evitar sinal inflado.`);
