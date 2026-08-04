@@ -288,18 +288,18 @@ export class DataIngestionService {
       const response = await axios.get(url, { timeout: 10000 });
       this.trackRequest();
       const events = response.data || [];
-      console.log(`[Argos-TeamForm-DEBUG] ${sportKey}: ${events.length} eventos brutos. Amostra:`, JSON.stringify(events[0] || {}).slice(0, 400));
 
       let updated = 0;
       for (const ev of events) {
-        if (!ev.completed || !Array.isArray(ev.scores) || ev.scores.length < 2) continue;
+        // Formato real da PropLine: {status, home_score, away_score} — não
+        // {completed, scores:[{name,score}]} (formato the-odds-api que eu
+        // tinha assumido errado). Confirmado via log de produção.
+        if (ev.status !== "final") continue;
+        if (ev.home_score === null || ev.home_score === undefined) continue;
+        if (ev.away_score === null || ev.away_score === undefined) continue;
 
-        const homeScore = ev.scores.find((s: any) => s.name === ev.home_team);
-        const awayScore = ev.scores.find((s: any) => s.name === ev.away_team);
-        if (!homeScore || !awayScore) continue;
-
-        const homeGoals = parseInt(homeScore.score, 10);
-        const awayGoals = parseInt(awayScore.score, 10);
+        const homeGoals = parseInt(ev.home_score, 10);
+        const awayGoals = parseInt(ev.away_score, 10);
         if (isNaN(homeGoals) || isNaN(awayGoals)) continue;
 
         await this.pushTeamResult(sportKey, ev.home_team, homeGoals, awayGoals);
