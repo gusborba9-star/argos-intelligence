@@ -84,7 +84,7 @@ export class DailyIngestionScheduler {
 
       let totalProcessed = 0;
       const processedByLeague: Record<string, number> = {};
-      const CONCURRENCY = 6; // processa N esportes em paralelo por vez, não 1 por vez
+      const CONCURRENCY = 14; // 53.7s com 6 ficou perigosamente perto do teto de 55s — dobra a paralelização
 
       // ── ETAPA 4: Mega Call All-In por esporte (paralelizado) ─────────────
       // Antes: sequencial, 1 esporte de cada vez — 28 esportes x ~2 chamadas
