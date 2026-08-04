@@ -84,71 +84,66 @@ export class DailyIngestionScheduler {
 
       let totalProcessed = 0;
       const processedByLeague: Record<string, number> = {};
+      const CONCURRENCY = 6; // processa N esportes em paralelo por vez, não 1 por vez
 
-      // ── ETAPA 4: Mega Call All-In por esporte ────────────────────────────
-      for (const sport of soccerSports) {
-        if (totalProcessed >= this.MAX_DAILY_GAMES) break;
+      // ── ETAPA 4: Mega Call All-In por esporte (paralelizado) ─────────────
+      // Antes: sequencial, 1 esporte de cada vez — 28 esportes x ~2 chamadas
+      // cada facilmente passava de 55s e a rota era encerrada no meio.
+      // Agora: lotes de 6 em paralelo, o tempo total cai proporcionalmente.
+      const relevantSports = soccerSports.slice(0, this.MAX_DAILY_GAMES);
+      for (let i = 0; i < relevantSports.length; i += CONCURRENCY) {
+        const batch = relevantSports.slice(i, i + CONCURRENCY);
 
-        const sportKey = sport.key;
-        const isFresh = await this.dataIngestionService.checkFreshness(sportKey);
-        if (!isFresh) {
-          console.log(`[Argos-Discovery] ${sportKey} sem atualização recente, pulando.`);
-          continue;
-        }
+        const batchResults = await Promise.all(
+          batch.map(async (sport: any) => {
+            const sportKey = sport.key;
+            try {
+              const isFresh = await this.dataIngestionService.checkFreshness(sportKey);
+              if (!isFresh) return { sportKey, events: [] as any[] };
 
-        // Mega Call All-In: traz todo o payload (odds + mercados) em um hit
-        const events = await this.dataIngestionService.getMegaCallOdds(sportKey);
-        console.log(`[Argos-Discovery] ${sportKey}: ${events.length} eventos encontrados.`);
+              const events = await this.dataIngestionService.getMegaCallOdds(sportKey);
+              console.log(`[Argos-Discovery] ${sportKey}: ${events.length} eventos encontrados.`);
+              return { sportKey, events };
+            } catch (err: any) {
+              console.error(`[Argos-Discovery] Erro em ${sportKey}:`, err.message);
+              return { sportKey, events: [] as any[] };
+            }
+          })
+        );
 
-        // Coleta de resultados reais (para calibrar o modelo com histórico
-        // verdadeiro em vez de médias genéricas). Throttled a 4x/dia
-        // (00h,06h,12h,18h) — cada chamada de scores gasta ~1 request de
-        // budget por esporte, então isso soma esse custo ao invés de
-        // multiplicar por cron.
-        if ([0, 6, 12, 18].includes(new Date().getUTCHours())) {
-          await this.dataIngestionService.updateTeamFormFromScores(sportKey);
-        }
-
-        // ── ETAPA 5: Avaliação de liquidez e priorização ─────────────────
-        const scoredEvents = events
-          .map((event: any) => ({
-            event,
-            score: this.calculatePriorityScore(event),
-          }))
-          .filter(({ score }) => score >= 2) // Filtra eventos com baixa densidade operacional
-          .sort((a, b) => b.score - a.score); // Ordena por prioridade decrescente
-
-        // ── ETAPA 6: Enfileiramento com payload completo ─────────────────
-        for (const { event, score } of scoredEvents) {
+        // Enfileiramento é rápido (só grava no Supabase) — mantém sequencial
+        // pra não gerar corrida em cima do mesmo match_id.
+        for (const { events } of batchResults) {
           if (totalProcessed >= this.MAX_DAILY_GAMES) break;
 
-          const matchId = (
-            event.id ||
-            event.fixture?.id ||
-            event.match_id
-          ).toString();
+          const scoredEvents = events
+            .map((event: any) => ({ event, score: this.calculatePriorityScore(event) }))
+            .filter(({ score }) => score >= 2)
+            .sort((a, b) => b.score - a.score);
 
-          const leagueTitle = event.sport_title || event.league?.name || sportKey;
+          for (const { event, score } of scoredEvents) {
+            if (totalProcessed >= this.MAX_DAILY_GAMES) break;
 
-          try {
-            await this.batchQueueService.enqueue(
-              matchId,
-              "ALL_MARKETS",
-              ALL_MANDATORY_VERTICALS,
-              event, // Payload completo — zero re-fetch
-              QueueStatus.QUEUED,
-              score
-            );
+            const matchId = (event.id || event.fixture?.id || event.match_id).toString();
+            const leagueTitle = event.sport_title || event.league?.name || "unknown";
 
-            processedByLeague[leagueTitle] = (processedByLeague[leagueTitle] || 0) + 1;
-            totalProcessed++;
-          } catch (enqueueError: any) {
-            // Duplicidade já tratada no BatchQueueService — apenas loga
-            console.log(
-              `[Argos-Discovery] ${matchId} já na fila ou erro: ${enqueueError.message}`
-            );
+            try {
+              await this.batchQueueService.enqueue(
+                matchId,
+                "ALL_MARKETS",
+                ALL_MANDATORY_VERTICALS,
+                event,
+                QueueStatus.QUEUED,
+                score
+              );
+              processedByLeague[leagueTitle] = (processedByLeague[leagueTitle] || 0) + 1;
+              totalProcessed++;
+            } catch (enqueueError: any) {
+              console.log(`[Argos-Discovery] ${matchId} já na fila ou erro: ${enqueueError.message}`);
+            }
           }
         }
+        if (totalProcessed >= this.MAX_DAILY_GAMES) break;
       }
 
       const executionTime = Date.now() - startTime;
@@ -177,6 +172,34 @@ export class DailyIngestionScheduler {
    * Identifica dinamicamente se um esporte é futebol.
    * Sem dependência de lista fixa — usa chave, grupo e título.
    */
+  /**
+   * Coleta de resultados reais (para calibrar o modelo com histórico
+   * verdadeiro em vez de médias genéricas). Separado do ingest de odds
+   * de propósito — antes disputava o mesmo orçamento de tempo/timeout
+   * dentro do mesmo loop sequencial e nunca chegava a rodar.
+   */
+  async collectHistoricalScores(): Promise<{ sportsProcessed: number; totalUpdated: number }> {
+    const activeSports = await this.dataIngestionService.getActiveSports();
+    const soccerSports = activeSports.filter((s: any) => this.isSoccer(s));
+    const CONCURRENCY = 6;
+    let totalUpdated = 0;
+
+    for (let i = 0; i < soccerSports.length; i += CONCURRENCY) {
+      const batch = soccerSports.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map((sport: any) =>
+          this.dataIngestionService.updateTeamFormFromScores(sport.key).catch((err: any) => {
+            console.error(`[Argos-TeamForm] Erro em ${sport.key}:`, err.message);
+            return 0;
+          })
+        )
+      );
+      totalUpdated += results.reduce((a: number, b: number) => a + b, 0);
+    }
+
+    return { sportsProcessed: soccerSports.length, totalUpdated };
+  }
+
   private isSoccer(sport: any): boolean {
     const key = (sport.key || "").toLowerCase();
     const group = (sport.group || "").toLowerCase();
