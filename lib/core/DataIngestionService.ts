@@ -288,6 +288,7 @@ export class DataIngestionService {
       const response = await axios.get(url, { timeout: 10000 });
       this.trackRequest();
       const events = response.data || [];
+      console.log(`[Argos-TeamForm-DEBUG] ${sportKey}: ${events.length} eventos brutos. Amostra:`, JSON.stringify(events[0] || {}).slice(0, 400));
 
       let updated = 0;
       for (const ev of events) {
