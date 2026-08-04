@@ -79,7 +79,7 @@ export class DataIngestionService {
     try {
       const url = `${this.baseUrl}/sports?apiKey=${this.apiKey}`;
       console.log(`[Argos-Discovery] Buscando esportes ativos: ${url.replace(this.apiKey, '***')}`);
-      const response = await axios.get(url, { timeout: 15000 });
+      const response = await axios.get(url, { timeout: 8000 });
       this.trackRequest();
       const rawSports = response.data || [];
       const activeSports = rawSports.filter((s: any) => s.active && s.key.toLowerCase().includes('soccer'));
@@ -95,7 +95,7 @@ export class DataIngestionService {
   public async checkFreshness(sportKey: string): Promise<boolean> {
     try {
       const url = `${this.baseUrl}/freshness?sport=${sportKey}&apiKey=${this.apiKey}`;
-      const response = await axios.get(url, { timeout: 10000 });
+      const response = await axios.get(url, { timeout: 6000 });
       this.trackRequest();
       return response.data?.changed || true; 
     } catch { return true; }
@@ -130,7 +130,7 @@ export class DataIngestionService {
       // CORRIGIDO: usa /odds em vez de /events?markets=all
       const url = `${this.baseUrl}/sports/${sportKey}/odds?markets=${this.SOCCER_MARKETS}&apiKey=${this.apiKey}`;
       console.log(`[Argos-URL] Mega Call All-In v5.5.1 (endpoint corrigido): ${url.replace(this.apiKey, '***')}`);
-      const response = await axios.get(url, { timeout: 45000 });
+      const response = await axios.get(url, { timeout: 12000 });
       this.trackRequest();
       const events = response.data || [];
       const now = Date.now();
@@ -285,7 +285,7 @@ export class DataIngestionService {
   public async updateTeamFormFromScores(sportKey: string, daysFrom: number = 3): Promise<number> {
     try {
       const url = `${this.baseUrl}/sports/${sportKey}/scores?daysFrom=${daysFrom}&apiKey=${this.apiKey}`;
-      const response = await axios.get(url, { timeout: 20000 });
+      const response = await axios.get(url, { timeout: 10000 });
       this.trackRequest();
       const events = response.data || [];
 
