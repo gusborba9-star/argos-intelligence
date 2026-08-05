@@ -15,6 +15,10 @@ const STOPWORDS = new Set([
   "de", "del", "da", "do", "dos", "das", "la", "las", "el", "y", "e",
   "rj", "sp", "ba", "rs", "pa", "mg", "go", "pr", "ce", "pe", "rn", "pb",
   "al", "se", "pi", "ma", "to", "mt", "ms", "ro", "am", "rr", "ap", "df", "es",
+  // Códigos de país que o OpenFootball prefixa/sufixa em jogos da Libertadores/
+  // Sul-Americana (ex: "bra flamengo", "arg boca juniors", "deportivo tachira
+  // ven") — sem isso, esses times nunca batem com o nome puro da PropLine.
+  "bra", "arg", "col", "per", "ecu", "uru", "bol", "ven", "chi", "par", "mex",
 ]);
 
 export function normalizeTeamName(name: string): string {
