@@ -90,6 +90,31 @@ export class ArgosMasterOrchestrator {
       homeHistory: rawData.homeHistory?.length ? rawData.homeHistory : homeHistory,
       awayHistory: rawData.awayHistory?.length ? rawData.awayHistory : awayHistory,
     });
+
+    // Escanteios/Cartões: fonte de dado separada (não vem do /scores da
+    // PropLine, vem do backfill histórico público). Só gera sinal desses
+    // mercados se AMBOS os times tiverem amostra real — mesma filosofia
+    // de precisão do resto do sistema.
+    const [homeExtra, awayExtra] = await Promise.all([
+      dataService.getTeamExtraStats(rawData.sport_key || leagueIdentifier, rawData.home_team),
+      dataService.getTeamExtraStats(rawData.sport_key || leagueIdentifier, rawData.away_team),
+    ]);
+    const hasExtraStats = !!homeExtra && !!awayExtra;
+    let countStatProbabilities: Record<string, Record<string, number>> = {};
+    if (hasExtraStats && homeExtra && awayExtra) {
+      const cornersHomeMean = (homeExtra.cornersFor + awayExtra.cornersAgainst) / 2;
+      const cornersAwayMean = (awayExtra.cornersFor + homeExtra.cornersAgainst) / 2;
+      const cardsHomeMean = (homeExtra.cardsFor + awayExtra.cardsAgainst) / 2;
+      const cardsAwayMean = (awayExtra.cardsFor + homeExtra.cardsAgainst) / 2;
+      countStatProbabilities[MarketVertical.CORNERS] = ModelFactory.runCountStatSimulation(
+        cornersHomeMean, cornersAwayMean, [7.5, 8.5, 9.5, 10.5, 11.5, 12.5]
+      );
+      countStatProbabilities[MarketVertical.CARDS] = ModelFactory.runCountStatSimulation(
+        cardsHomeMean, cardsAwayMean, [2.5, 3.5, 4.5, 5.5, 6.5]
+      );
+    } else {
+      console.warn(`[ArgosMaster] ⚠️ ${matchId}: sem amostra real de escanteios/cartões — mercados suprimidos.`);
+    }
     
     // Analisar todos os mercados obrigatórios
     const verticalsToAnalyze = [
@@ -107,18 +132,27 @@ export class ArgosMasterOrchestrator {
     for (const vertical of verticalsToAnalyze) {
       // Sem amostra real, Gols/BTTS/Handicap ficam de fora (dependem
       // diretamente da média de gols, que sem dado real é só um chute
-      // genérico). Vencedor/Corners/Cards seguem normalmente.
+      // genérico). Corners/Cards têm sua própria trava de amostra (fonte
+      // de dado é o backfill histórico, separado do /scores da PropLine).
       if (!hasRealData && [MarketVertical.GOALS, MarketVertical.GOALS_HT, MarketVertical.BTTS, MarketVertical.HANDICAP].includes(vertical)) {
         continue;
       }
+      if ([MarketVertical.CORNERS, MarketVertical.CARDS].includes(vertical) && !hasExtraStats) {
+        continue;
+      }
 
-      // Simulação Monte Carlo calibrada
-      const simulation = await ModelFactory.runMonteCarloWithLearning(
-        { homeMean: features.homeMetrics.goals, awayMean: features.awayMetrics.goals }, // Exemplo simplificado
-        regime as any,
-        leagueIdentifier,
-        vertical as any
-      );
+      // Corners/Cards usam o simulador de contagem (Poisson simples com
+      // médias reais) — não o Monte Carlo de gols, que não tem noção
+      // nenhuma de escanteio ou cartão.
+      const isCountStatVertical = [MarketVertical.CORNERS, MarketVertical.CARDS].includes(vertical);
+      const simulation = isCountStatVertical
+        ? { probabilities: countStatProbabilities[vertical] || {} }
+        : await ModelFactory.runMonteCarloWithLearning(
+            { homeMean: features.homeMetrics.goals, awayMean: features.awayMetrics.goals }, // Exemplo simplificado
+            regime as any,
+            leagueIdentifier,
+            vertical as any
+          );
 
       // 4. Fair Line & Value Engine (Pinnacle-heavy)
       // Seleções descobertas dinamicamente a partir do que a PropLine realmente
@@ -223,6 +257,21 @@ export class ArgosMasterOrchestrator {
         const lines = new Set<number>(
           normalizedMarkets
             .filter((m) => m.vertical === MarketVertical.GOALS)
+            .map((m) => m.line)
+            .filter((l: number) => !!l)
+        );
+        const selections: { key: string; label: string; line: number }[] = [];
+        lines.forEach((line) => {
+          selections.push({ key: `over_${line}`, label: "Over", line });
+          selections.push({ key: `under_${line}`, label: "Under", line });
+        });
+        return selections;
+      }
+      case MarketVertical.CORNERS:
+      case MarketVertical.CARDS: {
+        const lines = new Set<number>(
+          normalizedMarkets
+            .filter((m) => m.vertical === vertical)
             .map((m) => m.line)
             .filter((l: number) => !!l)
         );

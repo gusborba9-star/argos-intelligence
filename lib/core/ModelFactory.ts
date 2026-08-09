@@ -177,4 +177,37 @@ export class ModelFactory {
     } while (p > L);
     return k - 1;
   }
+
+  /**
+   * Simulação de Escanteios ou Cartões via Poisson, usando médias reais dos
+   * times (não o mesmo simulador de gols — a distribuição é diferente e as
+   * médias vêm de fontes distintas). Sem isso, Corners/Cards nunca tinham
+   * modelo de probabilidade — só chegavam a ser normalizados, nunca a virar
+   * sinal.
+   */
+  public static runCountStatSimulation(
+    homeMean: number,
+    awayMean: number,
+    lines: number[],
+    iterations: number = 5000
+  ): Record<string, number> {
+    const overCounts: Record<string, number> = {};
+    lines.forEach((l) => (overCounts[l] = 0));
+
+    for (let i = 0; i < iterations; i++) {
+      const h = this.poisson(Math.max(0.1, homeMean));
+      const a = this.poisson(Math.max(0.1, awayMean));
+      const total = h + a;
+      lines.forEach((l) => {
+        if (total > l) overCounts[l]++;
+      });
+    }
+
+    const probabilities: Record<string, number> = {};
+    lines.forEach((l) => {
+      probabilities[`over_${l}`] = overCounts[l] / iterations;
+      probabilities[`under_${l}`] = 1 - overCounts[l] / iterations;
+    });
+    return probabilities;
+  }
 }

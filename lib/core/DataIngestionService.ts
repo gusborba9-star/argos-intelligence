@@ -361,4 +361,35 @@ export class DataIngestionService {
       goals: { home: gf, away: data.recent_goals_against[i] ?? 0 }
     }));
   }
+
+  /**
+   * Médias de escanteios/cartões/chutes reais do time (quando existirem).
+   * Usado pra calibrar os mercados de CORNERS/CARDS — sem isso, o Argos só
+   * conseguia gerar sinal de Gols/Vencedor/BTTS/Handicap.
+   */
+  public async getTeamExtraStats(sportKey: string, teamName: string): Promise<{
+    cornersFor: number; cornersAgainst: number; cardsFor: number; cardsAgainst: number;
+    shotsFor: number; shotsAgainst: number; sampleSize: number;
+  } | null> {
+    const canonicalName = normalizeTeamName(teamName);
+    const { data } = await this.supabase
+      .from("argos_team_form")
+      .select("recent_corners_for, recent_corners_against, recent_cards_for, recent_cards_against, recent_shots_for, recent_shots_against")
+      .eq("sport_key", sportKey)
+      .eq("team_name", canonicalName)
+      .maybeSingle();
+
+    if (!data || !data.recent_corners_for?.length) return null;
+
+    const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+    return {
+      cornersFor: avg(data.recent_corners_for),
+      cornersAgainst: avg(data.recent_corners_against),
+      cardsFor: avg(data.recent_cards_for),
+      cardsAgainst: avg(data.recent_cards_against),
+      shotsFor: avg(data.recent_shots_for),
+      shotsAgainst: avg(data.recent_shots_against),
+      sampleSize: data.recent_corners_for.length,
+    };
+  }
 }
