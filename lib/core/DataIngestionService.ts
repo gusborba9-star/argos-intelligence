@@ -302,11 +302,23 @@ export class DataIngestionService {
         const awayGoals = parseInt(ev.away_score, 10);
         if (isNaN(homeGoals) || isNaN(awayGoals)) continue;
 
+        // TRAVA CRÍTICA: a janela `daysFrom` reexpõe o mesmo jogo já
+        // concluído por até 3 dias seguidos, em toda coleta (4x/dia). Sem
+        // isso, um único resultado era regravado repetidamente até encher
+        // as 10 posições do histórico com a MESMA partida, criando uma
+        // "forma" falsa e artificialmente confiante. Cada evento só entra
+        // uma vez, pra sempre.
+        const eventId = String(ev.id ?? `${ev.home_team}_${ev.away_team}_${ev.commence_time}`);
+        const { error: insertError } = await this.supabase
+          .from("argos_processed_score_events")
+          .insert({ sport_key: sportKey, event_id: eventId });
+        if (insertError) continue; // já processado (violação de PK) — pula
+
         await this.pushTeamResult(sportKey, ev.home_team, homeGoals, awayGoals);
         await this.pushTeamResult(sportKey, ev.away_team, awayGoals, homeGoals);
         updated++;
       }
-      console.log(`[Argos-TeamForm] ${sportKey}: ${updated} resultados reais processados.`);
+      console.log(`[Argos-TeamForm] ${sportKey}: ${updated} resultados reais NOVOS processados.`);
       return updated;
     } catch (error: any) {
       console.error(`[Argos-TeamForm] Erro ao buscar scores de ${sportKey}:`, error.message);
