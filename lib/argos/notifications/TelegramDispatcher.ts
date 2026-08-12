@@ -34,10 +34,12 @@ export class TelegramDispatcher {
    * numa odd só (5.00–15.00). Vai pros dois canais — é a peça de maior
    * apelo de marketing do FREE e o "filé" adicional do VIP.
    */
-  public async dispatchDailyTicket(legs: any[], combinedOdd: number, combinedProb: number) {
+  public async dispatchDailyTicket(legs: any[], combinedOdd: number, combinedProb: number, tier: "FREE" | "VIP") {
     if (!this.botToken) return;
 
-    let msg = `🎟️ <b>BILHETE DO DIA — ARGOS SYNDICATE</b> 🎟️\n\n`;
+    const isVip = tier === "VIP";
+    const title = isVip ? "💎 BILHETE DO DIA VIP — ARGOS SYNDICATE 💎" : "🎟️ BILHETE DO DIA FREE — ARGOS 🎟️";
+    let msg = `<b>${title}</b>\n\n`;
     msg += `Combo de ${legs.length} jogos de alta probabilidade, combinados numa odd só:\n\n`;
     legs.forEach((leg, i) => {
       msg += `${i + 1}️⃣ <b>${leg.home_team} vs ${leg.away_team}</b>\n`;
@@ -45,10 +47,13 @@ export class TelegramDispatcher {
     });
     msg += `🎯 <b>Odd combinada</b>: <code>${combinedOdd.toFixed(2)}</code>\n`;
     msg += `📊 <b>Probabilidade conjunta estimada</b>: <code>${(combinedProb * 100).toFixed(1)}%</code>\n\n`;
+    if (!isVip) {
+      msg += `🚀 <a href="${this.VIP_LINK}">O bilhete VIP de hoje tem odd combinada maior — entre no VIP!</a>\n\n`;
+    }
     msg += `🛡️ <i>Combo = risco maior que aposta única. Gestão de banca ainda mais importante aqui — nunca aposte o que não pode perder.</i>`;
 
-    if (this.freeChannelId) await this.sendToQueue(this.freeChannelId, msg);
-    if (this.vipChannelId) await this.sendToQueue(this.vipChannelId, msg);
+    const channelId = isVip ? this.vipChannelId : this.freeChannelId;
+    if (channelId) await this.sendToQueue(channelId, msg);
   }
 
   /**
