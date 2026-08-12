@@ -55,8 +55,21 @@ export class FeatureEngine {
     const recent = history.slice(0, 5);
     let points = 0;
     recent.forEach(m => {
-      if (m.teams.home.winner) points += 3;
-      else if (m.teams.home.winner === null) points += 1;
+      // Suporta os dois formatos: o antigo (teams.home.winner, provedor
+      // rico tipo api-football) e o real que o Argos acumula sozinho hoje
+      // ({goals:{home,away}}, sem objeto `teams`) — sem isso, toda vez que
+      // havia histórico real o cálculo de forma quebrava com "Cannot read
+      // properties of undefined (reading 'home')" e nenhuma análise
+      // completava (foi a causa de 6 dias sem sinal nenhum).
+      if (m.teams?.home) {
+        if (m.teams.home.winner) points += 3;
+        else if (m.teams.home.winner === null) points += 1;
+      } else if (m.goals) {
+        const hg = m.goals.home ?? 0;
+        const ag = m.goals.away ?? 0;
+        if (hg > ag) points += 3;
+        else if (hg === ag) points += 1;
+      }
     });
     return points / 15;
   }
