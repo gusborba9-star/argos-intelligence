@@ -90,6 +90,7 @@ export class SignalDistributionEngine {
           vertical: d.vertical,
           market: d.vertical,
           selection: d.selection,
+          line: d.line,
           odd: d.odd,
           probability: d.probability,
           expected_value: d.expectedValue,

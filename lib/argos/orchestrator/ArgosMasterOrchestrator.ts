@@ -8,6 +8,7 @@ import { RAGContextEngine } from "../regime/RAGContextEngine";
 // RegimeEngineV4 removido. O regime agora é extraído do RAGContextEngine.
 import { SignalDistributionEngine } from "../../core/market-intelligence/SignalDistributionEngine";
 import { MarketVertical } from "../../core/ArgosUnifiedEngine";
+import { getSupabaseClient } from "../../core/SupabaseClient";
 
 export class ArgosMasterOrchestrator {
   private static readonly VERSION = "6.0.0-MASTER";
@@ -174,6 +175,40 @@ export class ArgosMasterOrchestrator {
           if (marketOdd === null) continue;
 
           const valueAnalysis = OddsValueEngine.calculateValue(prob, marketOdd, fairLine.fairOdd);
+
+          // TRAVA DE PLAUSIBILIDADE — não é sobre achar E corrigir o próximo
+          // bug, é sobre nunca deixar um bug (qualquer um, futuro incluído)
+          // virar sinal disparado. Mercado esportivo eficiente raramente tem
+          // edge real acima de ~30-40%; e a odd real nunca deveria divergir
+          // tanto da fair odd assim. Qualquer coisa além disso quase certeza
+          // é bug de dado/normalização, não oportunidade real — vai pra
+          // auditoria, nunca pro Telegram.
+          const MAX_PLAUSIBLE_EV = 0.60; // 60%
+          const MAX_ODD_FAIR_RATIO = 3.0;
+          const oddFairRatio = fairLine.fairOdd > 0 ? marketOdd / fairLine.fairOdd : 1;
+          const isImplausible =
+            valueAnalysis.expectedValue > MAX_PLAUSIBLE_EV ||
+            oddFairRatio > MAX_ODD_FAIR_RATIO ||
+            oddFairRatio < 1 / MAX_ODD_FAIR_RATIO;
+
+          if (isImplausible) {
+            console.warn(`[ArgosMaster] 🚨 ANOMALIA suprimida: ${matchId} ${vertical} ${selection.label}(${selection.line}) odd=${marketOdd} fair=${fairLine.fairOdd} ev=${valueAnalysis.expectedValue}`);
+            try {
+              const supabase = getSupabaseClient();
+              await supabase.from("argos_anomaly_log").insert({
+                match_id: matchId,
+                vertical,
+                selection: selection.label,
+                line: selection.line,
+                odd: marketOdd,
+                fair_odd: fairLine.fairOdd,
+                probability: prob,
+                expected_value: valueAnalysis.expectedValue,
+                reason: valueAnalysis.expectedValue > MAX_PLAUSIBLE_EV ? "EV_ABOVE_CEILING" : "ODD_FAIR_DIVERGENCE",
+              });
+            } catch (logErr) { /* nunca deixa o log quebrar a análise */ }
+            continue;
+          }
 
           // Antes: só entrava na lista se tivesse EV+, o que tornava impossível
           // o FREE mostrar "alta probabilidade mesmo sem EV+" (nunca chegava a
