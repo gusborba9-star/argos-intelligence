@@ -333,14 +333,17 @@ export class ArgosMasterOrchestrator {
           .filter((m) => m.vertical === MarketVertical.HANDICAP)
           .forEach((m) => {
             m.outcomes.forEach((o: any) => {
-              const dedupeKey = `${o.selection}|${o.point ?? m.line}`;
+              const rawPoint = o.point ?? m.line;
+              const magnitude = Math.abs(rawPoint);
+              const dedupeKey = `${o.selection}|${rawPoint}`;
               if (seen.has(dedupeKey)) return;
               seen.add(dedupeKey);
-              const line = o.point ?? m.line;
               if (o.selection === homeTeam) {
-                selections.push({ key: `home_handicap_${line}`, label: homeTeam, line });
+                selections.push({ key: `home_handicap_${magnitude}`, label: homeTeam, line: magnitude });
               } else if (o.selection === awayTeam) {
-                selections.push({ key: `away_handicap_${line}`, label: awayTeam, line });
+                // away_handicap_X no ModelFactory é complementar ao home_handicap_X
+                // da MESMA magnitude — não ao ponto assinado do próprio visitante.
+                selections.push({ key: `away_handicap_${magnitude}`, label: awayTeam, line: magnitude });
               }
             });
           });

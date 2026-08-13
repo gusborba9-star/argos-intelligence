@@ -79,7 +79,12 @@ export class MarketNormalizer {
         // Agrupa por ponto real de cada outcome antes de decidir a linha.
         const pointGroups = new Map<number | null, typeof rawOutcomes>();
         for (const o of rawOutcomes) {
-          const key = o.point ?? null;
+          // Handicap usa sinal oposto pros dois lados da mesma linha (casa
+          // +0.5, visitante -0.5) — agrupar pelo valor absoluto mantém os
+          // dois lados juntos (necessário pro cálculo de odd justa, que
+          // precisa dos dois outcomes no mesmo grupo). Goals/Corners/Cards
+          // não são afetados, já que Over/Under sempre usam o mesmo sinal.
+          const key = o.point !== undefined ? Math.abs(o.point) : null;
           if (!pointGroups.has(key)) pointGroups.set(key, []);
           pointGroups.get(key)!.push(o);
         }
@@ -88,7 +93,7 @@ export class MarketNormalizer {
           normalized.push({
             vertical,
             marketName: market.key,
-            line: point !== null ? Math.abs(point) : this.extractLine(market),
+            line: point !== null ? point : this.extractLine(market),
             outcomes,
             bookmaker: bookieKey,
             bookmakerTitle: bookieTitle,
