@@ -54,7 +54,7 @@ export class MarketNormalizer {
         // REGRA MASTER: Não descartar mercados desconhecidos antes da avaliação.
         // Mercados UNKNOWN são normalizados com vertical UNKNOWN para auditoria posterior.
 
-        const outcomes = (market.outcomes || []).map((o: any) => {
+        const rawOutcomes = (market.outcomes || []).map((o: any) => {
           const rawPrice = typeof o.price === "number" ? o.price : 100;
           // PropLine entrega odds em formato AMERICANO (ex: -174, +130), não decimal.
           // Conversão correta: negativo = favorito, positivo = underdog.
@@ -69,18 +69,33 @@ export class MarketNormalizer {
           };
         });
 
-        if (outcomes.length === 0) continue;
+        if (rawOutcomes.length === 0) continue;
 
-        normalized.push({
-          vertical,
-          marketName: market.key,
-          line: this.extractLine(market),
-          outcomes,
-          bookmaker: bookieKey,
-          bookmakerTitle: bookieTitle,
-          lastUpdate: bookie.last_update || Math.floor(Date.now() / 1000),
-          isSharp,
-        });
+        // CRÍTICO: um único bloco de mercado pode conter outcomes de VÁRIAS
+        // linhas diferentes misturadas (confirmado com dado real da Bovada —
+        // Under 0.5 + Under 2.5 + Over 0.5 + Over 2.5 no mesmo array). Tratar
+        // o bloco inteiro como "uma linha só" fazia a odd de uma linha ser
+        // atribuída erroneamente a outra (ex: Over 2.5 @2.05 virando "Over 0.5").
+        // Agrupa por ponto real de cada outcome antes de decidir a linha.
+        const pointGroups = new Map<number | null, typeof rawOutcomes>();
+        for (const o of rawOutcomes) {
+          const key = o.point ?? null;
+          if (!pointGroups.has(key)) pointGroups.set(key, []);
+          pointGroups.get(key)!.push(o);
+        }
+
+        for (const [point, outcomes] of pointGroups) {
+          normalized.push({
+            vertical,
+            marketName: market.key,
+            line: point !== null ? Math.abs(point) : this.extractLine(market),
+            outcomes,
+            bookmaker: bookieKey,
+            bookmakerTitle: bookieTitle,
+            lastUpdate: bookie.last_update || Math.floor(Date.now() / 1000),
+            isSharp,
+          });
+        }
       }
     }
 
