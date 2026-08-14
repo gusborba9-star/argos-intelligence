@@ -91,6 +91,8 @@ export class DailyIngestionScheduler {
       // cada facilmente passava de 55s e a rota era encerrada no meio.
       // Agora: lotes de 6 em paralelo, o tempo total cai proporcionalmente.
       const relevantSports = soccerSports.slice(0, this.MAX_DAILY_GAMES);
+      const allScoredEvents: { event: any; score: number; leagueTitle: string }[] = [];
+
       for (let i = 0; i < relevantSports.length; i += CONCURRENCY) {
         const batch = relevantSports.slice(i, i + CONCURRENCY);
 
@@ -111,39 +113,44 @@ export class DailyIngestionScheduler {
           })
         );
 
-        // Enfileiramento é rápido (só grava no Supabase) — mantém sequencial
-        // pra não gerar corrida em cima do mesmo match_id.
+        // Só ACUMULA aqui — não enfileira ainda. O corte por MAX_DAILY_GAMES
+        // só pode ser aplicado DEPOIS de juntar e ordenar TODOS os esportes,
+        // senão os primeiros esportes do lote esgotam a cota com jogos de
+        // amanhã antes de esportes processados depois (que podem ter jogos
+        // de HOJE) sequer serem considerados.
         for (const { events } of batchResults) {
-          if (totalProcessed >= this.MAX_DAILY_GAMES) break;
-
-          const scoredEvents = events
-            .map((event: any) => ({ event, score: this.calculatePriorityScore(event) }))
-            .filter(({ score }) => score >= 2)
-            .sort((a, b) => b.score - a.score);
-
-          for (const { event, score } of scoredEvents) {
-            if (totalProcessed >= this.MAX_DAILY_GAMES) break;
-
-            const matchId = (event.id || event.fixture?.id || event.match_id).toString();
+          for (const event of events) {
+            const score = this.calculatePriorityScore(event);
+            if (score < 2) continue;
             const leagueTitle = event.sport_title || event.league?.name || "unknown";
-
-            try {
-              await this.batchQueueService.enqueue(
-                matchId,
-                "ALL_MARKETS",
-                ALL_MANDATORY_VERTICALS,
-                event,
-                QueueStatus.QUEUED,
-                score
-              );
-              processedByLeague[leagueTitle] = (processedByLeague[leagueTitle] || 0) + 1;
-              totalProcessed++;
-            } catch (enqueueError: any) {
-              console.log(`[Argos-Discovery] ${matchId} já na fila ou erro: ${enqueueError.message}`);
-            }
+            allScoredEvents.push({ event, score, leagueTitle });
           }
         }
+      }
+
+      // Ordenação GLOBAL por prioridade (proximidade do apito inicial pesa
+      // mais que tudo) — só então aplica o limite diário.
+      allScoredEvents.sort((a, b) => b.score - a.score);
+
+      for (const { event, score, leagueTitle } of allScoredEvents) {
         if (totalProcessed >= this.MAX_DAILY_GAMES) break;
+
+        const matchId = (event.id || event.fixture?.id || event.match_id).toString();
+
+        try {
+          await this.batchQueueService.enqueue(
+            matchId,
+            "ALL_MARKETS",
+            ALL_MANDATORY_VERTICALS,
+            event,
+            QueueStatus.QUEUED,
+            score
+          );
+          processedByLeague[leagueTitle] = (processedByLeague[leagueTitle] || 0) + 1;
+          totalProcessed++;
+        } catch (enqueueError: any) {
+          console.log(`[Argos-Discovery] ${matchId} já na fila ou erro: ${enqueueError.message}`);
+        }
       }
 
       const executionTime = Date.now() - startTime;

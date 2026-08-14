@@ -69,10 +69,30 @@ export class SignalDistributionEngine {
       signalsToDispatch.push(buildPayload(op, "FREE", matchContext));
     }
 
+    // TRAVA CONTRA DUPLICATA: nunca reenviar pro Telegram um sinal
+    // (mesma partida+mercado+selecao) que ja foi disparado nas ultimas 24h.
+    let alreadySentKeys = new Set<string>();
+    try {
+      const supabase = getSupabaseClient();
+      const { data: recentlySent } = await supabase
+        .from("argos_signal_ledger")
+        .select("vertical, selection, tier")
+        .eq("match_id", matchContext.matchId)
+        .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+      alreadySentKeys = new Set((recentlySent || []).map((r: any) => `${r.vertical}|${r.selection}|${r.tier}`));
+    } catch { /* se falhar, segue sem bloquear */ }
+
+    const dedupedSignalsToDispatch = signalsToDispatch.filter(
+      (s) => !alreadySentKeys.has(`${s.vertical}|${s.selection}|${s.tier}`)
+    );
+    if (dedupedSignalsToDispatch.length < signalsToDispatch.length) {
+      console.warn(`[SignalDistribution] suprimidos por duplicata: ${signalsToDispatch.length - dedupedSignalsToDispatch.length}`);
+    }
+
     // Despacho assíncrono para o Telegram (100% dos sinais)
-    if (signalsToDispatch.length > 0) {
-      console.log(`[SignalDistribution] 🚀 Despachando ${signalsToDispatch.length} sinais para Telegram.`);
-      await telegramDispatcher.dispatch(signalsToDispatch, regime);
+    if (dedupedSignalsToDispatch.length > 0) {
+      console.log(`[SignalDistribution] Despachando ${dedupedSignalsToDispatch.length} sinais para Telegram.`);
+      await telegramDispatcher.dispatch(dedupedSignalsToDispatch, regime);
     }
 
     // Grava cada sinal no ledger — sem isso, o aprendizado contínuo nunca
