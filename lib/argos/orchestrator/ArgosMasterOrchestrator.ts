@@ -77,10 +77,9 @@ export class ArgosMasterOrchestrator {
     // inflado. Segue rodando (Winner ainda sai, é mais robusto ao default),
     // mas os mercados sensíveis à média de gols ficam de fora até haver
     // amostra real.
-    const MIN_REAL_SAMPLE = 1; // temporário: reduzido de 3 pra 1 em 31/07/2026 — a coleta de
-    // histórico ficou 2 dias travada (bug de timeout do pg_net, corrigido agora), então
-    // exigir 3 jogos manteria o sistema mudo por mais alguns dias. Subir de volta pra 3
-    // conforme a cobertura de times aumentar.
+    const MIN_REAL_SAMPLE = 1; // Mantido em 1 (não subo pra 3) porque agora o blend com o
+    // consenso de mercado (abaixo) já protege contra superconfiança de amostra pequena —
+    // com sample_size=1 o peso do modelo é só 10%, o resto vem do mercado.
     const hasRealData = homeHistory.length >= MIN_REAL_SAMPLE && awayHistory.length >= MIN_REAL_SAMPLE;
     if (!hasRealData) {
       console.warn(`[ArgosMaster] ⚠️ ${matchId}: sem amostra real suficiente (home:${homeHistory.length}, away:${awayHistory.length}) — Gols/BTTS/Handicap suprimidos pra evitar sinal inflado.`);
@@ -165,8 +164,23 @@ export class ArgosMasterOrchestrator {
         const fairLine = FairOddsCalculator.calculate(normalizedMarkets, vertical, selection.label, selection.line);
 
         if (fairLine) {
-          const prob = simulation.probabilities[selection.key];
-          if (prob === undefined) continue; // Modelo ainda não calibrado pra essa seleção — não inventa sinal.
+          const rawProb = simulation.probabilities[selection.key];
+          if (rawProb === undefined) continue; // Modelo ainda não calibrado pra essa seleção — não inventa sinal.
+
+          // BLEND COM O MERCADO (shrinkage): com amostra real pequena, a
+          // probabilidade do nosso modelo é ruidosa e tende a superconfiança
+          // (um único resultado fora da curva vira "a média do time"). Em vez
+          // de confiar 100% no modelo, mistura com o que o mercado (fair odd,
+          // que já reflete Pinnacle/sharp) está dizendo — o peso do modelo
+          // cresce conforme a amostra real cresce. Isso é prática padrão em
+          // modelagem esportiva, não é "desconfiar do próprio motor", é
+          // reconhecer o que a amostra realmente sustenta.
+          const marketImpliedProb = fairLine.fairOdd > 0 ? 1 / fairLine.fairOdd : rawProb;
+          const sampleSize = isCountStatVertical
+            ? Math.min(homeExtra?.sampleSize || 0, awayExtra?.sampleSize || 0)
+            : Math.min(homeHistory.length, awayHistory.length);
+          const modelWeight = Math.min(sampleSize / 10, 0.7); // nunca mais que 70% de peso no modelo, mesmo com muita amostra
+          const prob = marketImpliedProb * (1 - modelWeight) + rawProb * modelWeight;
 
           // Odd real de mercado (melhor preço disponível entre as casas), separada
           // da fair odd (referência sharp) — antes o código comparava fair com a
