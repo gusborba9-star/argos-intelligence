@@ -179,8 +179,11 @@ export class ArgosMasterOrchestrator {
           const sampleSize = isCountStatVertical
             ? Math.min(homeExtra?.sampleSize || 0, awayExtra?.sampleSize || 0)
             : Math.min(homeHistory.length, awayHistory.length);
-          const modelWeight = Math.min(sampleSize / 10, 0.7); // nunca mais que 70% de peso no modelo, mesmo com muita amostra
-          const prob = marketImpliedProb * (1 - modelWeight) + rawProb * modelWeight;
+          // Camada extra: nunca deixa a estimativa crua entrar 100% extrema no
+          // blend (amostra pequena pode gerar 99%+ ou 1%- de forma espúria).
+          const clippedRawProb = Math.max(0.03, Math.min(0.97, rawProb));
+          const modelWeight = Math.min(sampleSize / 20, 0.7); // precisa de ~20 jogos reais pra chegar no teto de confiança — com poucos jogos (2-3), a estimativa crua ainda pode ser extrema e dominar o blend mesmo com peso baixo
+          const prob = marketImpliedProb * (1 - modelWeight) + clippedRawProb * modelWeight;
 
           // Odd real de mercado (melhor preço disponível entre as casas), separada
           // da fair odd (referência sharp) — antes o código comparava fair com a
