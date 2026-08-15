@@ -197,7 +197,7 @@ export class ArgosMasterOrchestrator {
           // tanto da fair odd assim. Qualquer coisa além disso quase certeza
           // é bug de dado/normalização, não oportunidade real — vai pra
           // auditoria, nunca pro Telegram.
-          const MAX_PLAUSIBLE_EV = 0.60; // 60%
+          const MAX_PLAUSIBLE_EV = 1.00; // 100% — o blend com o mercado já reduz a maior parte da superconfiança; esse teto é só pra pegar bug, não pra sufocar edge real generoso
           const MAX_ODD_FAIR_RATIO = 3.0;
           const oddFairRatio = fairLine.fairOdd > 0 ? marketOdd / fairLine.fairOdd : 1;
           const isImplausible =
