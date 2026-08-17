@@ -9,6 +9,7 @@ import { RAGContextEngine } from "../regime/RAGContextEngine";
 import { SignalDistributionEngine } from "../../core/market-intelligence/SignalDistributionEngine";
 import { MarketVertical } from "../../core/ArgosUnifiedEngine";
 import { getSupabaseClient } from "../../core/SupabaseClient";
+import { apiFootballService } from "../../core/ApiFootballService";
 
 export class ArgosMasterOrchestrator {
   private static readonly VERSION = "6.0.0-MASTER";
@@ -115,6 +116,20 @@ export class ArgosMasterOrchestrator {
     } else {
       console.warn(`[ArgosMaster] ⚠️ ${matchId}: sem amostra real de escanteios/cartões — mercados suprimidos.`);
     }
+
+    // H2H via API-FOOTBALL — orçamento de só 100/dia (contra 1000/dia da
+    // PropLine), então só busca 1x por partida (não por seleção) e só
+    // quando já vale a pena (hasRealData = já temos base pra combinar com
+    // isso). A PropLine continua sendo a fonte principal pra odds/EV/refresh
+    // em tempo real — a API-FOOTBALL só complementa o que falta (H2H hoje,
+    // lesões/notícias depois).
+    let h2hSummary: { matchesPlayed: number; homeWins: number; draws: number; awayWins: number; avgTotalGoals: number } | null = null;
+    if (hasRealData) {
+      try {
+        h2hSummary = await apiFootballService.getH2HSummary(rawData.home_team, rawData.away_team);
+      } catch { /* nunca deixa a analise inteira cair por causa do H2H */ }
+    }
+
     
     // Analisar todos os mercados obrigatórios
     const verticalsToAnalyze = [
@@ -183,7 +198,23 @@ export class ArgosMasterOrchestrator {
           // blend (amostra pequena pode gerar 99%+ ou 1%- de forma espúria).
           const clippedRawProb = Math.max(0.03, Math.min(0.97, rawProb));
           const modelWeight = Math.min(sampleSize / 20, 0.7); // precisa de ~20 jogos reais pra chegar no teto de confiança — com poucos jogos (2-3), a estimativa crua ainda pode ser extrema e dominar o blend mesmo com peso baixo
-          const prob = marketImpliedProb * (1 - modelWeight) + clippedRawProb * modelWeight;
+          let prob = marketImpliedProb * (1 - modelWeight) + clippedRawProb * modelWeight;
+
+          // Ajuste leve de H2H (API-FOOTBALL) — só faz sentido pro Vencedor.
+          // Peso baixo e fixo (10%) porque a amostra de H2H é sempre pequena
+          // (até 10 jogos) — é um tempero, não a base da decisão.
+          if (vertical === MarketVertical.WINNER && h2hSummary && h2hSummary.matchesPlayed >= 3) {
+            const h2hHomeProb = h2hSummary.homeWins / h2hSummary.matchesPlayed;
+            const h2hDrawProb = h2hSummary.draws / h2hSummary.matchesPlayed;
+            const h2hAwayProb = h2hSummary.awayWins / h2hSummary.matchesPlayed;
+            const h2hProbForSelection =
+              selection.key === "home" ? h2hHomeProb :
+              selection.key === "draw" ? h2hDrawProb :
+              selection.key === "away" ? h2hAwayProb : null;
+            if (h2hProbForSelection !== null) {
+              prob = prob * 0.9 + h2hProbForSelection * 0.1;
+            }
+          }
 
           // Odd real de mercado (melhor preço disponível entre as casas), separada
           // da fair odd (referência sharp) — antes o código comparava fair com a
