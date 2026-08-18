@@ -1,6 +1,6 @@
 # ARGOS INTELLIGENCE — MASTER ROADMAP
 
-**Version:** 1.0.0
+**Version:** 1.1.0
 **Status:** Canonical execution roadmap
 **Baseline:** Existing production Argos v6.x
 
@@ -25,13 +25,14 @@
 - [ ] Verify historical sample selection
 - [ ] Verify model probability generation
 - [ ] Verify Monte Carlo probability mapping
-- [ ] Verify fair-odds calculation
-- [ ] Verify market-odd selection
-- [ ] Verify EV calculation
-- [ ] Verify handicap semantics and signed lines
+- [x] Verify fair-odds semantic separation: model fair vs market reference
+- [x] Verify market-odd selection
+- [x] Verify EV calculation uses canonical model probability
+- [x] Verify Kelly calculation uses canonical model probability
+- [x] Verify handicap semantics and signed lines
 - [ ] Verify calibration/shrinkage logic
-- [ ] Verify publication gates
-- [ ] Identify probability inflation sources
+- [x] Verify publication payload does not recalculate or overwrite quantitative values
+- [ ] Identify remaining probability inflation sources
 - [ ] Quantify each discrepancy rather than patching symptoms
 
 **Exit criterion:** Every published probability must have a traceable mathematical path and known data provenance.
@@ -62,6 +63,9 @@
 - [ ] Dixon-Coles evaluation
 - [ ] Alternative count models where justified
 - [ ] Monte Carlo distribution validation
+- [x] Deterministic quantitative core foundation
+- [x] Quantitative invariant test gate
+- [x] Canonical probability → model fair odd → EV → Kelly chain
 
 ## Phase 4 — Ensemble & Uncertainty
 
@@ -127,11 +131,11 @@
 
 ## Phase 10 — Distribution
 
-- [ ] FREE publication gate
-- [ ] VIP publication gate
+- [x] FREE publication path preserved
+- [x] VIP publication path preserved
 - [ ] Telegram reliability audit
-- [ ] Duplicate-signal prevention
-- [ ] Signal versioning
+- [x] Duplicate-signal prevention
+- [x] Signal versioning/provenance foundation
 - [ ] Public performance reporting
 
 ## Phase 11 — Shadow Production
@@ -163,8 +167,25 @@
 
 **Rule:** More markets or more signals never outrank correctness of the existing core.
 
-## Current status
+## Current execution state — 2026-08-18
 
-**Phase 0:** Foundation created.
+### C-003 — Quantitative Core Validation Foundation
 
-**Phase 1:** Next execution target. No model rewrite should precede the forensic audit of the live path.
+- [x] Deterministic PredictionCore foundation
+- [x] Statistical invariant suite
+- [x] CI quantitative gate configured with pnpm frozen lockfile
+- [x] Canonical value-chain contract implemented
+- [x] Model fair odd separated from market-reference fair odd
+- [x] EV and Kelly explicitly derived from canonical model probability
+- [x] Telegram presentation uses canonical model fair odd and preserves raw quantitative values
+- [x] Quantitative consistency tests added
+- [ ] CI execution result verified for the complete latest cycle
+- [ ] Production promotion
+
+### C-003 exit condition
+
+The block is **implementation-complete but validation-pending** until the latest CI run demonstrates successful typecheck, production build and quantitative tests. Production remains on the existing `main` champion until that gate is closed.
+
+### Next cycle
+
+**C-004 — Probability Inflation Forensics:** trace the live model probability generation from FeatureEngine/ModelFactory/PredictionCore through every vertical, with emphasis on high-EV examples such as Over 3.5 and Asian Handicap. No arbitrary probability suppression; identify and quantify the source of inflation, then correct the underlying model/data semantics.
