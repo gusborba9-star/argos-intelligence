@@ -1,12 +1,16 @@
 import { FixtureResponse, AdjustedMetrics } from "./DataIngestionService";
 
 /**
- * FEATURE ENGINE v6.2.0 — SYNDICATE MASTER
- * Team-specific features with explicit sparse-sample stabilization.
+ * FEATURE ENGINE v6.3.0 — SYNDICATE MASTER
+ * Team-specific attack/defence features with explicit sparse-sample stabilization.
+ *
+ * The scoring model must not treat a team's own scoring rate as its expected
+ * match scoring rate. Expected goals require both attacking production and
+ * opponent defensive concession.
  */
 export interface FeatureVector {
-  homeMetrics: AdjustedMetrics;
-  awayMetrics: AdjustedMetrics;
+  homeMetrics: AdjustedMetrics & { goalsAgainst: number };
+  awayMetrics: AdjustedMetrics & { goalsAgainst: number };
   externalFactors: any;
   leagueProfile: any;
   historicalContext: {
@@ -67,16 +71,17 @@ export class FeatureEngine {
 
   /**
    * Exponentially weighted team-specific averages.
-   *
    * Sparse samples are stabilized with a neutral prior rather than allowing
-   * one or two fixtures to define the team's latent scoring rate. The prior is
-   * deliberately weak and disappears as the observed sample grows.
+   * one or two fixtures to define the team's latent scoring rate.
    */
-  private static calculateExponentialAverages(history: FixtureResponse[], teamName?: string): AdjustedMetrics {
+  private static calculateExponentialAverages(
+    history: FixtureResponse[],
+    teamName?: string
+  ): AdjustedMetrics & { goalsAgainst: number } {
     const alpha = 0.3;
     let totalWeight = 0;
     let observedMatches = 0;
-    const sums = { goals: 0, goalsHT: 0, corners: 0, cards: 0, shots: 0, shotsOnTarget: 0 };
+    const sums = { goals: 0, goalsAgainst: 0, goalsHT: 0, corners: 0, cards: 0, shots: 0, shotsOnTarget: 0 };
 
     if (!history || history.length === 0) return this.defaultMetrics();
 
@@ -85,12 +90,14 @@ export class FeatureEngine {
       if (side === null) continue;
       const weight = Math.pow(1 - alpha, index);
       const teamGoals = side === "home" ? this.numeric(match.goals?.home) : this.numeric(match.goals?.away);
+      const opponentGoals = side === "home" ? this.numeric(match.goals?.away) : this.numeric(match.goals?.home);
       const teamGoalsHT = side === "home" ? this.numeric(match.score?.halftime?.home) : this.numeric(match.score?.halftime?.away);
-      if (teamGoals === null) continue;
+      if (teamGoals === null || opponentGoals === null) continue;
 
       observedMatches++;
       totalWeight += weight;
       sums.goals += teamGoals * weight;
+      sums.goalsAgainst += opponentGoals * weight;
       if (teamGoalsHT !== null) sums.goalsHT += teamGoalsHT * weight;
 
       const stats = Array.isArray((match as any).statistics) ? (match as any).statistics : null;
@@ -111,10 +118,13 @@ export class FeatureEngine {
     if (totalWeight === 0) return this.defaultMetrics();
 
     const rawGoals = sums.goals / totalWeight;
+    const rawGoalsAgainst = sums.goalsAgainst / totalWeight;
     const stabilizedGoals = (rawGoals * observedMatches + this.GOAL_PRIOR * this.GOAL_PRIOR_STRENGTH) / (observedMatches + this.GOAL_PRIOR_STRENGTH);
+    const stabilizedGoalsAgainst = (rawGoalsAgainst * observedMatches + this.GOAL_PRIOR * this.GOAL_PRIOR_STRENGTH) / (observedMatches + this.GOAL_PRIOR_STRENGTH);
 
     return {
       goals: stabilizedGoals,
+      goalsAgainst: stabilizedGoalsAgainst,
       goalsHT: sums.goalsHT / totalWeight,
       corners: sums.corners / totalWeight,
       cards: sums.cards / totalWeight,
@@ -123,8 +133,8 @@ export class FeatureEngine {
     };
   }
 
-  private static defaultMetrics(): AdjustedMetrics {
-    return { goals: this.GOAL_PRIOR, goalsHT: 0.5, corners: 5, cards: 2, shots: 12, shotsOnTarget: 5 };
+  private static defaultMetrics(): AdjustedMetrics & { goalsAgainst: number } {
+    return { goals: this.GOAL_PRIOR, goalsAgainst: this.GOAL_PRIOR, goalsHT: 0.5, corners: 5, cards: 2, shots: 12, shotsOnTarget: 5 };
   }
 
   private static resolveTeamSide(match: FixtureResponse, teamName?: string): "home" | "away" | null {
