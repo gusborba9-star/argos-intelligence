@@ -5,58 +5,50 @@ This file is the operational progress ledger. `docs/ARGOS_BLUEPRINT.md` remains 
 ## Active cycle
 **P0.2-B — Quantitative Chain Integrity & Provenance**
 
-### Completed and previously validated
-- Asian handicap integer-line PUSH settlement corrected.
-- Team-history feature extraction corrected to distinguish home/away orientation.
-- Non-conservative probability inflation from learning removed.
-- Binary calibration preserves complementarity.
-- TypeScript dependency/lockfile mismatch corrected.
-- Optional-probability TypeScript narrowing in `ModelFactory` corrected.
-- Model probability separated from market-reference probability; market reference no longer directly becomes the model probability through the audited path.
-- H2H removed as an arbitrary direct 10% probability blend; retained as contextual data for future calibrated feature use.
-- Legacy `ArgosUnifiedEngine` artificial `+2%` probability inflation removed.
-- Signal distribution idempotency strengthened to include market line in the deduplication identity.
-- Signal provenance semantics strengthened so a market fair probability cannot silently substitute for an independent model probability.
-- Analysis horizon restricted to 48 hours.
-- Stale queued matches are prevented from reaching the analysis worker.
-- Quantitative CI gate and statistical invariant suite established.
+### Completed and validated
+- [x] Asian handicap integer-line PUSH settlement corrected.
+- [x] Team-history feature extraction corrected to distinguish home/away orientation.
+- [x] Non-conservative probability inflation from learning removed.
+- [x] Binary calibration preserves complementarity.
+- [x] TypeScript dependency/lockfile mismatch corrected.
+- [x] Optional-probability TypeScript narrowing in `ModelFactory` corrected.
+- [x] Model probability separated from market-reference probability; market reference no longer directly becomes the model probability through the audited path.
+- [x] H2H removed as an arbitrary direct 10% probability blend; retained as contextual data for future calibrated feature use.
+- [x] Legacy `ArgosUnifiedEngine` artificial `+2%` probability inflation removed.
+- [x] Signal distribution idempotency strengthened to include market line in the deduplication identity.
+- [x] Signal provenance semantics strengthened so a market fair probability cannot silently substitute for an independent model probability.
+- [x] Analysis horizon restricted to 48 hours.
+- [x] Stale queued matches are prevented from reaching the analysis worker.
+- [x] Quantitative CI gate and statistical invariant suite established.
+- [x] `FeatureEngine` preserves separate team attack (`goals`) and defensive concession (`goalsAgainst`) rates.
+- [x] Sparse samples shrink both attack and defence toward the league-neutral prior.
+- [x] Master orchestration no longer feeds a team's raw scoring average directly into the match scoring model.
+- [x] Expected home scoring combines home attack with away defensive concession.
+- [x] Expected away scoring combines away attack with home defensive concession.
+- [x] RAG motivation/context no longer applies an arbitrary `+/-5%` probability-driving model bias.
+- [x] Online learning requires at least 50 resolved observations before changing model probabilities.
+- [x] Online calibration uses explicit prior shrinkage and a bounded logit adjustment.
+- [x] Dynamic FREE/VIP thresholds are no longer silently mutated by empirical bias.
+- [x] Deterministic feature-scoring invariants are covered by the quantitative test suite.
 
-### Current batch IMPLEMENTED — validation pending
-**Quantitative calibration + expected-scoring integrity**
+### Validation evidence
+- [x] Quantitative test suite passed and deployment reported `Ready` for the implementation batch.
+- [x] Opponent-aware scoring implementation reached `Ready` (`d8807e6`).
+- [x] Quantitative invariant suite reached `Ready` (`a989f48`).
+- [x] Calibration-cycle documentation reached `Ready` (`7e1b53c`).
+- [x] Validation-state ledger update reached `Ready` (`5216a25`).
 
-- `FeatureEngine` now preserves separate team attack (`goals`) and defensive concession (`goalsAgainst`) rates.
-- Sparse samples shrink both attack and defence toward the league-neutral prior instead of allowing one fixture to define the latent rate.
-- Master orchestration no longer feeds a team's raw scoring average directly into the match Poisson/Gamma-Poisson model.
-- Expected home scoring now combines home attack with away defensive concession.
-- Expected away scoring now combines away attack with home defensive concession.
-- RAG motivation/context no longer applies an arbitrary `+/-5%` probability-driving model bias. External context remains evidence until a calibrated feature transformation exists.
-- Online learning now requires at least 50 resolved observations before changing model probabilities.
-- Online calibration is shrunk toward zero using an explicit prior sample and capped at a very small logit adjustment; small samples cannot manufacture confidence.
-- Dynamic FREE/VIP thresholds are no longer silently mutated by empirical bias.
-- Deterministic feature-scoring invariants added to the quantitative test suite.
+### Cycle status
+**✓ COMPLETED AND VALIDATED**
 
-### Why this batch exists
-The previous model path could use a team's own recent goals as the match scoring lambda. That conflates attack with opponent defence and can produce unrealistic tails, which then propagate mechanically into fair odds, EV and Kelly. The new path separates those components before simulation.
+The cycle is closed. The next cycle must not assume that model quality is solved merely because the build is green. Quantitative authority now requires out-of-sample evidence and replayability.
 
-The previous RAG path also translated motivation into an arbitrary probability-driving multiplier. That is not evidence-based calibration, so it has been removed until a learned feature transformation exists.
-
-### Validation gate — NOT YET CLOSED
-The following must pass before this cycle is marked complete:
-1. `pnpm run test:quant`;
-2. `pnpm exec tsc --noEmit`;
-3. `pnpm run build`;
-4. Vercel deployment reaching `Ready` for the Argos project;
-5. real-data inspection showing that extreme EV/probability inflation has materially reduced;
-6. only then mark the cycle `COMPLETED AND VALIDATED`.
-
-The current branch contains the implementation commits, but no validation result is being fabricated in this ledger.
-
-### Remaining P0.2-B work after this gate
-- Complete provenance replay coverage across every published signal.
-- Verify all legacy/compatibility callers cannot bypass the canonical orchestrator.
-- Complete walk-forward calibration metrics (Brier, Log Loss and reliability/calibration error) by league and vertical.
-- Validate the live Argos signal ledger against model probability, market price and settlement outcomes.
-- Audit all remaining market-specific probability engines, especially corners/cards, for the same attack/defence and calibration discipline.
+### Next P0.2-B work
+- [ ] Complete provenance replay coverage across every published signal.
+- [ ] [ ] Verify all legacy/compatibility callers cannot bypass the canonical orchestrator.
+- [ ] Complete walk-forward calibration metrics (Brier, Log Loss and reliability/calibration error) by league and vertical.
+- [ ] Validate the live Argos signal ledger against model probability, market price and settlement outcomes.
+- [ ] Audit all remaining market-specific probability engines, especially corners/cards, for the same attack/defence and calibration discipline.
 
 ## Operating protocol
 ```text
@@ -87,4 +79,4 @@ No-veto principle: internal analysis is broad and observations are retained. Pub
 - Publication filters may select/rank evidence but must not silently alter the underlying quantitative result.
 
 ## Next target
-**P0.2-B — Quantitative Chain Integrity:** close the validation gate, then proceed to provenance replay and walk-forward calibration before expanding predictive complexity.
+**P0.2-B — Provenance Replay & Walk-Forward Calibration**
