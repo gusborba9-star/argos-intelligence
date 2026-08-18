@@ -3,8 +3,11 @@ import { OddsValueEngine, ValueAnalysis } from "./market-intelligence/OddsValueE
 import { learningEngine } from "./ContinuousLearningEngine";
 
 // ============================================================
-// MODEL FACTORY v6.1.0 — SYNDICATE MASTER EDITION
-// Motor de Simulação Monte Carlo com Calibração de Aprendizado
+// MODEL FACTORY v6.1.1 — SYNDICATE MASTER EDITION
+// Correção crítica: liquidação probabilística de handicap asiático.
+// O modelo agora respeita a convenção de mercado:
+//   Home -x  <=> Away +x
+// e trata linhas inteiras com PUSH explicitamente.
 // ============================================================
 
 export interface MarketMetrics {
@@ -31,8 +34,7 @@ export class ModelFactory {
   private static readonly DEFAULT_ITERATIONS = 10000;
 
   /**
-   * Monte Carlo v6.1.0 — Motor de Simulação de Elite
-   * Integra regime, variância, contextos reais e CALIBRAÇÃO DE APRENDIZADO.
+   * Monte Carlo v6.1.1 — Motor de Simulação com calibração de aprendizado.
    */
   static async runMonteCarloWithLearning(
     metrics: MarketMetrics,
@@ -41,23 +43,14 @@ export class ModelFactory {
     marketType: "GOALS" | "CORNERS" | "CARDS" | "SHOTS" = "GOALS",
     iterations: number = ModelFactory.DEFAULT_ITERATIONS
   ): Promise<SimulationResult> {
-    
-    // 1. Obter calibração do Continuous Learning Engine
     const calibration = await learningEngine.getCalibration(leagueId, marketType);
-    
-    // 2. Executar simulação base
     const baseResult = this.runMonteCarlo(metrics, regime, iterations, marketType);
-
-    // 3. Aplicar calibração (Ajuste fino baseado em histórico real)
     const adj = calibration.probabilityAdjustment;
-    
     const clamp = (v: number) => Math.max(0.01, Math.min(0.99, v));
 
     return {
       ...baseResult,
       probabilities: {
-        // Preserva todas as linhas/BTTS calculadas na simulação base — só ajusta
-        // as 3 dimensões que o Continuous Learning Engine calibra hoje (Winner + 2.5).
         ...baseResult.probabilities,
         home: clamp(baseResult.probabilities.home + (adj * 0.5)),
         draw: clamp(baseResult.probabilities.draw - (adj * 0.2)),
@@ -70,7 +63,11 @@ export class ModelFactory {
   }
 
   /**
-   * Simulação Monte Carlo Base
+   * Simulação Monte Carlo Base.
+   *
+   * As probabilidades de handicap são produzidas segundo a convenção
+   * asiática padrão, e não como simples complemento entre os lados.
+   * Isso é essencial para linhas inteiras, onde existe PUSH.
    */
   static runMonteCarlo(
     metrics: MarketMetrics,
@@ -86,18 +83,23 @@ export class ModelFactory {
     let totalGoals = 0;
     let bttsYes = 0;
 
-    // Linhas de Goals realmente ofertadas pelo mercado variam por liga/casa.
-    // Simulamos todas as linhas comuns numa única passada de Monte Carlo,
-    // em vez de fixar apenas 2.5.
     const GOAL_LINES = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5];
     const overCounts: Record<string, number> = {};
     GOAL_LINES.forEach((l) => (overCounts[l] = 0));
 
-    // Linhas de Handicap Asiático comuns (baseadas na diferença de gols
-    // simulada) — mesma passada, sem custo extra de simulação.
+    // Linhas padrão de handicap asiático. Para cada magnitude m:
+    //   home_handicap_m = Home -m
+    //   away_handicap_m = Away +m
+    // Linhas inteiras possuem PUSH e, portanto, as duas probabilidades
+    // não necessariamente somam 1.
     const HANDICAP_LINES = [-2, -1.5, -1, -0.5, 0.5, 1, 1.5, 2];
     const homeCoversCounts: Record<string, number> = {};
-    HANDICAP_LINES.forEach((l) => (homeCoversCounts[l] = 0));
+    const awayCoversCounts: Record<string, number> = {};
+    HANDICAP_LINES.forEach((l) => {
+      const magnitude = Math.abs(l);
+      homeCoversCounts[magnitude] ||= 0;
+      awayCoversCounts[magnitude] ||= 0;
+    });
 
     const variance = regime.variance_multiplier || 1.2;
     const bias = regime.model_bias || 0;
@@ -114,14 +116,21 @@ export class ModelFactory {
       const matchTotal = finalHome + finalAway;
       const goalDiff = finalHome - finalAway;
 
-      totalGoals += (hScore + aScore);
+      totalGoals += hScore + aScore;
+
       GOAL_LINES.forEach((l) => {
         if (matchTotal > l) overCounts[l]++;
       });
+
+      // IMPORTANT: `home_handicap_m` represents Home -m and
+      // `away_handicap_m` represents Away +m. The same magnitude is used
+      // because the normalized market groups both sides by |point|.
       HANDICAP_LINES.forEach((l) => {
-        // Handicap do time da casa: casa cobre se (diferença + linha) > 0
-        if (goalDiff + l > 0) homeCoversCounts[l]++;
+        const magnitude = Math.abs(l);
+        if (goalDiff - magnitude > 0) homeCoversCounts[magnitude]++;
+        if (goalDiff + magnitude > 0) awayCoversCounts[magnitude]++;
       });
+
       if (finalHome > 0 && finalAway > 0) bttsYes++;
 
       if (finalHome > finalAway) homeWins++;
@@ -138,13 +147,16 @@ export class ModelFactory {
       btts_yes: bttsYes / iterations,
       btts_no: 1 - bttsYes / iterations,
     };
+
     GOAL_LINES.forEach((l) => {
       probabilities[`over_${l}`] = overCounts[l] / iterations;
       probabilities[`under_${l}`] = 1 - overCounts[l] / iterations;
     });
+
     HANDICAP_LINES.forEach((l) => {
-      probabilities[`home_handicap_${l}`] = homeCoversCounts[l] / iterations;
-      probabilities[`away_handicap_${l}`] = 1 - homeCoversCounts[l] / iterations;
+      const magnitude = Math.abs(l);
+      probabilities[`home_handicap_${magnitude}`] = homeCoversCounts[magnitude] / iterations;
+      probabilities[`away_handicap_${magnitude}`] = awayCoversCounts[magnitude] / iterations;
     });
 
     return {
@@ -180,10 +192,7 @@ export class ModelFactory {
 
   /**
    * Simulação de Escanteios ou Cartões via Poisson, usando médias reais dos
-   * times (não o mesmo simulador de gols — a distribuição é diferente e as
-   * médias vêm de fontes distintas). Sem isso, Corners/Cards nunca tinham
-   * modelo de probabilidade — só chegavam a ser normalizados, nunca a virar
-   * sinal.
+   * times. Sem isso, Corners/Cards não possuem modelo de probabilidade.
    */
   public static runCountStatSimulation(
     homeMean: number,
