@@ -1,18 +1,6 @@
 import { MarketVertical } from "./ArgosUnifiedEngine";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 
-// ============================================================
-// BATCH QUEUE SERVICE v6.0.1 — SYNDICATE MASTER EDITION
-// Single-Pass Transport com:
-//   - Payload completo (rawData) na fila
-//   - Limpeza automática de itens concluídos
-//   - Prevenção de duplicidade por unique_key
-//   - Zero chamada desnecessária à API externa
-//
-// CORREÇÃO AUDITORIA 2026-07-02:
-//   - Removido campo 'expires_at' (não existe no schema físico do banco)
-// ============================================================
-
 export enum QueueStatus {
   DISCOVERED = "DISCOVERED",
   VALIDATED = "VALIDATED",
@@ -34,12 +22,12 @@ export interface QueueItem {
   userId?: string;
   status: QueueStatus;
   priority?: number;
-  rawData?: any; // Payload completo para Single-Pass (zero re-fetch)
+  rawData?: any;
   createdAt?: string;
 }
 
-// Tempo máximo que itens COMPLETED/FAILED ficam no banco antes de serem limpos (horas)
 const CLEANUP_RETENTION_HOURS = 24;
+const MAX_ANALYSIS_HORIZON_HOURS = 48;
 
 export class BatchQueueService {
   private supabase;
@@ -48,11 +36,7 @@ export class BatchQueueService {
     this.supabase = getSupabaseClient();
   }
 
-  /**
-   * Enfileira um item com payload completo (Single-Pass).
-   * Prevenção de duplicidade: retorna o ID existente se unique_key já existe.
-   */
-    async enqueue(
+  async enqueue(
     matchId: string,
     marketFamily: string,
     verticals: string[],
@@ -61,34 +45,17 @@ export class BatchQueueService {
     priority: number = 0
   ): Promise<string> {
     const uniqueKey = `${matchId}_${marketFamily}`;
-    const safeVerticals = (verticals || []).filter((v) =>
-      Object.values(MarketVertical).includes(v as MarketVertical)
-    );
+    const safeVerticals = (verticals || []).filter((v) => Object.values(MarketVertical).includes(v as MarketVertical));
 
-    // --- PROTEÇÃO CONTRA DADOS CORROMPIDOS ---
-    // Na v6, o rawData é o payload bruto da PropLine, não o objeto de sinal final.
     if (!rawData || (!rawData.id && !rawData.match_id)) {
-      console.error(`[BatchQueue] ⚠️ Registro rejeitado: Payload bruto incompleto para ${uniqueKey}`, { rawData });
       throw new Error(`[BatchQueue] Dados brutos inválidos para ${uniqueKey}`);
     }
-    // ------------------------------------------
 
-    // --- TRAVA: nunca reanalisar/reenfileirar um jogo cujo kickoff já passou ---
-    // Sem isso, se a PropLine mantiver um evento "preso" no feed de odds
-    // (kickoff desatualizado/errado), o sistema fica reenviando sinal pra
-    // sempre de uma partida que já aconteceu.
     const kickoff = rawData.commence_time ? new Date(rawData.commence_time).getTime() : null;
     if (kickoff && kickoff < Date.now() - 10 * 60 * 1000) {
-      console.warn(`[BatchQueue] ⏭️ Ignorado ${uniqueKey}: kickoff (${rawData.commence_time}) já passou.`);
       throw new Error(`[BatchQueue] Kickoff expirado para ${uniqueKey}`);
     }
 
-    // Verificar se já existe item ativo (QUEUED, VALIDATED, PROCESSING) OU
-    // recém-concluído (COMPLETED/FAILED dentro do cooldown) — antes só
-    // checava os status ativos, então uma vez COMPLETED o mesmo jogo era
-    // reinserido do zero a cada ciclo de ingest, gerando sinal duplicado
-    // pra sempre (era exatamente o bug que já tínhamos corrigido do lado
-    // do SQL, só que esse caminho em TS nunca tinha sido corrigido).
     const COOLDOWN_MS = 60 * 60 * 1000;
     const { data: existing } = await this.supabase
       .from("argos_batch_queue")
@@ -100,17 +67,9 @@ export class BatchQueueService {
 
     if (existing && [QueueStatus.COMPLETED, QueueStatus.FAILED].includes(existing.status as QueueStatus)) {
       const lastUpdate = new Date(existing.updated_at || existing.created_at).getTime();
-      if (Date.now() - lastUpdate < COOLDOWN_MS) {
-        console.log(`[BatchQueue] ⏭️ Cooldown ativo para ${uniqueKey} (processado há menos de 60min).`);
-        return existing.id;
-      }
+      if (Date.now() - lastUpdate < COOLDOWN_MS) return existing.id;
     }
 
-    // --- TRAVA EXTRA: dedup por nome dos times, não só por match_id ---
-    // A PropLine já demonstrou reaproveitar/reenviar match_id com
-    // commence_time desatualizado. Isso protege contra o mesmo confronto
-    // (mesmos 2 times) ser analisado de novo dentro de uma janela de 18h,
-    // mesmo que o match_id ou o kickoff informado sejam diferentes/errados.
     if (rawData.home_team && rawData.away_team) {
       const TEAM_PAIR_COOLDOWN_MS = 18 * 60 * 60 * 1000;
       const { data: recentSameTeams } = await this.supabase
@@ -125,88 +84,58 @@ export class BatchQueueService {
       if (recentSameTeams) {
         const last = new Date(recentSameTeams.updated_at || recentSameTeams.created_at).getTime();
         if (Date.now() - last < TEAM_PAIR_COOLDOWN_MS) {
-          console.warn(`[BatchQueue] ⏭️ ${rawData.home_team} vs ${rawData.away_team} já analisado nas últimas 18h (proteção por confronto, não só match_id).`);
           throw new Error(`[BatchQueue] Confronto já analisado recentemente: ${rawData.home_team} vs ${rawData.away_team}`);
         }
       }
     }
 
     if (existing && existing.status === QueueStatus.QUEUED) {
-      // Se já está na fila mas ainda não foi processado, atualizamos com os dados mais recentes
       const { data: updated, error: updateErr } = await this.supabase
         .from("argos_batch_queue")
-        .update({
-          raw_data: rawData,
-          requested_verticals: safeVerticals,
-          updated_at: new Date().toISOString(),
-        })
+        .update({ raw_data: rawData, requested_verticals: safeVerticals, updated_at: new Date().toISOString() })
         .eq("id", existing.id)
         .select()
         .single();
-
-      if (!updateErr) {
-        console.log(`[BatchQueue] 🔄 Item atualizado na fila: ${uniqueKey} (Odds novas)`);
-        return updated.id;
-      }
+      if (!updateErr) return updated.id;
     }
 
-    if (existing && [QueueStatus.VALIDATED, QueueStatus.PROCESSING].includes(existing.status as QueueStatus)) {
-      console.log(
-        `[BatchQueue] ⏭️ Pulando: ${uniqueKey} está em processamento (${existing.status}).`
-      );
-      return existing.id;
-    }
+    if (existing && [QueueStatus.VALIDATED, QueueStatus.PROCESSING].includes(existing.status as QueueStatus)) return existing.id;
 
     const { data, error } = await this.supabase
       .from("argos_batch_queue")
-      .insert({
-        match_id: matchId,
-        market_family: marketFamily,
-        unique_key: uniqueKey,
-        requested_verticals: safeVerticals,
-        raw_data: rawData, // Payload completo — zero re-fetch
-        status: status,
-        priority: priority,
-      })
+      .insert({ match_id: matchId, market_family: marketFamily, unique_key: uniqueKey, requested_verticals: safeVerticals, raw_data: rawData, status, priority })
       .select()
       .single();
 
     if (error) {
-      // Fallback para conflito de unique_key (race condition)
       if (error.code === "23505") {
-        const { data: fallback } = await this.supabase
-          .from("argos_batch_queue")
-          .select("id, status")
-          .eq("unique_key", uniqueKey)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .single();
-
-        if (fallback) {
-          console.log(`[BatchQueue] Race condition resolvida: retornando item existente ${uniqueKey}.`);
-          return fallback.id;
-        }
+        const { data: fallback } = await this.supabase.from("argos_batch_queue").select("id, status").eq("unique_key", uniqueKey).order("created_at", { ascending: false }).limit(1).single();
+        if (fallback) return fallback.id;
       }
       throw error;
     }
-
     return data.id;
   }
 
   /**
-   * Busca o próximo item da fila de forma atômica (via RPC com SKIP LOCKED).
-   * Prioriza itens com maior prioridade e mais antigos.
+   * Fetches the next item atomically. Temporal validation happens AGAIN here,
+   * immediately before quantitative execution, so stale queued data cannot
+   * bypass the scheduler gate.
    */
   async getNextInQueue(): Promise<QueueItem | null> {
     const { data, error } = await this.supabase.rpc("get_next_queue_item");
-
     if (error || !data || data.length === 0) return null;
 
     const item = data[0];
-    const hasSinglePass = !!item.raw_data;
-    console.log(
-      `[BatchQueue-Worker] Consumindo: ${item.unique_key} | Single-Pass: ${hasSinglePass} | Prioridade: ${item.priority}`
-    );
+    const rawData = item.raw_data;
+    const kickoff = rawData?.commence_time ? new Date(rawData.commence_time).getTime() : NaN;
+    const hoursToKickoff = (kickoff - Date.now()) / (1000 * 60 * 60);
+
+    if (!Number.isFinite(kickoff) || hoursToKickoff < 0 || hoursToKickoff > MAX_ANALYSIS_HORIZON_HOURS) {
+      console.warn(`[BatchQueue] ⏭️ Temporal gate: ${item.unique_key} skipped (${Number.isFinite(hoursToKickoff) ? `${hoursToKickoff.toFixed(1)}h` : "invalid kickoff"}).`);
+      await this.updateStatus(item.id, QueueStatus.SKIPPED, "OUTSIDE_ANALYSIS_HORIZON");
+      return this.getNextInQueue();
+    }
 
     return {
       id: item.id,
@@ -217,83 +146,37 @@ export class BatchQueueService {
       userId: item.user_id,
       status: QueueStatus.PROCESSING,
       priority: item.priority,
-      rawData: item.raw_data,
+      rawData,
       createdAt: item.created_at,
     };
   }
 
-  /**
-   * Atualiza o status de um item da fila.
-   */
-  async updateStatus(
-    id: string,
-    status: QueueStatus,
-    errorMessage?: string
-  ): Promise<void> {
-    await this.supabase
-      .from("argos_batch_queue")
-      .update({
-        status,
-        error_message: errorMessage,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
+  async updateStatus(id: string, status: QueueStatus, errorMessage?: string): Promise<void> {
+    await this.supabase.from("argos_batch_queue").update({ status, error_message: errorMessage, updated_at: new Date().toISOString() }).eq("id", id);
   }
 
-  /**
-   * Limpeza automática da fila:
-   * 1. Remove itens COMPLETED/FAILED/EXPIRED/REJECTED mais antigos que CLEANUP_RETENTION_HOURS
-   */
   async cleanupQueue(): Promise<{ removed: number }> {
     let removed = 0;
-
     try {
-      // Remover itens finalizados antigos (limpeza de histórico)
-      const cutoffDate = new Date(
-        Date.now() - CLEANUP_RETENTION_HOURS * 60 * 60 * 1000
-      ).toISOString();
-
+      const cutoffDate = new Date(Date.now() - CLEANUP_RETENTION_HOURS * 60 * 60 * 1000).toISOString();
       const { data: removedItems } = await this.supabase
         .from("argos_batch_queue")
         .delete()
-        .in("status", [
-          QueueStatus.COMPLETED,
-          QueueStatus.FAILED,
-          QueueStatus.EXPIRED,
-          QueueStatus.REJECTED,
-          QueueStatus.SKIPPED,
-        ])
+        .in("status", [QueueStatus.COMPLETED, QueueStatus.FAILED, QueueStatus.EXPIRED, QueueStatus.REJECTED, QueueStatus.SKIPPED])
         .lt("updated_at", cutoffDate)
         .select("id");
-
       removed = removedItems?.length ?? 0;
-
-      if (removed > 0) {
-        console.log(
-          `[BatchQueue-Cleanup] Removidos: ${removed}`
-        );
-      }
     } catch (error: any) {
       console.error("[BatchQueue-Cleanup] Erro na limpeza:", error.message);
     }
-
     return { removed };
   }
 
-  /**
-   * Retorna estatísticas da fila para monitoramento.
-   */
   async getQueueStats(): Promise<Record<string, number>> {
-    const { data } = await this.supabase
-      .from("argos_batch_queue")
-      .select("status");
-
+    const { data } = await this.supabase.from("argos_batch_queue").select("status");
     if (!data) return {};
-
     const stats: Record<string, number> = {};
-    for (const item of data) {
-      stats[item.status] = (stats[item.status] || 0) + 1;
-    }
+    for (const item of data) stats[item.status] = (stats[item.status] || 0) + 1;
     return stats;
   }
 }
