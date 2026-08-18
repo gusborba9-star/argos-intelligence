@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "@supabase/supabase-js": "^2.43.0",
+    "@supabase/supabase-js": "^2.43.4",
     "@tailwindcss/postcss": "^4.1.8",
     "@types/dotenv": "^6.1.1",
     "@types/node-fetch": "^2.6.13",
@@ -40,7 +40,6 @@
   "devDependencies": {
     "@types/node": "^22.15.30",
     "@types/react": "^19.0.10",
-    "@types/react-dom": "^19.0.4",
-    "typescript": "^5.8.3"
+    "@types/react-dom": "^19.0.4"
   }
 }
