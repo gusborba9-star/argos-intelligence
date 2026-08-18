@@ -14,7 +14,7 @@ import { apiFootballService } from "../../core/ApiFootballService";
 const MAX_ANALYSIS_HORIZON_HOURS = 48;
 
 export class ArgosMasterOrchestrator {
-  private static readonly VERSION = "6.3.1-MASTER";
+  private static readonly VERSION = "6.3.2-MASTER";
   private static readonly MIN_REAL_SAMPLE = 1;
   private static readonly MAX_PLAUSIBLE_EV = 1.0;
   private static readonly MAX_ODD_MARKET_REFERENCE_RATIO = 3.0;
@@ -38,7 +38,10 @@ export class ArgosMasterOrchestrator {
 
     const ragEngine = new RAGContextEngine(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, process.env.GOOGLE_AI_API_KEY!);
     const context = await ragEngine.retrieveContext(matchId, leagueIdentifier);
-    const regime = { variance_multiplier: context.lesoes.length > 0 || context.clima !== "Condições normais" ? 1.3 : 1.1, model_bias: context.motivacao.includes("favorito") ? 0.05 : 0.02, market_regime: "NEUTRAL" };
+    // External context is evidence, not an arbitrary probability multiplier.
+    // Until a calibrated feature model exists for motivation/absence impact,
+    // it must not move the scoring mean directly.
+    const regime = { variance_multiplier: context.lesoes.length > 0 || context.clima !== "Condições normais" ? 1.3 : 1.1, model_bias: 0, market_regime: "NEUTRAL" };
 
     const dataService = new DataIngestionService();
     const sportKey = rawData.sport_key || leagueIdentifier;
@@ -63,15 +66,26 @@ export class ArgosMasterOrchestrator {
     const verticalsToAnalyze = [MarketVertical.WINNER, MarketVertical.HANDICAP, MarketVertical.GOALS, MarketVertical.GOALS_HT, MarketVertical.BTTS, MarketVertical.CORNERS, MarketVertical.CARDS];
     const opportunities: any[] = [];
 
+    // Expected scoring rate is an attack/defence fusion, not simply the team's
+    // own recent goals. This prevents a high-scoring team facing a strong
+    // defence from being treated as if its raw attacking average were the
+    // match lambda, one of the principal sources of inflated tail probabilities.
+    const homeAttack = features.homeMetrics.goals;
+    const homeDefence = features.homeMetrics.goalsAgainst;
+    const awayAttack = features.awayMetrics.goals;
+    const awayDefence = features.awayMetrics.goalsAgainst;
+    const expectedHomeGoals = Math.max(0.05, (homeAttack + awayDefence) / 2);
+    const expectedAwayGoals = Math.max(0.05, (awayAttack + homeDefence) / 2);
+
     for (const vertical of verticalsToAnalyze) {
       if (!hasRealData && [MarketVertical.GOALS, MarketVertical.GOALS_HT, MarketVertical.BTTS, MarketVertical.HANDICAP].includes(vertical)) continue;
       if ([MarketVertical.CORNERS, MarketVertical.CARDS].includes(vertical) && !hasExtraStats) continue;
       const isCountStatVertical = [MarketVertical.CORNERS, MarketVertical.CARDS].includes(vertical);
       const isHandicap = vertical === MarketVertical.HANDICAP;
-      const simulation = isCountStatVertical ? { probabilities: countStatProbabilities[vertical] || {} } : isHandicap ? null : await ModelFactory.runMonteCarloWithLearning({ homeMean: features.homeMetrics.goals, awayMean: features.awayMetrics.goals }, regime as any, leagueIdentifier, vertical as any);
+      const simulation = isCountStatVertical ? { probabilities: countStatProbabilities[vertical] || {} } : isHandicap ? null : await ModelFactory.runMonteCarloWithLearning({ homeMean: expectedHomeGoals, awayMean: expectedAwayGoals }, regime as any, leagueIdentifier, vertical as any);
       const selections = this.getSelectionsForVertical(vertical, normalizedMarkets, rawData.home_team, rawData.away_team);
       const handicapPoints = isHandicap ? [...new Set(selections.filter((s): s is HandicapSelection => s.kind === "handicap").map((s) => s.point))] : [];
-      const handicapSettlement = isHandicap ? AsianHandicapSettlementEngine.simulate(features.homeMetrics.goals, features.awayMetrics.goals, regime as any, handicapPoints) : {};
+      const handicapSettlement = isHandicap ? AsianHandicapSettlementEngine.simulate(expectedHomeGoals, expectedAwayGoals, regime as any, handicapPoints) : {};
 
       for (const selection of selections) {
         const marketReference = FairOddsCalculator.calculate(normalizedMarkets, vertical, selection.label, selection.line);
