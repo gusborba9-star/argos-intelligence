@@ -4,11 +4,13 @@
 
 ## Operating Doctrine
 
-- **No-Veto:** o Argos não deve virar uma máquina de recusar mercados. Ele deve medir, ranquear e expor oportunidades; ausência de evidência reduz confiança, não cria bloqueios arbitrários.
-- **Independent Probability:** probabilidade do modelo nunca pode ser substituída silenciosamente por fair probability derivada do mercado.
-- **Market as Evidence:** Pinnacle/Bet365 e demais preços são referência de mercado, não ground truth do modelo.
+- **Prediction Integrity:** toda probabilidade deve representar uma estimativa estatística do evento e possuir método, versão, dados e janela temporal rastreáveis.
+- **Independent Probability:** probabilidade do modelo nunca pode ser substituída silenciosamente por uma referência de mercado.
+- **Market as Evidence:** preços de mercado podem ser usados como feature/benchmark, mas não são ground truth do modelo.
 - **Temporal Integrity:** nenhum dado futuro pode contaminar uma previsão pré-jogo.
-- **Provenance:** cada sinal deve permitir reconstruir dados, versão do motor, horário, mercado, preço e cálculo que o produziram.
+- **Provenance:** cada previsão deve permitir reconstruir dados, versão do motor, features, seed, simulação e transformação de calibração.
+- **Deterministic Replay:** uma previsão histórica deve poder ser reproduzida com o mesmo snapshot e seed.
+- **Calibration Before Claims:** assertividade só pode ser alegada depois de validação out-of-sample por Brier, Log Loss e reliability analysis.
 - **API Contract Protection:** alterações em PropLine/API-Football exigem preservação explícita dos contratos de request/response e respeito às quotas antes de qualquer refatoração.
 - **Validation Gate:** ciclo = analisar → implementar → testar/build → deployment Ready → registrar progresso.
 
@@ -26,20 +28,33 @@
 
 ## Current Quantitative Integrity Cycle — C-003
 
-### Objetivo
-Eliminar fontes de confiança sem lastro e inconsistências semânticas entre fair price, model probability, EV e confidence antes de aumentar a complexidade do ensemble.
+### Status: IN PROGRESS
 
-### Findings
-- [ ] Auditar confiança atribuída à referência Pinnacle: `0.98` não deve significar 98% de probabilidade de acerto.
-- [ ] Separar semanticamente **market-reference confidence** de **model predictive confidence**.
-- [ ] Auditar `realValue` para garantir que sua direção matemática corresponda ao conceito documentado.
-- [ ] Auditar pesos e duplicidade de bookmakers no consenso.
-- [ ] Auditar linhas/points de handicap contra o settlement e contra o payload normalizado.
-- [ ] Criar invariantes quantitativos para impedir regressões silenciosas.
+### Findings confirmed
+- [x] `ModelFactory` atual usa RNG não determinístico via `Math.random()`.
+- [x] A geração Gamma atual é uma aproximação aditiva e não uma amostragem Gamma estatisticamente adequada.
+- [x] O Monte Carlo atual mistura dispersão de forma genérica com o parâmetro de gols.
+- [x] Handicap perde informação de sinal ao armazenar contagens por `Math.abs(point)`.
+- [x] Probabilidade bruta, calibração e referência de mercado precisam permanecer semanticamente separadas.
+
+### Execution boundary
+O núcleo preditivo será tratado como componente estatístico independente, auditável e reproduzível. Não será considerado concluído apenas porque o build passa.
+
+### Required implementation
+- [ ] RNG determinístico com seed e replay.
+- [ ] Distribuições estatísticas explícitas e testáveis.
+- [ ] Poisson/Skellam para modelagem de gols quando as hipóteses forem válidas.
+- [ ] Distribuição conjunta do placar.
+- [ ] Monte Carlo reproduzível sobre parâmetros versionados.
+- [ ] Contrato de handicap preservando `side` + `point` assinados.
+- [ ] Snapshot de features e provenance da fonte.
+- [ ] Metadados de modelo/feature version.
+- [ ] Testes de invariantes probabilísticos.
 
 ### Not Yet Done
-- [ ] Não considerar C-003 concluído antes de deployment Ready.
-- [ ] Não alterar adaptadores PropLine/API-Football neste ciclo sem auditoria do contrato real.
+- [ ] C-003 não concluído.
+- [ ] Nenhum claim de assertividade será tratado como comprovado.
+- [ ] Adaptadores PropLine/API-Football permanecem fora deste ciclo até auditoria específica dos contratos.
 
 ## Next Cycles
 
@@ -49,34 +64,36 @@ Eliminar fontes de confiança sem lastro e inconsistências semânticas entre fa
 - Shrinkage por tamanho de amostra.
 - Separação entre probabilidade bruta, calibrada e publicada.
 
-### C-005 — Market Microstructure
+### C-005 — Market Microstructure / Benchmarking
 - Consenso multi-book.
 - Movimento de preço.
-- Divergência sharp/soft.
-- CLV observável pós-fechamento.
-- Detecção de stale lines sem transformar o sistema em veto global.
+- Divergência entre fontes.
+- Registro de snapshots para avaliação retrospectiva.
+- Detecção de stale data.
 
 ### C-006 — Historical Learning Loop
-- Registro de cada previsão e resultado.
-- Atualização incremental de histórico por time/liga/mercado.
-- Feedback somente após settlement oficial.
+- Registro de previsão + snapshot + resultado oficial.
+- Atualização incremental por time/liga/mercado.
+- Feedback somente após o evento.
 - Proteção contra leakage.
+- Versionamento de modelos.
 
 ### C-007 — Model Ensemble
 - Poisson/Skellam para gols.
 - Monte Carlo para distribuição conjunta.
-- Modelos específicos para corners/cards/shots quando houver dados suficientes.
+- Modelos específicos para eventos com dados suficientes.
 - Ensemble ponderado por performance out-of-sample.
-- RAG/IA exclusivamente para contexto externo e interpretação, nunca para inventar probabilidades.
+- RAG/IA exclusivamente para contexto externo e interpretação; probabilidades permanecem quantitativas.
 
-### C-008 — Signal Ranking & Distribution
-- Ranking por valor, confiança calibrada, liquidez e estabilidade.
-- FREE: exposição controlada de alta probabilidade.
-- VIP: oportunidades de valor e mercados adicionais.
-- Idempotência, provenance e snapshot do sinal.
+### C-008 — Prediction Distribution & Audit
+- Ranking por qualidade estatística.
+- Idempotência.
+- Provenance.
+- Snapshot completo da previsão.
+- Separação entre núcleo quantitativo e aplicações de distribuição.
 
 ### C-009 — API Efficiency
-- PropLine como fonte primária.
+- PropLine como fonte primária onde coberta pelo contrato.
 - API-Football como complemento seletivo.
 - Budget accounting diário.
 - Cache e deduplicação.
@@ -86,8 +103,10 @@ Eliminar fontes de confiança sem lastro e inconsistências semânticas entre fa
 - Replay determinístico.
 - Backtest walk-forward.
 - Paper ledger.
-- CLV e ROI por mercado/liga.
+- Brier/Log Loss por mercado/liga.
 - Stress tests.
+- Drift detection.
+- Champion/challenger.
 - Só então considerar claims de assertividade.
 
 ## Definition of Done
