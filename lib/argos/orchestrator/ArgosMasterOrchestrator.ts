@@ -11,16 +11,26 @@ import { MarketVertical } from "../../core/ArgosUnifiedEngine";
 import { getSupabaseClient } from "../../core/SupabaseClient";
 import { apiFootballService } from "../../core/ApiFootballService";
 
+const MAX_ANALYSIS_HORIZON_HOURS = 48;
+
 export class ArgosMasterOrchestrator {
-  private static readonly VERSION = "6.3.0-MASTER";
+  private static readonly VERSION = "6.3.1-MASTER";
   private static readonly MIN_REAL_SAMPLE = 1;
   private static readonly MAX_PLAUSIBLE_EV = 1.0;
   private static readonly MAX_ODD_MARKET_REFERENCE_RATIO = 3.0;
 
   public static async run(matchId: string, rawData: any) {
     console.log(`[ArgosMaster] Starting v${this.VERSION}: ${matchId}`);
+
     const kickoff = rawData.commence_time ? new Date(rawData.commence_time).getTime() : null;
     if (kickoff && kickoff < Date.now() - 10 * 60 * 1000) return { status: "SKIPPED_EXPIRED", matchId };
+    if (!kickoff || !Number.isFinite(kickoff)) return { status: "SKIPPED_INVALID_KICKOFF", matchId };
+    const hoursToKickoff = (kickoff - Date.now()) / (1000 * 60 * 60);
+    if (hoursToKickoff > MAX_ANALYSIS_HORIZON_HOURS) {
+      console.log(`[ArgosMaster] Skipping ${matchId}: kickoff is ${hoursToKickoff.toFixed(1)}h away, horizon=${MAX_ANALYSIS_HORIZON_HOURS}h.`);
+      return { status: "SKIPPED_OUTSIDE_ANALYSIS_HORIZON", matchId, hoursToKickoff, maxHours: MAX_ANALYSIS_HORIZON_HOURS };
+    }
+
     const leagueIdentifier = String(rawData.league_id ?? rawData.sport_key ?? rawData.sport_title ?? "unknown_league");
     const normalizedMarkets = MarketNormalizer.normalize(rawData);
     const report = MarketNormalizer.generateReport(normalizedMarkets);
