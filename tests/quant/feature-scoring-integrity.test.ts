@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { FeatureEngine } from "../../lib/core/FeatureEngine";
 
+let fixtureId = 1000;
 const fixture = (home: string, away: string, hg: number, ag: number) => ({
-  fixture: { id: Math.floor(Math.random() * 100000), referee: null, timezone: "UTC", date: "2026-08-01T00:00:00Z", timestamp: 0, status: { long: "Match Finished", short: "FT", elapsed: 90 } },
+  fixture: { id: fixtureId++, referee: null, timezone: "UTC", date: "2026-08-01T00:00:00Z", timestamp: 0, status: { long: "Match Finished", short: "FT", elapsed: 90 } },
   league: { id: 1, name: "Test", country: "Global", logo: "", flag: "", season: 2026, round: "1" },
   teams: { home: { id: 1, name: home, logo: "", winner: null }, away: { id: 2, name: away, logo: "", winner: null } },
   goals: { home: hg, away: ag },
