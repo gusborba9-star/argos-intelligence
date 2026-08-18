@@ -3,7 +3,7 @@ import { OddsValueEngine, ValueAnalysis } from "./market-intelligence/OddsValueE
 import { learningEngine } from "./ContinuousLearningEngine";
 
 // ============================================================
-// MODEL FACTORY v6.1.2 — SYNDICATE MASTER EDITION
+// MODEL FACTORY v6.1.3 — SYNDICATE MASTER EDITION
 // Quant integrity: calibration is conservative and market-family aware.
 // ============================================================
 
@@ -30,18 +30,6 @@ export interface SimulationResult {
 export class ModelFactory {
   private static readonly DEFAULT_ITERATIONS = 10000;
 
-  /**
-   * Monte Carlo with controlled post-settlement calibration.
-   *
-   * Important: a scalar historical bias is suitable for binary probability
-   * families (over/under). It is NOT sufficient to move home/draw/away
-   * independently in a three-class market because doing so can destroy the
-   * probability simplex and manufacture probability mass.
-   *
-   * Therefore winner probabilities are deliberately left untouched until a
-   * proper multiclass calibrator exists. This is not a veto: the raw model
-   * result remains available and is still ranked downstream.
-   */
   static async runMonteCarloWithLearning(
     metrics: MarketMetrics,
     regime: RegimeProfile,
@@ -56,11 +44,12 @@ export class ModelFactory {
 
     // Only binary over/under calibration is currently mathematically
     // conservative. It preserves P(over) + P(under) = 1.
-    if (probabilities.over !== undefined && probabilities.under !== undefined) {
-      const adjustedOver = this.applyBinaryBias(probabilities.over, calibration.probabilityAdjustment);
+    const baseOver = baseResult.probabilities.over;
+    if (baseOver !== undefined && probabilities.under !== undefined) {
+      const adjustedOver = this.applyBinaryBias(baseOver, calibration.probabilityAdjustment);
       probabilities.over = adjustedOver;
       probabilities.under = 1 - adjustedOver;
-      calibrationApplied = adjustedOver - baseResult.probabilities.over;
+      calibrationApplied = adjustedOver - baseOver;
     }
 
     // BTTS is also binary when present. The current simulation produces
@@ -78,11 +67,6 @@ export class ModelFactory {
     };
   }
 
-  /**
-   * Applies a bounded additive bias in log-odds space.
-   * Unlike direct probability addition, this remains bounded and preserves
-   * the binary complement exactly.
-   */
   private static applyBinaryBias(probability: number, bias: number): number {
     const p = Math.max(0.001, Math.min(0.999, probability));
     const boundedBias = Math.max(-0.15, Math.min(0.15, bias));
@@ -91,13 +75,6 @@ export class ModelFactory {
     return Math.max(0.001, Math.min(0.999, adjusted));
   }
 
-  /**
-   * Simulação Monte Carlo Base.
-   *
-   * As probabilidades de handicap são produzidas segundo a convenção
-   * asiática padrão, e não como simples complemento entre os lados.
-   * Isso é essencial para linhas inteiras, onde existe PUSH.
-   */
   static runMonteCarlo(
     metrics: MarketMetrics,
     regime: RegimeProfile,
@@ -116,8 +93,6 @@ export class ModelFactory {
     const overCounts: Record<string, number> = {};
     GOAL_LINES.forEach((l) => (overCounts[l] = 0));
 
-    // home_handicap_m = Home -m; away_handicap_m = Away +m.
-    // Integer lines explicitly allow PUSH.
     const HANDICAP_LINES = [-2, -1.5, -1, -0.5, 0.5, 1, 1.5, 2];
     const homeCoversCounts: Record<string, number> = {};
     const awayCoversCounts: Record<string, number> = {};
@@ -213,10 +188,6 @@ export class ModelFactory {
     return k - 1;
   }
 
-  /**
-   * Simulação de Escanteios ou Cartões via Poisson, usando médias reais dos
-   * times. Sem isso, Corners/Cards não possuem modelo de probabilidade.
-   */
   public static runCountStatSimulation(
     homeMean: number,
     awayMean: number,
