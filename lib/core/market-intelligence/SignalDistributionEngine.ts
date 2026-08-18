@@ -2,14 +2,12 @@ import { Opportunity } from "./MarketDiscoveryEngine";
 import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
 import { telegramDispatcher, TelegramSignalPayload } from "@/lib/argos/notifications/TelegramDispatcher";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
-// DecisionGraphEngine removido na v6.0.0.
-// SignalClassifierV4 removido na v6.0.0. A classificação agora é feita no Master Orchestrator.
 
 // ============================================================
-// SIGNAL DISTRIBUTION ENGINE v6.2.0 — ZERO VETO EDITION
-// Filosofia: TODO sinal classificado deve chegar ao Telegram.
-// Integração: DecisionGraphEngine para distribuição de canais.
+// SIGNAL DISTRIBUTION ENGINE v6.3.0 — ZERO-VETO / CHANNEL POLICY
 // ============================================================
+// The analysis layer retains the full opportunity set. This layer only decides
+// presentation tier and delivery. It does not alter model probabilities or EV.
 
 export interface DistributedSignal extends Opportunity {
   tier: "FREE" | "VIP" | "LOW" | "NOISE";
@@ -18,33 +16,30 @@ export interface DistributedSignal extends Opportunity {
 }
 
 export class SignalDistributionEngine {
-  /**
-   * Distribui e DESPACHA 100% dos sinais para o Telegram.
-   * Utiliza o DecisionGraph para definir o canal de destino.
-   */
   public static async processAndDispatch(
     opportunities: Opportunity[],
     regime: RegimeProfile,
     matchContext: { matchId: string; name: string; homeTeam: string; awayTeam: string; league: string; kickoff: string }
   ): Promise<DistributedSignal[]> {
-    
-    // Na v6.0.0, as oportunidades já chegam classificadas e com rating do OddsValueEngine.
     const distributed: DistributedSignal[] = [];
     const signalsToDispatch: TelegramSignalPayload[] = [];
 
-    // VIP: TODA seleção com edge real (EV+) — varredura completa, como pedido.
-    const vipOps = opportunities.filter(op => op.hasEdge);
-
-    // FREE: as seleções de MAIOR probabilidade, mesmo sem EV+ — é vitrine de
-    // assertividade, existe só "quando existir" algo de fato alto (>=70%).
+    // VIP receives every independently computed positive-EV opportunity from the
+    // analysis layer. FREE is a showcase: the dispatcher itself further limits
+    // presentation to at most two distinct verticals per match.
+    const vipOps = opportunities.filter((op) => op.hasEdge);
     const freeOps = [...opportunities]
-      .filter(op => op.probability >= 0.70)
+      .filter((op) => op.probability >= 0.70)
       .sort((a, b) => b.probability - a.probability);
 
-    const buildPayload = (op: Opportunity, tier: "FREE" | "VIP", matchContext: { name: string; league: string; kickoff: string }): TelegramSignalPayload => ({
-      matchName: matchContext.name,
-      leagueName: matchContext.league,
-      kickoffTime: matchContext.kickoff,
+    const buildPayload = (
+      op: Opportunity,
+      tier: "FREE" | "VIP",
+      context: { name: string; league: string; kickoff: string }
+    ): TelegramSignalPayload => ({
+      matchName: context.name,
+      leagueName: context.league,
+      kickoffTime: context.kickoff,
       vertical: op.vertical,
       selection: op.selection,
       odd: op.odd,
@@ -55,7 +50,8 @@ export class SignalDistributionEngine {
       ratingLabel: op.ratingLabel || "VALUE",
       tier,
       line: op.line,
-      analysisSummary: `Análise Argos Syndicate Master: Probabilidade de ${(op.probability * 100).toFixed(1)}% com Edge de ${(op.edge * 100).toFixed(1)}%.`
+      analysisSummary:
+        `Análise Argos Syndicate Master: probabilidade de ${(op.probability * 100).toFixed(1)}% com EV de ${(op.edge * 100).toFixed(1)}%.`
     });
 
     for (const op of vipOps) {
@@ -63,45 +59,49 @@ export class SignalDistributionEngine {
       distributed.push({ ...op, tier: "VIP", priority, displayLabel: this.buildDisplayLabel(op, "VIP") });
       signalsToDispatch.push(buildPayload(op, "VIP", matchContext));
     }
+
     for (const op of freeOps) {
       const priority = op.probability;
       distributed.push({ ...op, tier: "FREE", priority, displayLabel: this.buildDisplayLabel(op, "FREE") });
       signalsToDispatch.push(buildPayload(op, "FREE", matchContext));
     }
 
-    // TRAVA CONTRA DUPLICATA: nunca reenviar pro Telegram um sinal
-    // (mesma partida+mercado+selecao) que ja foi disparado nas ultimas 24h.
+    // Idempotency is scoped to match + vertical + selection + line + tier.
+    // Including the line prevents Over 2.5 and Over 3.5 from being treated as
+    // the same signal while keeping retries of the exact signal suppressed.
     let alreadySentKeys = new Set<string>();
     try {
       const supabase = getSupabaseClient();
       const { data: recentlySent } = await supabase
         .from("argos_signal_ledger")
-        .select("vertical, selection, tier")
+        .select("vertical, selection, line, tier")
         .eq("match_id", matchContext.matchId)
         .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
-      alreadySentKeys = new Set((recentlySent || []).map((r: any) => `${r.vertical}|${r.selection}|${r.tier}`));
-    } catch { /* se falhar, segue sem bloquear */ }
 
-    const dedupedSignalsToDispatch = signalsToDispatch.filter(
-      (s) => !alreadySentKeys.has(`${s.vertical}|${s.selection}|${s.tier}`)
-    );
-    if (dedupedSignalsToDispatch.length < signalsToDispatch.length) {
-      console.warn(`[SignalDistribution] suprimidos por duplicata: ${signalsToDispatch.length - dedupedSignalsToDispatch.length}`);
+      alreadySentKeys = new Set(
+        (recentlySent || []).map(
+          (r: any) => `${r.vertical}|${r.selection}|${r.line ?? 0}|${r.tier}`
+        )
+      );
+    } catch {
+      // Observability/idempotency must never break the analysis path.
     }
 
-    // Despacho assíncrono para o Telegram (100% dos sinais)
+    const dedupedSignalsToDispatch = signalsToDispatch.filter(
+      (s) => !alreadySentKeys.has(`${s.vertical}|${s.selection}|${s.line ?? 0}|${s.tier}`)
+    );
+
     if (dedupedSignalsToDispatch.length > 0) {
-      console.log(`[SignalDistribution] Despachando ${dedupedSignalsToDispatch.length} sinais para Telegram.`);
       await telegramDispatcher.dispatch(dedupedSignalsToDispatch, regime);
     }
 
-    // Grava cada sinal no ledger — sem isso, o aprendizado contínuo nunca
-    // teve dado real pra aprender, e o bilhete do dia não tinha de onde
-    // puxar os sinais de hoje.
+    // Keep the complete classified set in the ledger, including signals that
+    // were already sent. This preserves research evidence and allows later
+    // settlement/learning to operate independently from Telegram delivery.
     if (distributed.length > 0) {
       try {
         const supabase = getSupabaseClient();
-        const rows = distributed.map(d => ({
+        const rows = distributed.map((d) => ({
           match_id: matchContext.matchId,
           league_name: matchContext.league,
           home_team: matchContext.homeTeam,
@@ -116,11 +116,11 @@ export class SignalDistributionEngine {
           expected_value: d.expectedValue,
           confidence: d.probability,
           regime: (regime as any)?.market_regime || "NEUTRAL",
-          tier: d.tier,
+          tier: d.tier
         }));
         await supabase.from("argos_signal_ledger").insert(rows);
       } catch (err: any) {
-        console.error("[SignalDistribution] ⚠️ Falha ao gravar ledger:", err.message);
+        console.error("[SignalDistribution] ledger write failed:", err.message);
       }
     }
 
