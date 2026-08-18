@@ -3,7 +3,7 @@
 This file is the operational progress ledger. `docs/ARGOS_BLUEPRINT.md` remains the architectural and quantitative source of truth.
 
 ## Active cycle
-**P0.2 — Canonical Execution Path & Quantitative Provenance**
+**P0.2-B — Quantitative Chain Integrity & Provenance**
 
 ### Completed and validated
 - Asian handicap integer-line PUSH settlement corrected.
@@ -15,15 +15,27 @@ This file is the operational progress ledger. `docs/ARGOS_BLUEPRINT.md` remains 
 - Model probability separated from market-reference probability; market reference no longer directly becomes the model probability through the audited path.
 - H2H removed as an arbitrary direct 10% probability blend; retained as contextual data for future calibrated feature use.
 - Legacy `ArgosUnifiedEngine` artificial `+2%` probability inflation removed.
-- Deployment `2ab2671` reached `Ready` in Production after the latest correction.
+- Signal distribution idempotency strengthened to include market line in the deduplication identity.
+- Signal provenance semantics strengthened so a market fair probability cannot silently substitute for an independent model probability.
+- Deployment `2ab2671` reached `Ready` in Production after the latest validated correction.
+- Deployment `0e527ee` reached `Ready` in Preview after the latest distribution/provenance correction.
+
+### P0.2-A production path findings
+- The live v6 API route invokes `ArgosMasterOrchestrator`.
+- The v6 worker also invokes `ArgosMasterOrchestrator`, confirming the master orchestrator as the canonical analysis entry point for those paths.
+- `SignalDistributionEngine` is the current FREE/VIP distribution boundary and invokes `TelegramDispatcher`.
+- Distribution persists signals into `argos_signal_ledger`, creating the primary post-publication audit trail.
+- Duplicate prevention is performed before Telegram dispatch using match + vertical + selection + line + tier.
+- The repository still contains legacy/compatibility engines and multiple historical analysis components; these remain under classification and must not be assumed dead until all call sites are traced.
 
 ### Current execution batch
-- Prove the canonical production path from PropLine ingestion to FREE/VIP Telegram publication.
-- Trace every active orchestrator and identify legacy/parallel execution paths.
-- Audit `ModelFactory`, `FairOddsCalculator`, `OddsValueEngine`, `SignalDistributionEngine`, and their contracts as one quantitative chain.
-- Verify that model probability, market implied probability, sharp reference, fair probability, published probability, EV, edge, and Kelly remain semantically distinct.
-- Identify dead, duplicate, compatibility-only, and production-critical files before introducing new engines.
-- Add provenance/observability where the current chain cannot explain how a published signal was produced.
+- Complete quantitative-chain audit from raw PropLine market payload through model probability, fair probability, executable market price, EV, edge and Kelly.
+- Verify whether `FairOddsCalculator` is a true independent fair-price estimator or a market-reference transformation; enforce explicit provenance accordingly.
+- Trace every caller of `ArgosMasterOrchestrator`, `ArgosUnifiedEngine`, `MarketDiscoveryEngine`, `SignalDistributionEngine`, and competing analysis services.
+- Add immutable signal provenance sufficient to reproduce every published signal from input snapshot + model/version + feature snapshot + market price snapshot + decision timestamp.
+- Audit publication semantics so FREE/VIP are presentation/ranking layers rather than quantitative mutations.
+- Add deterministic invariants for probability ranges, multiclass conservation, binary complementarity, EV identity, fair-price identity, and Kelly bounds.
+- Only after the chain is mathematically clean, proceed to model-power improvements (Poisson/Monte Carlo/ensemble/RAG/external-context features).
 
 ## Operating protocol
 ```text
@@ -49,7 +61,9 @@ No-veto principle: internal analysis is broad and observations are retained. Pub
 - Multiclass probabilities must conserve total probability.
 - EV must be computed from an explicitly identified probability and an explicitly identified executable price.
 - Fair price and market price must remain separate objects.
+- A fair-price reference derived from the market cannot be labeled as independent model probability.
 - Every published signal must eventually be reproducible from stored inputs, model version, feature set, timestamp, price snapshot, and decision path.
+- Publication filters may select/rank evidence but must not silently alter the underlying quantitative result.
 
 ## Next target
-**P0.2-A — Production Path Trace:** establish the exact live path producing the current FREE/VIP Telegram signals, then isolate or retire obsolete paths without changing unrelated working behavior.
+**P0.2-B — Quantitative Chain Integrity:** audit and harden the complete probability → fair price → executable price → EV → Kelly chain before adding further predictive complexity.
