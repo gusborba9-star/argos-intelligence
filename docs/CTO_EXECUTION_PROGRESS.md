@@ -5,7 +5,7 @@ This file is the operational progress ledger. `docs/ARGOS_BLUEPRINT.md` remains 
 ## Active cycle
 **P0.2-B — Quantitative Chain Integrity & Provenance**
 
-### Completed and validated before current batch
+### Completed and previously validated
 - Asian handicap integer-line PUSH settlement corrected.
 - Team-history feature extraction corrected to distinguish home/away orientation.
 - Non-conservative probability inflation from learning removed.
@@ -21,11 +21,11 @@ This file is the operational progress ledger. `docs/ARGOS_BLUEPRINT.md` remains 
 - Stale queued matches are prevented from reaching the analysis worker.
 - Quantitative CI gate and statistical invariant suite established.
 
-### Current batch completed
+### Current batch IMPLEMENTED — validation pending
 **Quantitative calibration + expected-scoring integrity**
 
 - `FeatureEngine` now preserves separate team attack (`goals`) and defensive concession (`goalsAgainst`) rates.
-- Sparse samples continue to shrink both attack and defence toward the league-neutral prior instead of allowing one fixture to define the latent rate.
+- Sparse samples shrink both attack and defence toward the league-neutral prior instead of allowing one fixture to define the latent rate.
 - Master orchestration no longer feeds a team's raw scoring average directly into the match Poisson/Gamma-Poisson model.
 - Expected home scoring now combines home attack with away defensive concession.
 - Expected away scoring now combines away attack with home defensive concession.
@@ -35,25 +35,23 @@ This file is the operational progress ledger. `docs/ARGOS_BLUEPRINT.md` remains 
 - Dynamic FREE/VIP thresholds are no longer silently mutated by empirical bias.
 - Deterministic feature-scoring invariants added to the quantitative test suite.
 
-### Quantitative integrity doctrine now enforced
-- A team's scoring rate is not its opponent-adjusted expected match rate.
-- Attack and defence are separate latent signals.
-- Sparse evidence must shrink toward a neutral prior.
-- External-context retrieval must not become an arbitrary probability multiplier.
-- Learning requires resolved evidence and conservative shrinkage.
-- Model probability remains distinct from market reference probability.
-- EV is downstream of the model probability and executable market price; it is never used to manufacture the probability upstream.
-- A large EV number is treated as a model-validation question, not as evidence that the signal is automatically strong.
+### Why this batch exists
+The previous model path could use a team's own recent goals as the match scoring lambda. That conflates attack with opponent defence and can produce unrealistic tails, which then propagate mechanically into fair odds, EV and Kelly. The new path separates those components before simulation.
 
-### Required validation gate
-The branch must pass, in order:
-1. quantitative test suite;
-2. TypeScript/Next.js build;
-3. Vercel deployment reaching `Ready`;
-4. real-data inspection of newly generated signals;
-5. roadmap update only after the above are successful.
+The previous RAG path also translated motivation into an arbitrary probability-driving multiplier. That is not evidence-based calibration, so it has been removed until a learned feature transformation exists.
 
-### Remaining P0.2-B work
+### Validation gate — NOT YET CLOSED
+The following must pass before this cycle is marked complete:
+1. `pnpm run test:quant`;
+2. `pnpm exec tsc --noEmit`;
+3. `pnpm run build`;
+4. Vercel deployment reaching `Ready` for the Argos project;
+5. real-data inspection showing that extreme EV/probability inflation has materially reduced;
+6. only then mark the cycle `COMPLETED AND VALIDATED`.
+
+The current branch contains the implementation commits, but no validation result is being fabricated in this ledger.
+
+### Remaining P0.2-B work after this gate
 - Complete provenance replay coverage across every published signal.
 - Verify all legacy/compatibility callers cannot bypass the canonical orchestrator.
 - Complete walk-forward calibration metrics (Brier, Log Loss and reliability/calibration error) by league and vertical.
@@ -89,4 +87,4 @@ No-veto principle: internal analysis is broad and observations are retained. Pub
 - Publication filters may select/rank evidence but must not silently alter the underlying quantitative result.
 
 ## Next target
-**P0.2-B — Quantitative Chain Integrity:** complete provenance replay and walk-forward calibration before expanding predictive complexity.
+**P0.2-B — Quantitative Chain Integrity:** close the validation gate, then proceed to provenance replay and walk-forward calibration before expanding predictive complexity.
