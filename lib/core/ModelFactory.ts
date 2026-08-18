@@ -3,8 +3,8 @@ import { OddsValueEngine, ValueAnalysis } from "./market-intelligence/OddsValueE
 import { learningEngine } from "./ContinuousLearningEngine";
 
 // ============================================================
-// MODEL FACTORY v6.1.3 — SYNDICATE MASTER EDITION
-// Quant integrity: calibration is conservative and market-family aware.
+// MODEL FACTORY v6.2.0 — QUANTITATIVE CORE
+// Actual Gamma-Poisson mixture + deterministic seeded PRNG.
 // ============================================================
 
 export interface MarketMetrics {
@@ -27,8 +27,12 @@ export interface SimulationResult {
   calibrationApplied?: number;
 }
 
+type RandomSource = () => number;
+
 export class ModelFactory {
   private static readonly DEFAULT_ITERATIONS = 10000;
+  private static readonly MIN_LAMBDA = 0.01;
+  private static readonly MIN_PROBABILITY = 0.0001;
 
   static async runMonteCarloWithLearning(
     metrics: MarketMetrics,
@@ -38,12 +42,11 @@ export class ModelFactory {
     iterations: number = ModelFactory.DEFAULT_ITERATIONS
   ): Promise<SimulationResult> {
     const calibration = await learningEngine.getCalibration(leagueId, marketType);
-    const baseResult = this.runMonteCarlo(metrics, regime, iterations, marketType as any);
+    const seed = this.seedFrom(`${leagueId}|${marketType}|${metrics.homeMean}|${metrics.awayMean}|${regime.variance_multiplier}|${regime.model_bias}`);
+    const baseResult = this.runMonteCarlo(metrics, regime, iterations, marketType as any, 0, { home: 0, away: 0 }, seed);
     const probabilities = { ...baseResult.probabilities };
     let calibrationApplied = 0;
 
-    // Only binary over/under calibration is currently mathematically
-    // conservative. It preserves P(over) + P(under) = 1.
     const baseOver = baseResult.probabilities.over;
     if (baseOver !== undefined && probabilities.under !== undefined) {
       const adjustedOver = this.applyBinaryBias(baseOver, calibration.probabilityAdjustment);
@@ -52,24 +55,18 @@ export class ModelFactory {
       calibrationApplied = adjustedOver - baseOver;
     }
 
-    // BTTS is also binary when present. The current simulation produces
-    // explicit btts_yes/btts_no keys; apply the same conservative transform.
     if (probabilities.btts_yes !== undefined && probabilities.btts_no !== undefined) {
       const adjustedYes = this.applyBinaryBias(probabilities.btts_yes, calibration.probabilityAdjustment);
       probabilities.btts_yes = adjustedYes;
       probabilities.btts_no = 1 - adjustedYes;
     }
 
-    return {
-      ...baseResult,
-      probabilities,
-      calibrationApplied
-    };
+    return { ...baseResult, probabilities, calibrationApplied };
   }
 
   private static applyBinaryBias(probability: number, bias: number): number {
     const p = Math.max(0.001, Math.min(0.999, probability));
-    const boundedBias = Math.max(-0.15, Math.min(0.15, bias));
+    const boundedBias = Math.max(-0.15, Math.min(0.15, Number.isFinite(bias) ? bias : 0));
     const logit = Math.log(p / (1 - p));
     const adjusted = 1 / (1 + Math.exp(-(logit + boundedBias)));
     return Math.max(0.001, Math.min(0.999, adjusted));
@@ -81,8 +78,17 @@ export class ModelFactory {
     iterations: number = ModelFactory.DEFAULT_ITERATIONS,
     marketType: "GOALS" | "CORNERS" | "CARDS" | "SHOTS" = "GOALS",
     elapsedTime: number = 0,
-    currentScore: { home: number; away: number } = { home: 0, away: 0 }
+    currentScore: { home: number; away: number } = { home: 0, away: 0 },
+    seed?: number
   ): SimulationResult {
+    if (!Number.isInteger(iterations) || iterations < 1000) {
+      throw new Error(`Monte Carlo requires at least 1000 iterations; received ${iterations}`);
+    }
+    if (!Number.isFinite(metrics.homeMean) || !Number.isFinite(metrics.awayMean)) {
+      throw new Error("Invalid goal-rate metrics");
+    }
+
+    const random = this.createRng(seed ?? this.seedFrom(`${metrics.homeMean}|${metrics.awayMean}|${marketType}|${regime.variance_multiplier}|${regime.model_bias}`));
     let homeWins = 0;
     let draws = 0;
     let awayWins = 0;
@@ -91,26 +97,30 @@ export class ModelFactory {
 
     const GOAL_LINES = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5];
     const overCounts: Record<string, number> = {};
-    GOAL_LINES.forEach((l) => (overCounts[l] = 0));
+    GOAL_LINES.forEach((line) => (overCounts[line] = 0));
 
     const HANDICAP_LINES = [-2, -1.5, -1, -0.5, 0.5, 1, 1.5, 2];
     const homeCoversCounts: Record<string, number> = {};
     const awayCoversCounts: Record<string, number> = {};
-    HANDICAP_LINES.forEach((l) => {
-      const magnitude = Math.abs(l);
-      homeCoversCounts[magnitude] ||= 0;
-      awayCoversCounts[magnitude] ||= 0;
+    HANDICAP_LINES.forEach((point) => {
+      homeCoversCounts[String(point)] = 0;
+      awayCoversCounts[String(point)] = 0;
     });
 
-    const variance = regime.variance_multiplier || 1.2;
-    const bias = regime.model_bias || 0;
+    const varianceMultiplier = Number.isFinite(regime.variance_multiplier) && regime.variance_multiplier > 1
+      ? regime.variance_multiplier
+      : 1.0;
+    const bias = Number.isFinite(regime.model_bias) ? regime.model_bias : 0;
+    const homeMean = Math.max(this.MIN_LAMBDA, metrics.homeMean * (1 + bias));
+    const awayMean = Math.max(this.MIN_LAMBDA, metrics.awayMean * (1 - bias));
 
+    // Gamma-Poisson mixture: E[lambda]=mean and Var[lambda]=mean²*(v-1).
+    // This replaces the old normal perturbation incorrectly labelled Gamma.
     for (let i = 0; i < iterations; i++) {
-      const hLambda = this.generateGamma(metrics.homeMean * (1 + bias), variance);
-      const aLambda = this.generateGamma(metrics.awayMean * (1 - bias), variance);
-
-      const hScore = this.poisson(hLambda);
-      const aScore = this.poisson(aLambda);
+      const hLambda = this.gammaPoissonLambda(homeMean, varianceMultiplier, random);
+      const aLambda = this.gammaPoissonLambda(awayMean, varianceMultiplier, random);
+      const hScore = this.poisson(hLambda, random);
+      const aScore = this.poisson(aLambda, random);
 
       const finalHome = currentScore.home + hScore;
       const finalAway = currentScore.away + aScore;
@@ -118,19 +128,17 @@ export class ModelFactory {
       const goalDiff = finalHome - finalAway;
 
       totalGoals += hScore + aScore;
-
-      GOAL_LINES.forEach((l) => {
-        if (matchTotal > l) overCounts[l]++;
+      GOAL_LINES.forEach((line) => {
+        if (matchTotal > line) overCounts[line]++;
       });
 
-      HANDICAP_LINES.forEach((l) => {
-        const magnitude = Math.abs(l);
-        if (goalDiff - magnitude > 0) homeCoversCounts[magnitude]++;
-        if (goalDiff + magnitude > 0) awayCoversCounts[magnitude]++;
+      // Preserve the signed point. +1 and -1 are different states.
+      HANDICAP_LINES.forEach((point) => {
+        if (goalDiff + point > 0) homeCoversCounts[String(point)]++;
+        if (-goalDiff + point > 0) awayCoversCounts[String(point)]++;
       });
 
       if (finalHome > 0 && finalAway > 0) bttsYes++;
-
       if (finalHome > finalAway) homeWins++;
       else if (finalHome === finalAway) draws++;
       else awayWins++;
@@ -146,71 +154,139 @@ export class ModelFactory {
       btts_no: 1 - bttsYes / iterations,
     };
 
-    GOAL_LINES.forEach((l) => {
-      probabilities[`over_${l}`] = overCounts[l] / iterations;
-      probabilities[`under_${l}`] = 1 - overCounts[l] / iterations;
+    GOAL_LINES.forEach((line) => {
+      const over = overCounts[line] / iterations;
+      probabilities[`over_${line}`] = over;
+      probabilities[`under_${line}`] = 1 - over;
     });
 
-    HANDICAP_LINES.forEach((l) => {
-      const magnitude = Math.abs(l);
-      probabilities[`home_handicap_${magnitude}`] = homeCoversCounts[magnitude] / iterations;
-      probabilities[`away_handicap_${magnitude}`] = awayCoversCounts[magnitude] / iterations;
+    HANDICAP_LINES.forEach((point) => {
+      probabilities[`home_handicap_${point}`] = homeCoversCounts[String(point)] / iterations;
+      probabilities[`away_handicap_${point}`] = awayCoversCounts[String(point)] / iterations;
     });
 
-    return {
-      probabilities,
-      iterations,
-      expectedGoals: totalGoals / iterations
-    };
+    return { probabilities, iterations, expectedGoals: totalGoals / iterations };
   }
 
   static calculateEV(probability: number, marketOdd: number): ValueAnalysis {
     return OddsValueEngine.calculateValue(probability, marketOdd);
   }
 
-  private static generateGamma(mean: number, varianceFactor: number): number {
-    const beta = varianceFactor - 1;
-    if (beta <= 0) return mean;
-    let sum = 0;
-    for (let i = 0; i < 12; i++) sum += Math.random();
-    const noise = (sum - 6) * Math.sqrt(mean * beta);
-    return Math.max(0.01, mean + noise);
-  }
-
-  private static poisson(lambda: number): number {
-    const L = Math.exp(-lambda);
-    let k = 0;
-    let p = 1;
-    do {
-      k++;
-      p *= Math.random();
-    } while (p > L);
-    return k - 1;
-  }
-
   public static runCountStatSimulation(
     homeMean: number,
     awayMean: number,
     lines: number[],
-    iterations: number = 5000
+    iterations: number = 5000,
+    seed?: number
   ): Record<string, number> {
+    if (!Number.isInteger(iterations) || iterations < 1000) throw new Error("Count-stat Monte Carlo requires at least 1000 iterations");
+    const random = this.createRng(seed ?? this.seedFrom(`${homeMean}|${awayMean}|${lines.join(",")}`));
     const overCounts: Record<string, number> = {};
-    lines.forEach((l) => (overCounts[l] = 0));
+    lines.forEach((line) => (overCounts[line] = 0));
 
     for (let i = 0; i < iterations; i++) {
-      const h = this.poisson(Math.max(0.1, homeMean));
-      const a = this.poisson(Math.max(0.1, awayMean));
+      const h = this.poisson(Math.max(this.MIN_LAMBDA, homeMean), random);
+      const a = this.poisson(Math.max(this.MIN_LAMBDA, awayMean), random);
       const total = h + a;
-      lines.forEach((l) => {
-        if (total > l) overCounts[l]++;
+      lines.forEach((line) => {
+        if (total > line) overCounts[line]++;
       });
     }
 
     const probabilities: Record<string, number> = {};
-    lines.forEach((l) => {
-      probabilities[`over_${l}`] = overCounts[l] / iterations;
-      probabilities[`under_${l}`] = 1 - overCounts[l] / iterations;
+    lines.forEach((line) => {
+      const over = overCounts[line] / iterations;
+      probabilities[`over_${line}`] = over;
+      probabilities[`under_${line}`] = 1 - over;
     });
     return probabilities;
+  }
+
+  private static gammaPoissonLambda(mean: number, varianceMultiplier: number, random: RandomSource): number {
+    if (varianceMultiplier <= 1.0000001) return mean;
+    const overdispersion = varianceMultiplier - 1;
+    const shape = 1 / overdispersion;
+    const scale = mean / shape;
+    return Math.max(this.MIN_LAMBDA, this.gamma(shape, scale, random));
+  }
+
+  /** Marsaglia-Tsang Gamma(shape, scale), including shape < 1. */
+  private static gamma(shape: number, scale: number, random: RandomSource): number {
+    if (!(shape > 0) || !(scale > 0)) throw new Error("Invalid Gamma parameters");
+    if (shape < 1) {
+      const u = Math.max(this.MIN_PROBABILITY, random());
+      return this.gamma(shape + 1, scale, random) * Math.pow(u, 1 / shape);
+    }
+
+    const d = shape - 1 / 3;
+    const c = 1 / Math.sqrt(9 * d);
+    while (true) {
+      const x = this.normal(random);
+      const v0 = 1 + c * x;
+      if (v0 <= 0) continue;
+      const v = v0 * v0 * v0;
+      const u = random();
+      if (u < 1 - 0.0331 * x * x * x * x || Math.log(Math.max(this.MIN_PROBABILITY, u)) < 0.5 * x * x + d * (1 - v + Math.log(v))) {
+        return d * v * scale;
+      }
+    }
+  }
+
+  private static normal(random: RandomSource): number {
+    const u1 = Math.max(this.MIN_PROBABILITY, random());
+    const u2 = random();
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  }
+
+  private static poisson(lambda: number, random: RandomSource): number {
+    if (lambda < 30) {
+      const limit = Math.exp(-lambda);
+      let product = 1;
+      let k = 0;
+      do {
+        k++;
+        product *= Math.max(this.MIN_PROBABILITY, random());
+      } while (product > limit);
+      return k - 1;
+    }
+
+    const sd = Math.sqrt(lambda);
+    while (true) {
+      const candidate = Math.floor(lambda + sd * this.normal(random) + 0.5);
+      if (candidate < 0) continue;
+      const logP = candidate * Math.log(lambda) - lambda - this.logGamma(candidate + 1);
+      const proposalLog = -0.5 * Math.log(2 * Math.PI * lambda) - ((candidate - lambda) ** 2) / (2 * lambda);
+      if (Math.log(Math.max(this.MIN_PROBABILITY, random())) <= logP - proposalLog) return candidate;
+    }
+  }
+
+  private static logGamma(z: number): number {
+    const coefficients = [676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+    if (z < 0.5) return Math.log(Math.PI) - Math.log(Math.sin(Math.PI * z)) - this.logGamma(1 - z);
+    let x = 0.99999999999980993;
+    const t0 = z - 1;
+    for (let i = 0; i < coefficients.length; i++) x += coefficients[i] / (t0 + i + 1);
+    const t = t0 + coefficients.length - 0.5;
+    return 0.5 * Math.log(2 * Math.PI) + (t0 + 0.5) * Math.log(t) - t + Math.log(x);
+  }
+
+  private static createRng(seed: number): RandomSource {
+    let state = seed >>> 0 || 0x9e3779b9;
+    return () => {
+      state ^= state << 13;
+      state ^= state >>> 17;
+      state ^= state << 5;
+      state >>>= 0;
+      return (state + 1) / 4294967297;
+    };
+  }
+
+  private static seedFrom(value: string): number {
+    let hash = 2166136261;
+    for (let i = 0; i < value.length; i++) {
+      hash ^= value.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
   }
 }
