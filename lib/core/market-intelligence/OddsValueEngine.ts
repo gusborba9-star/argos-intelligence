@@ -1,8 +1,10 @@
 // ============================================================
-// ODDS VALUE ENGINE v6.0.2 — QUANTITATIVE CHAIN INTEGRITY
-// EV/Kelly are calculated from explicit model probabilities and executable prices.
-// Market-derived fair/reference prices are metadata, never a replacement for p.
+// ODDS VALUE ENGINE v6.1.0 — CANONICAL QUANTITATIVE CHAIN
+// Model probability is the sole source for model fair odds, EV and Kelly.
+// Market fair/reference prices are metadata and never masquerade as model fair.
 // ============================================================
+
+import { buildCanonicalValueChain } from "../quant/QuantitativeIntegrity";
 
 export interface ValueAnalysis {
   expectedValue: number;
@@ -11,7 +13,6 @@ export interface ValueAnalysis {
   isPositive: boolean;
   kellyCriterion: number;
   fullKelly: number;
-  /** Ratio marketOdd / fairOdd. > 1 means executable price is above reference price. */
   realValue: number;
   ratingLabel: "ELITE" | "VALUE" | "MARGINAL" | "NEGATIVE";
   winProbability?: number;
@@ -24,97 +25,65 @@ export class OddsValueEngine {
   private static readonly MAX_EXPOSURE = 0.05;
   private static readonly MIN_EV_THRESHOLD = 0.005;
 
-  public static calculateValue(modelProbability: number, marketOdd: number, fairOdd?: number): ValueAnalysis {
-    this.assertProbability(modelProbability, "model probability");
-    this.assertMarketOdd(marketOdd);
-    this.assertFairOdd(fairOdd);
-
-    const ev = modelProbability * marketOdd - 1;
-    const fullKelly = this.calculateFullKelly(modelProbability, marketOdd);
-    const finalKelly = Math.min(this.MAX_EXPOSURE, fullKelly * this.FRACTIONAL_KELLY);
-    const realValue = fairOdd !== undefined
-      ? parseFloat((marketOdd / fairOdd).toFixed(4))
-      : parseFloat((marketOdd * modelProbability).toFixed(4));
+  public static calculateValue(modelProbability: number, marketOdd: number, marketFairOdd?: number): ValueAnalysis {
+    const chain = buildCanonicalValueChain(modelProbability, marketOdd, this.FRACTIONAL_KELLY);
+    const ev = chain.expectedValue;
+    const fullKelly = chain.fullKelly;
+    const finalKelly = Math.min(this.MAX_EXPOSURE, chain.fractionalKelly);
+    const realValue = marketFairOdd !== undefined
+      ? marketOdd / marketFairOdd
+      : marketOdd / chain.modelFairOdd;
 
     return {
-      expectedValue: parseFloat(ev.toFixed(4)),
-      edge: parseFloat(ev.toFixed(4)),
-      edgePercent: parseFloat((ev * 100).toFixed(2)),
+      expectedValue: Number(ev.toFixed(4)),
+      edge: Number(ev.toFixed(4)),
+      edgePercent: Number((ev * 100).toFixed(2)),
       isPositive: ev > this.MIN_EV_THRESHOLD,
-      kellyCriterion: parseFloat(finalKelly.toFixed(4)),
-      fullKelly: parseFloat(fullKelly.toFixed(4)),
-      realValue,
+      kellyCriterion: Number(finalKelly.toFixed(4)),
+      fullKelly: Number(fullKelly.toFixed(4)),
+      realValue: Number(realValue.toFixed(4)),
       ratingLabel: this.getRatingLabel(ev, modelProbability),
     };
   }
 
-  /**
-   * Asian handicap value calculation with explicit PUSH handling.
-   * EV = P(win) * (odd - 1) - P(loss). PUSH contributes zero.
-   */
+  /** Asian handicap: PUSH contributes zero to EV and Kelly. */
   public static calculateAsianHandicapValue(
     winProbability: number,
     pushProbability: number,
     marketOdd: number,
-    fairOdd?: number
+    marketFairOdd?: number,
   ): ValueAnalysis {
-    this.assertProbability(winProbability, "handicap win probability");
+    if (!Number.isFinite(winProbability) || winProbability <= 0 || winProbability >= 1) {
+      throw new Error(`Invalid handicap win probability: ${winProbability}`);
+    }
     if (!Number.isFinite(pushProbability) || pushProbability < 0 || pushProbability >= 1) {
       throw new Error(`Invalid handicap push probability: ${pushProbability}`);
     }
     const lossProbability = 1 - winProbability - pushProbability;
-    if (lossProbability < -1e-9) {
-      throw new Error(`Invalid handicap settlement probabilities: win=${winProbability}, push=${pushProbability}`);
-    }
-    this.assertMarketOdd(marketOdd);
-    this.assertFairOdd(fairOdd);
+    if (lossProbability < -1e-9) throw new Error("Invalid handicap settlement probabilities");
+    if (!Number.isFinite(marketOdd) || marketOdd <= 1) throw new Error(`Invalid market odd: ${marketOdd}`);
 
     const loss = Math.max(0, lossProbability);
-    const ev = winProbability * (marketOdd - 1) - loss;
     const b = marketOdd - 1;
-    const fullKelly = b > 0 ? Math.max(0, (winProbability * b - loss) / b) : 0;
+    const ev = winProbability * b - loss;
+    const fullKelly = b > 0 ? Math.max(0, ev / b) : 0;
     const finalKelly = Math.min(this.MAX_EXPOSURE, fullKelly * this.FRACTIONAL_KELLY);
-    const realValue = fairOdd !== undefined
-      ? parseFloat((marketOdd / fairOdd).toFixed(4))
-      : parseFloat((marketOdd * winProbability).toFixed(4));
+    const modelFairOdd = 1 / winProbability;
+    const realValue = marketFairOdd !== undefined ? marketOdd / marketFairOdd : marketOdd / modelFairOdd;
 
     return {
-      expectedValue: parseFloat(ev.toFixed(4)),
-      edge: parseFloat(ev.toFixed(4)),
-      edgePercent: parseFloat((ev * 100).toFixed(2)),
+      expectedValue: Number(ev.toFixed(4)),
+      edge: Number(ev.toFixed(4)),
+      edgePercent: Number((ev * 100).toFixed(2)),
       isPositive: ev > this.MIN_EV_THRESHOLD,
-      kellyCriterion: parseFloat(finalKelly.toFixed(4)),
-      fullKelly: parseFloat(fullKelly.toFixed(4)),
-      realValue,
+      kellyCriterion: Number(finalKelly.toFixed(4)),
+      fullKelly: Number(fullKelly.toFixed(4)),
+      realValue: Number(realValue.toFixed(4)),
       ratingLabel: this.getRatingLabel(ev, winProbability),
       winProbability,
       pushProbability,
       lossProbability: loss,
     };
-  }
-
-  private static assertProbability(probability: number, label: string): void {
-    if (!Number.isFinite(probability) || probability <= 0 || probability >= 1) {
-      throw new Error(`Invalid ${label}: ${probability}`);
-    }
-  }
-
-  private static assertMarketOdd(marketOdd: number): void {
-    if (!Number.isFinite(marketOdd) || marketOdd <= 1) {
-      throw new Error(`Invalid market odd: ${marketOdd}`);
-    }
-  }
-
-  private static assertFairOdd(fairOdd?: number): void {
-    if (fairOdd !== undefined && (!Number.isFinite(fairOdd) || fairOdd <= 1)) {
-      throw new Error(`Invalid fair/reference odd: ${fairOdd}`);
-    }
-  }
-
-  private static calculateFullKelly(probability: number, odd: number): number {
-    const b = odd - 1;
-    const q = 1 - probability;
-    return Math.max(0, (probability * b - q) / b);
   }
 
   private static getRatingLabel(ev: number, prob: number): ValueAnalysis["ratingLabel"] {
