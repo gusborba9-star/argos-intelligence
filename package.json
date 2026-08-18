@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "build": "next build",
-    "test:quant": "tsx --test tests/quant/model-invariants.test.ts"
+    "test:quant": "tsx --test tests/quant/*.test.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
