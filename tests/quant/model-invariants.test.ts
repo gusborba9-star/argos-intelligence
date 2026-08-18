@@ -26,7 +26,7 @@ for (const [key, value] of Object.entries(result.probabilities)) {
   assert.ok((value as number) >= 0 && (value as number) <= 1, `${key} must be in [0,1]`);
 }
 
-assert.ok(Math.abs((result.probabilities.over_2.5 ?? 0) + (result.probabilities.under_2.5 ?? 0) - 1) < 1e-12);
+assert.ok(Math.abs((result.probabilities["over_2.5"] ?? 0) + (result.probabilities["under_2.5"] ?? 0) - 1) < 1e-12);
 assert.ok(Math.abs((result.probabilities.btts_yes ?? 0) + (result.probabilities.btts_no ?? 0) - 1) < 1e-12);
 
 // Asian handicap invariant: for Home -1 / Away +1, a one-goal home
