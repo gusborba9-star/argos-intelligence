@@ -12,10 +12,10 @@ import { getSupabaseClient } from "../../core/SupabaseClient";
 import { apiFootballService } from "../../core/ApiFootballService";
 
 export class ArgosMasterOrchestrator {
-  private static readonly VERSION = "6.2.2-MASTER";
+  private static readonly VERSION = "6.3.0-MASTER";
   private static readonly MIN_REAL_SAMPLE = 1;
   private static readonly MAX_PLAUSIBLE_EV = 1.0;
-  private static readonly MAX_ODD_FAIR_RATIO = 3.0;
+  private static readonly MAX_ODD_MARKET_REFERENCE_RATIO = 3.0;
 
   public static async run(matchId: string, rawData: any) {
     console.log(`[ArgosMaster] Starting v${this.VERSION}: ${matchId}`);
@@ -64,29 +64,34 @@ export class ArgosMasterOrchestrator {
       const handicapSettlement = isHandicap ? AsianHandicapSettlementEngine.simulate(features.homeMetrics.goals, features.awayMetrics.goals, regime as any, handicapPoints) : {};
 
       for (const selection of selections) {
-        const fairLine = FairOddsCalculator.calculate(normalizedMarkets, vertical, selection.label, selection.line);
-        if (!fairLine) continue;
+        const marketReference = FairOddsCalculator.calculate(normalizedMarkets, vertical, selection.label, selection.line);
+        if (!marketReference) continue;
         const marketOdd = this.getBestMarketOdd(normalizedMarkets, vertical, selection.label, selection.line);
         if (marketOdd === null) continue;
+
         let modelProbability: number;
         let valueAnalysis: any;
         if (selection.kind === "handicap") {
           const settlement = handicapSettlement[`${selection.side}_${selection.point}`];
           if (!settlement) continue;
           modelProbability = this.clipProbability(settlement.win);
-          valueAnalysis = OddsValueEngine.calculateAsianHandicapValue(modelProbability, settlement.push, marketOdd, fairLine.fairOdd);
+          valueAnalysis = OddsValueEngine.calculateAsianHandicapValue(modelProbability, settlement.push, marketOdd, marketReference.fairOdd);
         } else {
           const rawProb = simulation?.probabilities[selection.key];
           if (rawProb === undefined || !Number.isFinite(rawProb)) continue;
           modelProbability = this.clipProbability(rawProb);
-          valueAnalysis = OddsValueEngine.calculateValue(modelProbability, marketOdd, fairLine.fairOdd);
+          valueAnalysis = OddsValueEngine.calculateValue(modelProbability, marketOdd, marketReference.fairOdd);
         }
-        const oddFairRatio = fairLine.fairOdd > 0 ? marketOdd / fairLine.fairOdd : 1;
-        if (valueAnalysis.expectedValue > this.MAX_PLAUSIBLE_EV || oddFairRatio > this.MAX_ODD_FAIR_RATIO || oddFairRatio < 1 / this.MAX_ODD_FAIR_RATIO) {
-          await this.logAnomaly({ match_id: matchId, vertical, selection: selection.label, line: selection.line, odd: marketOdd, fair_odd: fairLine.fairOdd, probability: modelProbability, expected_value: valueAnalysis.expectedValue, reason: valueAnalysis.expectedValue > this.MAX_PLAUSIBLE_EV ? "EV_ABOVE_CEILING" : "ODD_FAIR_DIVERGENCE" });
+
+        const modelFairOdd = 1 / modelProbability;
+        const marketFairOdd = marketReference.fairOdd;
+        const marketReferenceRatio = marketFairOdd > 0 ? marketOdd / marketFairOdd : 1;
+        if (valueAnalysis.expectedValue > this.MAX_PLAUSIBLE_EV || marketReferenceRatio > this.MAX_ODD_MARKET_REFERENCE_RATIO || marketReferenceRatio < 1 / this.MAX_ODD_MARKET_REFERENCE_RATIO) {
+          await this.logAnomaly({ match_id: matchId, vertical, selection: selection.label, line: selection.line, odd: marketOdd, fair_odd: modelFairOdd, market_reference_odd: marketFairOdd, probability: modelProbability, expected_value: valueAnalysis.expectedValue, reason: valueAnalysis.expectedValue > this.MAX_PLAUSIBLE_EV ? "EV_ABOVE_CEILING" : "MARKET_REFERENCE_DIVERGENCE" });
           continue;
         }
-        opportunities.push({ vertical, selection: selection.label, line: selection.line, handicapPoint: selection.kind === "handicap" ? selection.point : undefined, probability: modelProbability, modelProbability, pushProbability: valueAnalysis.pushProbability ?? 0, lossProbability: valueAnalysis.lossProbability, marketReferenceProbability: this.clipProbability(fairLine.marketConsensus ?? fairLine.fairProb), fairOdd: fairLine.fairOdd, fairSource: fairLine.source, marketConsensusProbability: fairLine.marketConsensus ?? null, marketDivergence: fairLine.divergence ?? 0, odd: marketOdd, expectedValue: valueAnalysis.expectedValue, edge: valueAnalysis.edge, edgePercent: valueAnalysis.edgePercent, kellyCriterion: valueAnalysis.kellyCriterion, ratingLabel: valueAnalysis.ratingLabel, hasEdge: valueAnalysis.isPositive, sampleSize: isCountStatVertical ? Math.min(homeExtra?.sampleSize || 0, awayExtra?.sampleSize || 0) : Math.min(homeHistory.length, awayHistory.length), h2hMatches: h2hSummary?.matchesPlayed ?? 0 });
+
+        opportunities.push({ vertical, selection: selection.label, line: selection.line, handicapPoint: selection.kind === "handicap" ? selection.point : undefined, probability: modelProbability, modelProbability, pushProbability: valueAnalysis.pushProbability ?? 0, lossProbability: valueAnalysis.lossProbability, modelFairOdd, fairOdd: modelFairOdd, marketReferenceOdd: marketFairOdd, fairSource: marketReference.source, marketReferenceProbability: this.clipProbability(marketReference.marketConsensus ?? marketReference.fairProb), marketConsensusProbability: marketReference.marketConsensus ?? null, marketDivergence: marketReference.divergence ?? 0, odd: marketOdd, expectedValue: valueAnalysis.expectedValue, edge: valueAnalysis.edge, edgePercent: valueAnalysis.edgePercent, kellyCriterion: valueAnalysis.kellyCriterion, ratingLabel: valueAnalysis.ratingLabel, hasEdge: valueAnalysis.isPositive, sampleSize: isCountStatVertical ? Math.min(homeExtra?.sampleSize || 0, awayExtra?.sampleSize || 0) : Math.min(homeHistory.length, awayHistory.length), h2hMatches: h2hSummary?.matchesPlayed ?? 0 });
       }
     }
 
@@ -136,11 +141,10 @@ export class ArgosMasterOrchestrator {
   }
 
   private static generateDeepAnalysis(context: any, features: any, opportunities: any[]): string {
-    let summary = "O modelo detectou ";
-    summary += opportunities.length > 3 ? "uma partida de alta densidade operacional com oportunidades em múltiplos mercados. " : "oportunidades pontuais de valor estratégico. ";
-    if (context.lesoes.length > 0) summary += `Impacto contextual de ausências: ${context.lesoes.slice(0, 2).join(", ")}. `;
-    if (features.homeRecentForm > 0.7) summary += "Forte dominância recente do mandante observada. ";
-    summary += "A probabilidade publicada permanece separada da referência de mercado; o EV mede explicitamente a diferença entre modelo e preço disponível.";
+    let summary = opportunities.length > 3 ? "O modelo identificou múltiplas oportunidades quantitativas independentes. " : "O modelo identificou uma oportunidade quantitativa pontual. ";
+    if (context.lesoes.length > 0) summary += `Contexto de ausências: ${context.lesoes.slice(0, 2).join(", ")}. `;
+    if (features.homeRecentForm > 0.7) summary += "Dominância recente do mandante foi incorporada como contexto. ";
+    summary += "Probabilidade, fair odd do modelo, preço de mercado, EV e Kelly pertencem à mesma cadeia quantitativa canônica.";
     return summary;
   }
 }
