@@ -4,13 +4,12 @@ import { OddsValueEngine } from "./OddsValueEngine";
 import { MarketVertical } from "../ArgosUnifiedEngine";
 
 // ============================================================
-// MARKET DISCOVERY ENGINE v6.0.0 — SYNDICATE MASTER EDITION
-// Regra: A partida só é descartada após varredura completa.
-// Se Winner não possui valor, executar TODOS os outros mercados.
-// Inclui: vencedor, empate, handicap, dupla chance, empate anula,
-// over/under, gols HT, ambas marcam, gols equipe, escanteios,
-// cartões, jogadores (gols, assistência, chute).
+// MARKET DISCOVERY ENGINE v6.1.0 — COMPATIBILITY / AUDIT PATH
 // ============================================================
+// IMPORTANT: This engine is not the canonical v6.2 production orchestrator.
+// It remains available for compatibility/audit consumers, but it must never
+// manufacture a model probability from the market fair probability. A market
+// reference is evidence about the market, not an independent model forecast.
 
 export interface Opportunity {
   market: string;
@@ -33,6 +32,7 @@ export interface Opportunity {
   kellyCriterion?: number;
   ratingLabel?: string;
   hasEdge?: boolean;
+  modelProbabilitySource?: string;
 }
 
 export interface DiscoveryReport {
@@ -43,7 +43,6 @@ export interface DiscoveryReport {
   discardedReason?: string;
 }
 
-// Mercados obrigatórios para varredura completa (Syndicate Master)
 const MANDATORY_VERTICALS: MarketVertical[] = [
   MarketVertical.WINNER,
   MarketVertical.HANDICAP,
@@ -61,8 +60,12 @@ const MANDATORY_VERTICALS: MarketVertical[] = [
 
 export class MarketDiscoveryEngine {
   /**
-   * Varre TODOS os mercados normalizados e identifica oportunidades de valor.
-   * A partida só é descartada após varredura completa de todos os mercados.
+   * Varre mercados disponíveis e identifica oportunidades somente quando uma
+   * probabilidade de modelo independente foi fornecida.
+   *
+   * Antes havia um fallback silencioso para `fairLine.fairProb`. Isso fazia o
+   * engine transformar uma estimativa derivada do próprio mercado em
+   * "probabilidade do modelo", podendo fabricar EV artificialmente.
    */
   public static discover(
     normalizedMarkets: NormalizedMarket[],
@@ -70,7 +73,6 @@ export class MarketDiscoveryEngine {
   ): Opportunity[] {
     const opportunities: Opportunity[] = [];
 
-    // Agrupa mercados por vertical para garantir cobertura completa
     const verticalsCovered = new Set(normalizedMarkets.map((m) => m.vertical));
     const missingMandatory = MANDATORY_VERTICALS.filter((v) => !verticalsCovered.has(v));
 
@@ -81,9 +83,7 @@ export class MarketDiscoveryEngine {
     }
 
     for (const market of normalizedMarkets) {
-      // REGRA MASTER: Analisar todos os mercados disponíveis.
       for (const outcome of market.outcomes) {
-        // 1. Calcular Fair Line do Mercado
         const fairLine = FairOddsCalculator.calculate(
           normalizedMarkets,
           market.vertical,
@@ -93,18 +93,26 @@ export class MarketDiscoveryEngine {
 
         if (!fairLine) continue;
 
-        // 2. Obter Probabilidade do Modelo
         const selectionKey = outcome.selection.toUpperCase().replace(/\s+/g, "_");
-        const modelProb =
-          modelPredictions[`${market.vertical}_${selectionKey}_${market.line}`] ||
-          modelPredictions[`${market.vertical}_${outcome.selection}_${market.line}`] ||
-          modelPredictions[`${market.vertical}_${outcome.selection}_0`] ||
-          fairLine.fairProb; // Fallback: usa fair prob como estimativa do modelo
+        const candidateKeys = [
+          `${market.vertical}_${selectionKey}_${market.line}`,
+          `${market.vertical}_${outcome.selection}_${market.line}`,
+          `${market.vertical}_${outcome.selection}_0`
+        ];
+        const modelKey = candidateKeys.find(
+          (key) => Number.isFinite(modelPredictions[key])
+        );
 
-        // 3. Calcular EV Real
+        // HARD INTEGRITY RULE: no independent model probability means no EV
+        // signal. The market fair probability remains available through
+        // FairOddsCalculator for reference, but it cannot impersonate the model.
+        if (!modelKey) continue;
+
+        const modelProb = modelPredictions[modelKey];
+        if (!Number.isFinite(modelProb) || modelProb < 0 || modelProb > 1) continue;
+
         const value = OddsValueEngine.calculateValue(modelProb, outcome.odd, fairLine.fairOdd);
 
-        // 4. Mapear Oportunidade
         opportunities.push({
           market: market.marketName,
           vertical: market.vertical,
@@ -125,6 +133,7 @@ export class MarketDiscoveryEngine {
           divergence: fairLine.divergence,
           kellyCriterion: value.kellyCriterion,
           ratingLabel: value.ratingLabel,
+          modelProbabilitySource: "EXPLICIT_MODEL_PREDICTION"
         });
       }
     }
@@ -132,9 +141,6 @@ export class MarketDiscoveryEngine {
     return opportunities;
   }
 
-  /**
-   * Gera relatório de discovery para auditoria e debug.
-   */
   public static generateReport(opportunities: Opportunity[]): DiscoveryReport {
     const positiveEV = opportunities.filter((o) => o.expectedValue > 0);
     const elite = opportunities.filter((o) => o.ratingLabel === "ELITE");
@@ -149,7 +155,7 @@ export class MarketDiscoveryEngine {
       positiveEVCount: positiveEV.length,
       eliteCount: elite.length,
       verticalBreakdown,
-      discardedReason: opportunities.length === 0 ? "NO_MARKETS_AVAILABLE" : undefined,
+      discardedReason: opportunities.length === 0 ? "NO_INDEPENDENT_MODEL_PROBABILITY" : undefined
     };
   }
 
@@ -163,7 +169,7 @@ export class MarketDiscoveryEngine {
       draftkings: 0.65,
       fanduel: 0.65,
       williamhill: 0.60,
-      betway: 0.55,
+      betway: 0.55
     };
     return weights[bookmaker.toLowerCase()] ?? 0.50;
   }
