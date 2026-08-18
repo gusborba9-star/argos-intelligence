@@ -38,6 +38,6 @@ test("Monte Carlo expected goals remains close to the supplied means", () => {
 
 test("signed handicap states are not collapsed into absolute magnitudes", () => {
   const result = ModelFactory.runMonteCarlo({ homeMean: 1.45, awayMean: 1.05 }, regime, 10000, "GOALS");
-  assert.notEqual(result.probabilities.home_handicap_1, result.probabilities.home_handicap_-1);
-  assert.notEqual(result.probabilities.away_handicap_1, result.probabilities.away_handicap_-1);
+  assert.notEqual(result.probabilities["home_handicap_1"], result.probabilities["home_handicap_-1"]);
+  assert.notEqual(result.probabilities["away_handicap_1"], result.probabilities["away_handicap_-1"]);
 });
