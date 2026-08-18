@@ -2,6 +2,7 @@ import { MarketNormalizer } from "../../core/market-intelligence/MarketNormalize
 import { FairOddsCalculator } from "../../core/market-intelligence/FairOddsCalculator";
 import { OddsValueEngine } from "../../core/market-intelligence/OddsValueEngine";
 import { ModelFactory } from "../../core/ModelFactory";
+import { AsianHandicapSettlementEngine } from "../../core/market-intelligence/AsianHandicapSettlementEngine";
 import { FeatureEngine } from "../../core/FeatureEngine";
 import { DataIngestionService } from "../../core/DataIngestionService";
 import { RAGContextEngine } from "../regime/RAGContextEngine";
@@ -11,20 +12,11 @@ import { getSupabaseClient } from "../../core/SupabaseClient";
 import { apiFootballService } from "../../core/ApiFootballService";
 
 export class ArgosMasterOrchestrator {
-  private static readonly VERSION = "6.2.0-MASTER";
+  private static readonly VERSION = "6.2.1-MASTER";
   private static readonly MIN_REAL_SAMPLE = 1;
   private static readonly MAX_PLAUSIBLE_EV = 1.0;
   private static readonly MAX_ODD_FAIR_RATIO = 3.0;
 
-  /**
-   * Canonical production path:
-   * PropLine -> normalization -> contextual enrichment -> features -> model
-   * -> independent model probability -> market reference -> value -> distribution.
-   *
-   * IMPORTANT: the market reference is diagnostic/shrinkage context only. It is
-   * never mixed back into the published model probability before EV is computed.
-   * This prevents circularity between the model and the market used to measure value.
-   */
   public static async run(matchId: string, rawData: any) {
     console.log(`[ArgosMaster] Starting v${this.VERSION}: ${matchId}`);
 
@@ -33,10 +25,7 @@ export class ArgosMasterOrchestrator {
       return { status: "SKIPPED_EXPIRED", matchId };
     }
 
-    const leagueIdentifier = String(
-      rawData.league_id ?? rawData.sport_key ?? rawData.sport_title ?? "unknown_league"
-    );
-
+    const leagueIdentifier = String(rawData.league_id ?? rawData.sport_key ?? rawData.sport_title ?? "unknown_league");
     const normalizedMarkets = MarketNormalizer.normalize(rawData);
     const report = MarketNormalizer.generateReport(normalizedMarkets);
     console.log(`[ArgosMaster] Markets=${report.totalMarkets} sharp=${report.hasSharpReference}`);
@@ -47,12 +36,8 @@ export class ArgosMasterOrchestrator {
       process.env.GOOGLE_AI_API_KEY!
     );
     const context = await ragEngine.retrieveContext(matchId, leagueIdentifier);
-
-    // Context changes the simulation regime, but never directly becomes a
-    // probability percentage. This keeps qualitative AI context auditable.
     const regime = {
-      variance_multiplier:
-        context.lesoes.length > 0 || context.clima !== "Condições normais" ? 1.3 : 1.1,
+      variance_multiplier: context.lesoes.length > 0 || context.clima !== "Condições normais" ? 1.3 : 1.1,
       model_bias: context.motivacao.includes("favorito") ? 0.05 : 0.02,
       market_regime: "NEUTRAL"
     };
@@ -63,9 +48,7 @@ export class ArgosMasterOrchestrator {
       dataService.getRealTeamHistory(sportKey, rawData.home_team),
       dataService.getRealTeamHistory(sportKey, rawData.away_team)
     ]);
-
-    const hasRealData =
-      homeHistory.length >= this.MIN_REAL_SAMPLE && awayHistory.length >= this.MIN_REAL_SAMPLE;
+    const hasRealData = homeHistory.length >= this.MIN_REAL_SAMPLE && awayHistory.length >= this.MIN_REAL_SAMPLE;
 
     const features = FeatureEngine.generateFeatureVector({
       ...rawData,
@@ -85,22 +68,10 @@ export class ArgosMasterOrchestrator {
       const cornersAwayMean = (awayExtra.cornersFor + homeExtra.cornersAgainst) / 2;
       const cardsHomeMean = (homeExtra.cardsFor + awayExtra.cardsAgainst) / 2;
       const cardsAwayMean = (awayExtra.cardsFor + homeExtra.cardsAgainst) / 2;
-
-      countStatProbabilities[MarketVertical.CORNERS] = ModelFactory.runCountStatSimulation(
-        cornersHomeMean,
-        cornersAwayMean,
-        [7.5, 8.5, 9.5, 10.5, 11.5, 12.5]
-      );
-      countStatProbabilities[MarketVertical.CARDS] = ModelFactory.runCountStatSimulation(
-        cardsHomeMean,
-        cardsAwayMean,
-        [2.5, 3.5, 4.5, 5.5, 6.5]
-      );
+      countStatProbabilities[MarketVertical.CORNERS] = ModelFactory.runCountStatSimulation(cornersHomeMean, cornersAwayMean, [7.5, 8.5, 9.5, 10.5, 11.5, 12.5]);
+      countStatProbabilities[MarketVertical.CARDS] = ModelFactory.runCountStatSimulation(cardsHomeMean, cardsAwayMean, [2.5, 3.5, 4.5, 5.5, 6.5]);
     }
 
-    // H2H is retained as contextual evidence/audit data. It is deliberately
-    // not injected as an arbitrary 10% probability adjustment: that would make
-    // the final probability dependent on a small, noisy sample without calibration.
     let h2hSummary: any = null;
     if (hasRealData) {
       try {
@@ -123,73 +94,66 @@ export class ArgosMasterOrchestrator {
     const opportunities: any[] = [];
 
     for (const vertical of verticalsToAnalyze) {
-      if (
-        !hasRealData &&
-        [MarketVertical.GOALS, MarketVertical.GOALS_HT, MarketVertical.BTTS, MarketVertical.HANDICAP].includes(vertical)
-      ) {
-        continue;
-      }
-      if ([MarketVertical.CORNERS, MarketVertical.CARDS].includes(vertical) && !hasExtraStats) {
-        continue;
-      }
+      if (!hasRealData && [MarketVertical.GOALS, MarketVertical.GOALS_HT, MarketVertical.BTTS, MarketVertical.HANDICAP].includes(vertical)) continue;
+      if ([MarketVertical.CORNERS, MarketVertical.CARDS].includes(vertical) && !hasExtraStats) continue;
 
       const isCountStatVertical = [MarketVertical.CORNERS, MarketVertical.CARDS].includes(vertical);
+      const isHandicap = vertical === MarketVertical.HANDICAP;
       const simulation = isCountStatVertical
         ? { probabilities: countStatProbabilities[vertical] || {} }
-        : await ModelFactory.runMonteCarloWithLearning(
-            { homeMean: features.homeMetrics.goals, awayMean: features.awayMetrics.goals },
-            regime as any,
-            leagueIdentifier,
-            vertical as any
-          );
+        : isHandicap
+          ? null
+          : await ModelFactory.runMonteCarloWithLearning(
+              { homeMean: features.homeMetrics.goals, awayMean: features.awayMetrics.goals },
+              regime as any,
+              leagueIdentifier,
+              vertical as any
+            );
 
-      const selections = this.getSelectionsForVertical(
-        vertical,
-        normalizedMarkets,
-        rawData.home_team,
-        rawData.away_team
-      );
+      const selections = this.getSelectionsForVertical(vertical, normalizedMarkets, rawData.home_team, rawData.away_team);
+      const handicapPoints = isHandicap
+        ? [...new Set(selections.map((s: any) => s.point).filter((p: any) => Number.isFinite(p)))]
+        : [];
+      const handicapSettlement = isHandicap
+        ? AsianHandicapSettlementEngine.simulate(
+            features.homeMetrics.goals,
+            features.awayMetrics.goals,
+            regime as any,
+            handicapPoints
+          )
+        : {};
 
       for (const selection of selections) {
-        const fairLine = FairOddsCalculator.calculate(
-          normalizedMarkets,
-          vertical,
-          selection.label,
-          selection.line
-        );
+        const fairLine = FairOddsCalculator.calculate(normalizedMarkets, vertical, selection.label, selection.line);
         if (!fairLine) continue;
 
-        const rawProb = simulation.probabilities[selection.key];
-        if (rawProb === undefined || !Number.isFinite(rawProb)) continue;
-
-        // This is the model's probability. Do not shrink it toward the market:
-        // EV must measure model-vs-market disagreement, otherwise the model can
-        // manufacture apparent calibration by copying its benchmark.
-        const modelProbability = this.clipProbability(rawProb);
-        const marketReferenceProbability = this.clipProbability(
-          fairLine.marketConsensus ?? fairLine.fairProb
-        );
-
-        const marketOdd = this.getBestMarketOdd(
-          normalizedMarkets,
-          vertical,
-          selection.label,
-          selection.line
-        );
+        const marketOdd = this.getBestMarketOdd(normalizedMarkets, vertical, selection.label, selection.line);
         if (marketOdd === null) continue;
 
-        const valueAnalysis = OddsValueEngine.calculateValue(
-          modelProbability,
-          marketOdd,
-          fairLine.fairOdd
-        );
+        let modelProbability: number;
+        let valueAnalysis;
+        let settlement: any = null;
+
+        if (isHandicap) {
+          const key = `${selection.side}_${selection.point}`;
+          settlement = handicapSettlement[key];
+          if (!settlement) continue;
+          modelProbability = this.clipProbability(settlement.win);
+          valueAnalysis = OddsValueEngine.calculateAsianHandicapValue(
+            modelProbability,
+            settlement.push,
+            marketOdd,
+            fairLine.fairOdd
+          );
+        } else {
+          const rawProb = simulation?.probabilities[selection.key];
+          if (rawProb === undefined || !Number.isFinite(rawProb)) continue;
+          modelProbability = this.clipProbability(rawProb);
+          valueAnalysis = OddsValueEngine.calculateValue(modelProbability, marketOdd, fairLine.fairOdd);
+        }
 
         const oddFairRatio = fairLine.fairOdd > 0 ? marketOdd / fairLine.fairOdd : 1;
-        const isImplausible =
-          valueAnalysis.expectedValue > ArgosMasterOrchestrator.MAX_PLAUSIBLE_EV ||
-          oddFairRatio > ArgosMasterOrchestrator.MAX_ODD_FAIR_RATIO ||
-          oddFairRatio < 1 / ArgosMasterOrchestrator.MAX_ODD_FAIR_RATIO;
-
+        const isImplausible = valueAnalysis.expectedValue > this.MAX_PLAUSIBLE_EV || oddFairRatio > this.MAX_ODD_FAIR_RATIO || oddFairRatio < 1 / this.MAX_ODD_FAIR_RATIO;
         if (isImplausible) {
           await this.logAnomaly({
             match_id: matchId,
@@ -200,10 +164,7 @@ export class ArgosMasterOrchestrator {
             fair_odd: fairLine.fairOdd,
             probability: modelProbability,
             expected_value: valueAnalysis.expectedValue,
-            reason:
-              valueAnalysis.expectedValue > ArgosMasterOrchestrator.MAX_PLAUSIBLE_EV
-                ? "EV_ABOVE_CEILING"
-                : "ODD_FAIR_DIVERGENCE"
+            reason: valueAnalysis.expectedValue > this.MAX_PLAUSIBLE_EV ? "EV_ABOVE_CEILING" : "ODD_FAIR_DIVERGENCE"
           });
           continue;
         }
@@ -212,9 +173,12 @@ export class ArgosMasterOrchestrator {
           vertical,
           selection: selection.label,
           line: selection.line,
+          handicapPoint: isHandicap ? selection.point : undefined,
           probability: modelProbability,
           modelProbability,
-          marketReferenceProbability,
+          pushProbability: valueAnalysis.pushProbability ?? 0,
+          lossProbability: valueAnalysis.lossProbability,
+          marketReferenceProbability: this.clipProbability(fairLine.marketConsensus ?? fairLine.fairProb),
           fairOdd: fairLine.fairOdd,
           fairSource: fairLine.source,
           marketConsensusProbability: fairLine.marketConsensus ?? null,
@@ -226,16 +190,13 @@ export class ArgosMasterOrchestrator {
           kellyCriterion: valueAnalysis.kellyCriterion,
           ratingLabel: valueAnalysis.ratingLabel,
           hasEdge: valueAnalysis.isPositive,
-          sampleSize: isCountStatVertical
-            ? Math.min(homeExtra?.sampleSize || 0, awayExtra?.sampleSize || 0)
-            : Math.min(homeHistory.length, awayHistory.length),
+          sampleSize: isCountStatVertical ? Math.min(homeExtra?.sampleSize || 0, awayExtra?.sampleSize || 0) : Math.min(homeHistory.length, awayHistory.length),
           h2hMatches: h2hSummary?.matchesPlayed ?? 0
         });
       }
     }
 
     const analysisSummary = this.generateDeepAnalysis(context, features, opportunities);
-
     if (opportunities.length > 0) {
       await SignalDistributionEngine.processAndDispatch(
         opportunities.map((op) => ({ ...op, analysisSummary })),
@@ -251,13 +212,7 @@ export class ArgosMasterOrchestrator {
       );
     }
 
-    return {
-      status: "SUCCESS",
-      version: this.VERSION,
-      matchId,
-      opportunitiesFound: opportunities.length,
-      timestamp: new Date().toISOString()
-    };
+    return { status: "SUCCESS", version: this.VERSION, matchId, opportunitiesFound: opportunities.length, timestamp: new Date().toISOString() };
   }
 
   private static clipProbability(probability: number): number {
@@ -265,19 +220,10 @@ export class ArgosMasterOrchestrator {
   }
 
   private static async logAnomaly(payload: Record<string, unknown>): Promise<void> {
-    try {
-      await getSupabaseClient().from("argos_anomaly_log").insert(payload);
-    } catch {
-      // Observability must never break the analysis path.
-    }
+    try { await getSupabaseClient().from("argos_anomaly_log").insert(payload); } catch { /* observability never breaks analysis */ }
   }
 
-  private static getSelectionsForVertical(
-    vertical: MarketVertical,
-    normalizedMarkets: any[],
-    homeTeam?: string,
-    awayTeam?: string
-  ) {
+  private static getSelectionsForVertical(vertical: MarketVertical, normalizedMarkets: any[], homeTeam?: string, awayTeam?: string) {
     switch (vertical) {
       case MarketVertical.WINNER:
         return [
@@ -286,56 +232,31 @@ export class ArgosMasterOrchestrator {
           { key: "away", label: "Away", line: 0 }
         ];
       case MarketVertical.GOALS: {
-        const lines = new Set<number>(
-          normalizedMarkets
-            .filter((m) => m.vertical === MarketVertical.GOALS)
-            .map((m) => m.line)
-            .filter((l: number) => Number.isFinite(l))
-        );
-        return [...lines].flatMap((line) => [
-          { key: `over_${line}`, label: "Over", line },
-          { key: `under_${line}`, label: "Under", line }
-        ]);
+        const lines = new Set<number>(normalizedMarkets.filter((m) => m.vertical === vertical).map((m) => m.line).filter((l: number) => Number.isFinite(l)));
+        return [...lines].flatMap((line) => [{ key: `over_${line}`, label: "Over", line }, { key: `under_${line}`, label: "Under", line }]);
       }
       case MarketVertical.CORNERS:
       case MarketVertical.CARDS: {
-        const lines = new Set<number>(
-          normalizedMarkets
-            .filter((m) => m.vertical === vertical)
-            .map((m) => m.line)
-            .filter((l: number) => Number.isFinite(l))
-        );
-        return [...lines].flatMap((line) => [
-          { key: `over_${line}`, label: "Over", line },
-          { key: `under_${line}`, label: "Under", line }
-        ]);
+        const lines = new Set<number>(normalizedMarkets.filter((m) => m.vertical === vertical).map((m) => m.line).filter((l: number) => Number.isFinite(l)));
+        return [...lines].flatMap((line) => [{ key: `over_${line}`, label: "Over", line }, { key: `under_${line}`, label: "Under", line }]);
       }
       case MarketVertical.BTTS:
-        return [
-          { key: "btts_yes", label: "Yes", line: 0 },
-          { key: "btts_no", label: "No", line: 0 }
-        ];
+        return [{ key: "btts_yes", label: "Yes", line: 0 }, { key: "btts_no", label: "No", line: 0 }];
       case MarketVertical.HANDICAP: {
         if (!homeTeam || !awayTeam) return [];
-        const selections: { key: string; label: string; line: number }[] = [];
+        const selections: { key: string; label: string; line: number; point: number; side: "home" | "away" }[] = [];
         const seen = new Set<string>();
-        normalizedMarkets
-          .filter((m) => m.vertical === MarketVertical.HANDICAP)
-          .forEach((m) => {
-            m.outcomes.forEach((o: any) => {
-              const rawPoint = o.point ?? m.line;
-              if (!Number.isFinite(rawPoint)) return;
-              const magnitude = Math.abs(rawPoint);
-              const dedupeKey = `${o.selection}|${rawPoint}`;
-              if (seen.has(dedupeKey)) return;
-              seen.add(dedupeKey);
-              if (o.selection === homeTeam) {
-                selections.push({ key: `home_handicap_${magnitude}`, label: homeTeam, line: magnitude });
-              } else if (o.selection === awayTeam) {
-                selections.push({ key: `away_handicap_${magnitude}`, label: awayTeam, line: magnitude });
-              }
-            });
+        normalizedMarkets.filter((m) => m.vertical === vertical).forEach((m) => {
+          m.outcomes.forEach((o: any) => {
+            const rawPoint = o.point ?? m.line;
+            if (!Number.isFinite(rawPoint)) return;
+            const dedupeKey = `${o.selection}|${rawPoint}`;
+            if (seen.has(dedupeKey)) return;
+            seen.add(dedupeKey);
+            if (o.selection === homeTeam) selections.push({ key: `home_${rawPoint}`, label: homeTeam, line: Math.abs(rawPoint), point: rawPoint, side: "home" });
+            else if (o.selection === awayTeam) selections.push({ key: `away_${rawPoint}`, label: awayTeam, line: Math.abs(rawPoint), point: rawPoint, side: "away" });
           });
+        });
         return selections;
       }
       default:
@@ -343,35 +264,21 @@ export class ArgosMasterOrchestrator {
     }
   }
 
-  private static getBestMarketOdd(
-    normalizedMarkets: any[],
-    vertical: MarketVertical,
-    selectionLabel: string,
-    line: number
-  ): number | null {
+  private static getBestMarketOdd(normalizedMarkets: any[], vertical: MarketVertical, selectionLabel: string, line: number): number | null {
     const candidates = normalizedMarkets
       .filter((m) => m.vertical === vertical && m.line === line)
       .flatMap((m) => m.outcomes)
       .filter((o: any) => o.selection.toLowerCase() === selectionLabel.toLowerCase())
       .map((o: any) => o.odd)
       .filter((odd: number) => Number.isFinite(odd) && odd >= 1.35 && odd < 100);
-
     return candidates.length > 0 ? Math.max(...candidates) : null;
   }
 
   private static generateDeepAnalysis(context: any, features: any, opportunities: any[]): string {
     let summary = "O modelo detectou ";
-    summary += opportunities.length > 3
-      ? "uma partida de alta densidade operacional com oportunidades em múltiplos mercados. "
-      : "oportunidades pontuais de valor estratégico. ";
-
-    if (context.lesoes.length > 0) {
-      summary += `Impacto contextual de ausências: ${context.lesoes.slice(0, 2).join(", ")}. `;
-    }
-    if (features.homeRecentForm > 0.7) {
-      summary += "Forte dominância recente do mandante observada. ";
-    }
-
+    summary += opportunities.length > 3 ? "uma partida de alta densidade operacional com oportunidades em múltiplos mercados. " : "oportunidades pontuais de valor estratégico. ";
+    if (context.lesoes.length > 0) summary += `Impacto contextual de ausências: ${context.lesoes.slice(0, 2).join(", ")}. `;
+    if (features.homeRecentForm > 0.7) summary += "Forte dominância recente do mandante observada. ";
     summary += "A probabilidade publicada permanece separada da referência de mercado; o EV mede explicitamente a diferença entre modelo e preço disponível.";
     return summary;
   }
