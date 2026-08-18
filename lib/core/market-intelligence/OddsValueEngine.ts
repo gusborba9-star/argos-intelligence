@@ -1,67 +1,63 @@
 // ============================================================
-// ODDS VALUE ENGINE v6.0.0 — SYNDICATE MASTER EDITION
-// Regra: NUNCA enviar sinal sem essa camada.
-// O sistema avalia: odd, linha, probabilidade estimada, EV e confiança.
-// Nunca usa somente o valor absoluto da odd como filtro (ex: 1.50 pode ter valor).
+// ODDS VALUE ENGINE v6.0.1 — QUANTITATIVE CHAIN INTEGRITY
+// EV/Kelly are calculated exclusively from model probability + executable price.
+// Market-derived fair/reference prices are metadata, never a replacement for p.
 // ============================================================
 
 export interface ValueAnalysis {
-  expectedValue: number;   // EV% = (prob * odd) - 1
-  edge: number;            // Edge = EV (alias semântico para clareza)
-  edgePercent: number;     // Edge em percentual (ex: 8.5 = 8.5%)
-  isPositive: boolean;     // true se EV > 0
-  kellyCriterion: number;  // Fração sugerida da banca (Fractional Kelly)
-  fullKelly: number;       // Kelly completo (para referência)
-  realValue: number;       // Valor real = fairOdd / marketOdd (> 1 = value bet)
+  expectedValue: number;
+  edge: number;
+  edgePercent: number;
+  isPositive: boolean;
+  kellyCriterion: number;
+  fullKelly: number;
+  /** Ratio marketOdd / fairOdd. > 1 means executable price is above reference fair price. */
+  realValue: number;
   ratingLabel: "ELITE" | "VALUE" | "MARGINAL" | "NEGATIVE";
 }
 
 export class OddsValueEngine {
-  // Syndicate Standard: 1/4 Kelly para segurança operacional
   private static readonly FRACTIONAL_KELLY = 0.25;
-  // Máximo 5% da banca por sinal (gestão de risco profissional)
   private static readonly MAX_EXPOSURE = 0.05;
-  // Mínimo de EV para considerar sinal válido (0.5%)
-  // Reduzido para capturar mais oportunidades de valor real, mesmo em odds baixas
   private static readonly MIN_EV_THRESHOLD = 0.005;
 
-  /**
-   * Calcula o valor esperado real baseado na probabilidade do modelo e odd do mercado.
-   * Implementa Fractional Kelly para gestão de banca profissional.
-   *
-   * @param modelProbability - Probabilidade calculada pelo modelo (0 a 1)
-   * @param marketOdd        - Odd decimal oferecida pelo bookmaker
-   * @param fairOdd          - Odd justa calculada pelo FairOddsCalculator (opcional)
-   */
   public static calculateValue(
     modelProbability: number,
     marketOdd: number,
     fairOdd?: number
   ): ValueAnalysis {
-    // Proteção contra valores inválidos
-    const prob = Math.max(0.001, Math.min(0.999, modelProbability));
-    const odd = Math.max(1.01, marketOdd);
+    if (!Number.isFinite(modelProbability) || modelProbability <= 0 || modelProbability >= 1) {
+      throw new Error(`Invalid model probability: ${modelProbability}`);
+    }
+    if (!Number.isFinite(marketOdd) || marketOdd <= 1) {
+      throw new Error(`Invalid market odd: ${marketOdd}`);
+    }
+    if (fairOdd !== undefined && (!Number.isFinite(fairOdd) || fairOdd <= 1)) {
+      throw new Error(`Invalid fair/reference odd: ${fairOdd}`);
+    }
 
-    // EV = (prob * odd) - 1
+    const prob = modelProbability;
+    const odd = marketOdd;
+
+    // EV = p * decimalOdd - 1
     const ev = prob * odd - 1;
     const edgePercent = parseFloat((ev * 100).toFixed(2));
 
-    // Kelly Criterion: f* = (p * b - q) / b
-    // onde b = odd - 1 (lucro por unidade), q = 1 - p
+    // Kelly: f* = (p*b-q)/b
     const b = odd - 1;
     const q = 1 - prob;
-    const fullKelly = b > 0 ? (prob * b - q) / b : 0;
-
-    // Fractional Kelly (1/4) com limite máximo de exposição
+    const fullKellyRaw = (prob * b - q) / b;
+    const fullKelly = Math.max(0, fullKellyRaw);
     const fractionalKelly = fullKelly * this.FRACTIONAL_KELLY;
-    const finalKelly = Math.max(0, Math.min(this.MAX_EXPOSURE, fractionalKelly));
+    const finalKelly = Math.min(this.MAX_EXPOSURE, fractionalKelly);
 
-    // Valor Real: razão entre fair odd e market odd
-    // > 1 = value bet (mercado subestima a probabilidade real)
-    const realValue = fairOdd ? parseFloat((fairOdd / odd).toFixed(4)) : parseFloat((1 / (prob * odd)).toFixed(4));
+    // Reference-price value ratio. This is intentionally separate from EV.
+    // If marketOdd > fairOdd, the executable price is above the reference price.
+    const realValue = fairOdd !== undefined
+      ? parseFloat((marketOdd / fairOdd).toFixed(4))
+      : parseFloat((marketOdd * prob).toFixed(4));
 
-    // Rating qualitativo do sinal
-    const ratingLabel = this.getRatingLabel(ev, prob, odd);
+    const ratingLabel = this.getRatingLabel(ev, prob);
 
     return {
       expectedValue: parseFloat(ev.toFixed(4)),
@@ -69,31 +65,22 @@ export class OddsValueEngine {
       edgePercent,
       isPositive: ev > this.MIN_EV_THRESHOLD,
       kellyCriterion: parseFloat(finalKelly.toFixed(4)),
-      fullKelly: parseFloat(Math.max(0, fullKelly).toFixed(4)),
+      fullKelly: parseFloat(fullKelly.toFixed(4)),
       realValue,
       ratingLabel,
     };
   }
 
-  /**
-   * Classifica a qualidade do sinal com base no EV, probabilidade e odd.
-   * Removido filtro agressivo de odds baixas.
-   */
-  private static getRatingLabel(ev: number, prob: number, odd: number): ValueAnalysis["ratingLabel"] {
-    // ELITE: Alto EV e alta probabilidade (independente da odd)
+  private static getRatingLabel(
+    ev: number,
+    prob: number
+  ): ValueAnalysis["ratingLabel"] {
     if (ev >= 0.10 && prob >= 0.55) return "ELITE";
-    
-    // VALUE: EV consistente (ex: odd 1.50 com prob 75% = EV 0.125 -> ELITE)
     if (ev >= 0.05) return "VALUE";
-    
     if (ev > 0) return "MARGINAL";
     return "NEGATIVE";
   }
 
-  /**
-   * Verifica se um sinal atende ao threshold mínimo para ser despachado.
-   * Regra: NUNCA enviar sinal sem EV calculado e positivo.
-   */
   public static isValidSignal(analysis: ValueAnalysis): boolean {
     return analysis.isPositive && analysis.expectedValue > this.MIN_EV_THRESHOLD;
   }
