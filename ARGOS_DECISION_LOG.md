@@ -67,3 +67,15 @@ Additional markets and additional signals are subordinate to calibration, correc
 **Status:** Accepted
 
 Environment files containing credentials are deployment/local configuration, not source code. They must be ignored and removed from version control. Any credential that has been exposed in repository history must be treated as compromised and rotated through its provider.
+
+## ADR-012 — Argos is not a veto engine
+
+**Status:** Accepted
+
+The quantitative core should analyze available markets rather than silently suppressing them merely because confidence is low. Low-quality, uncertain or anomalous outputs must remain observable in the internal audit/diagnostic layer with explicit reason codes. Publication filters may determine what reaches FREE/VIP, but they must not erase the underlying analytical result. This preserves maximum information, enables learning, and avoids turning the product into a system that primarily says "no signal".
+
+## ADR-013 — Asian handicap settlement semantics are explicit
+
+**Status:** Accepted
+
+For the standard football convention, Home -x and Away +x are treated as opposing sides of the same handicap magnitude. Integer lines contain a PUSH state and therefore their two win probabilities must not be forced to sum to 1. Any future handicap implementation must preserve signed point semantics and settlement state rather than reducing the line to an unsigned magnitude prematurely.
