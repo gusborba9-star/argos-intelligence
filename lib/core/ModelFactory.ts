@@ -3,11 +3,8 @@ import { OddsValueEngine, ValueAnalysis } from "./market-intelligence/OddsValueE
 import { learningEngine } from "./ContinuousLearningEngine";
 
 // ============================================================
-// MODEL FACTORY v6.1.1 — SYNDICATE MASTER EDITION
-// Correção crítica: liquidação probabilística de handicap asiático.
-// O modelo agora respeita a convenção de mercado:
-//   Home -x  <=> Away +x
-// e trata linhas inteiras com PUSH explicitamente.
+// MODEL FACTORY v6.1.2 — SYNDICATE MASTER EDITION
+// Quant integrity: calibration is conservative and market-family aware.
 // ============================================================
 
 export interface MarketMetrics {
@@ -34,32 +31,64 @@ export class ModelFactory {
   private static readonly DEFAULT_ITERATIONS = 10000;
 
   /**
-   * Monte Carlo v6.1.1 — Motor de Simulação com calibração de aprendizado.
+   * Monte Carlo with controlled post-settlement calibration.
+   *
+   * Important: a scalar historical bias is suitable for binary probability
+   * families (over/under). It is NOT sufficient to move home/draw/away
+   * independently in a three-class market because doing so can destroy the
+   * probability simplex and manufacture probability mass.
+   *
+   * Therefore winner probabilities are deliberately left untouched until a
+   * proper multiclass calibrator exists. This is not a veto: the raw model
+   * result remains available and is still ranked downstream.
    */
   static async runMonteCarloWithLearning(
     metrics: MarketMetrics,
     regime: RegimeProfile,
     leagueId: string,
-    marketType: "GOALS" | "CORNERS" | "CARDS" | "SHOTS" = "GOALS",
+    marketType: "GOALS" | "CORNERS" | "CARDS" | "SHOTS" | "WINNER" | "BTTS" | "HANDICAP" | "GOALS_HT" = "GOALS",
     iterations: number = ModelFactory.DEFAULT_ITERATIONS
   ): Promise<SimulationResult> {
     const calibration = await learningEngine.getCalibration(leagueId, marketType);
-    const baseResult = this.runMonteCarlo(metrics, regime, iterations, marketType);
-    const adj = calibration.probabilityAdjustment;
-    const clamp = (v: number) => Math.max(0.01, Math.min(0.99, v));
+    const baseResult = this.runMonteCarlo(metrics, regime, iterations, marketType as any);
+    const probabilities = { ...baseResult.probabilities };
+    let calibrationApplied = 0;
+
+    // Only binary over/under calibration is currently mathematically
+    // conservative. It preserves P(over) + P(under) = 1.
+    if (probabilities.over !== undefined && probabilities.under !== undefined) {
+      const adjustedOver = this.applyBinaryBias(probabilities.over, calibration.probabilityAdjustment);
+      probabilities.over = adjustedOver;
+      probabilities.under = 1 - adjustedOver;
+      calibrationApplied = adjustedOver - baseResult.probabilities.over;
+    }
+
+    // BTTS is also binary when present. The current simulation produces
+    // explicit btts_yes/btts_no keys; apply the same conservative transform.
+    if (probabilities.btts_yes !== undefined && probabilities.btts_no !== undefined) {
+      const adjustedYes = this.applyBinaryBias(probabilities.btts_yes, calibration.probabilityAdjustment);
+      probabilities.btts_yes = adjustedYes;
+      probabilities.btts_no = 1 - adjustedYes;
+    }
 
     return {
       ...baseResult,
-      probabilities: {
-        ...baseResult.probabilities,
-        home: clamp(baseResult.probabilities.home + (adj * 0.5)),
-        draw: clamp(baseResult.probabilities.draw - (adj * 0.2)),
-        away: clamp(baseResult.probabilities.away + (adj * 0.5)),
-        over: baseResult.probabilities.over !== undefined ? clamp(baseResult.probabilities.over + adj) : undefined,
-        under: baseResult.probabilities.under !== undefined ? clamp(baseResult.probabilities.under - adj) : undefined,
-      },
-      calibrationApplied: adj
+      probabilities,
+      calibrationApplied
     };
+  }
+
+  /**
+   * Applies a bounded additive bias in log-odds space.
+   * Unlike direct probability addition, this remains bounded and preserves
+   * the binary complement exactly.
+   */
+  private static applyBinaryBias(probability: number, bias: number): number {
+    const p = Math.max(0.001, Math.min(0.999, probability));
+    const boundedBias = Math.max(-0.15, Math.min(0.15, bias));
+    const logit = Math.log(p / (1 - p));
+    const adjusted = 1 / (1 + Math.exp(-(logit + boundedBias)));
+    return Math.max(0.001, Math.min(0.999, adjusted));
   }
 
   /**
@@ -87,11 +116,8 @@ export class ModelFactory {
     const overCounts: Record<string, number> = {};
     GOAL_LINES.forEach((l) => (overCounts[l] = 0));
 
-    // Linhas padrão de handicap asiático. Para cada magnitude m:
-    //   home_handicap_m = Home -m
-    //   away_handicap_m = Away +m
-    // Linhas inteiras possuem PUSH e, portanto, as duas probabilidades
-    // não necessariamente somam 1.
+    // home_handicap_m = Home -m; away_handicap_m = Away +m.
+    // Integer lines explicitly allow PUSH.
     const HANDICAP_LINES = [-2, -1.5, -1, -0.5, 0.5, 1, 1.5, 2];
     const homeCoversCounts: Record<string, number> = {};
     const awayCoversCounts: Record<string, number> = {};
@@ -122,9 +148,6 @@ export class ModelFactory {
         if (matchTotal > l) overCounts[l]++;
       });
 
-      // IMPORTANT: `home_handicap_m` represents Home -m and
-      // `away_handicap_m` represents Away +m. The same magnitude is used
-      // because the normalized market groups both sides by |point|.
       HANDICAP_LINES.forEach((l) => {
         const magnitude = Math.abs(l);
         if (goalDiff - magnitude > 0) homeCoversCounts[magnitude]++;
