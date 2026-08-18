@@ -1,18 +1,17 @@
-import crypto from "crypto";
-
 // ============================================================
-// ARGOS v6.1.0 — SYNDICATE QUANT ENGINE (RANKING EDITION)
-// Ensemble Adaptive • Multi-Vertical Scanning • Value-Focused
-// MUDANÇA: Calibração e Geração agora são RANKING, não bloqueio.
+// ARGOS UNIFIED ENGINE — LEGACY COMPATIBILITY PATH
 // ============================================================
+// The canonical production path is ArgosMasterOrchestrator.
+// This module is retained only for compatibility with older callers.
+// It must never manufacture probability or apply hidden confidence boosts.
 
 export const MIN_PROB = 0.02;
 export const MAX_PROB = 0.98;
 export const MIN_ODDS = 1.01;
 export const MAX_ODDS = 50.0;
-export const BASE_EDGE = 0.002; 
-export const MAX_EXPOSURE = 10.0; // Aumentado de 5.0 para 10.0 (volume)
-export const TOP_K = 12; // Aumentado de 6 para 12 (volume)
+export const BASE_EDGE = 0.002;
+export const MAX_EXPOSURE = 10.0;
+export const TOP_K = 12;
 
 export enum MarketVertical {
   WINNER = "WINNER",
@@ -65,15 +64,13 @@ export interface Signal {
 }
 
 export class ArgosUnifiedEngine {
-  private static readonly VERSION = "ARGOS_v6.1.0_RANKING";
+  private static readonly VERSION = "ARGOS_LEGACY_COMPAT";
 
   public static analyze(input: MatchContextInput) {
     if (!input?.matchId) throw new Error("invalid matchId");
 
-    const verticals = this.normalize(input);
-    const raw = this.generate(verticals);
-    const fused = this.fuse(raw);
-    const calibrated = this.calibrate(fused);
+    const raw = this.generate(this.normalize(input));
+    const calibrated = this.calibrate(raw);
     const portfolio = this.portfolio(calibrated);
 
     return {
@@ -91,37 +88,31 @@ export class ArgosUnifiedEngine {
     for (const [vertical, markets] of Object.entries(v) as any) {
       if (!markets) continue;
       for (const m of markets as any) {
-        const p = this.clamp(m.probability);
-        const ev = p * m.impliedOdds - 1;
-        
-        // MUDANÇA: Reduzido drasticamente o filtro de geração
-        // Se tem qualquer probabilidade mínima, entra no fluxo de ranking
-        if (p < 0.10) continue; 
+        const probability = this.clamp(Number(m.probability));
+        const impliedOdds = Number(m.impliedOdds);
+        if (!Number.isFinite(probability) || !Number.isFinite(impliedOdds) || impliedOdds <= 0) continue;
+        if (probability < 0.10) continue;
 
         out.push({
           vertical: vertical as MarketVertical,
           market: m.label,
-          probability: m.probability,
-          adjustedProbability: p,
-          impliedOdds: m.impliedOdds,
-          ev
+          probability,
+          adjustedProbability: probability,
+          impliedOdds,
+          ev: probability * impliedOdds - 1
         });
       }
     }
     return out;
   }
 
+  // Compatibility stage only. No hidden +2% confidence boost.
   private static fuse(signals: Signal[]): Signal[] {
-    return signals.map(s => ({
-      ...s,
-      adjustedProbability: this.clamp(s.probability * 1.02)
-    }));
+    return signals;
   }
 
   private static calibrate(signals: Signal[]): Signal[] {
-    // MUDANÇA: Calibração não bloqueia mais por odds
-    // Apenas garante que os valores sejam numéricos válidos
-    return signals.filter(s => !isNaN(s.impliedOdds) && s.impliedOdds > 0);
+    return signals.filter((s) => Number.isFinite(s.impliedOdds) && s.impliedOdds > 0);
   }
 
   private static portfolio(signals: Signal[]) {
@@ -130,16 +121,15 @@ export class ArgosUnifiedEngine {
     const perVertical: Record<string, number> = {};
     let exposure = 0;
 
-    for (const s of sorted) {
-      perVertical[s.vertical] ||= 0;
-      if (perVertical[s.vertical] >= TOP_K) continue;
+    for (const signal of sorted) {
+      perVertical[signal.vertical] ||= 0;
+      if (perVertical[signal.vertical] >= TOP_K) continue;
 
-      // Unidades fixas menores para permitir maior volume sem estourar exposição
       const units = 0.25;
       if (exposure + units > MAX_EXPOSURE) continue;
 
-      selected.push({ ...s, units });
-      perVertical[s.vertical]++;
+      selected.push({ ...signal, units });
+      perVertical[signal.vertical]++;
       exposure += units;
     }
     return selected;
