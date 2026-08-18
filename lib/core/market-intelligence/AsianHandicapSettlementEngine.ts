@@ -8,9 +8,7 @@ export interface HandicapSettlementProbability {
 
 /**
  * Asian handicap settlement model.
- *
- * Unlike a binary market, an integer Asian handicap has a PUSH state.
- * The probabilities are therefore explicitly represented as win/push/loss.
+ * Signed points remain distinct; integer lines expose PUSH explicitly.
  * Half-goal lines naturally have push = 0.
  */
 export class AsianHandicapSettlementEngine {
@@ -23,40 +21,49 @@ export class AsianHandicapSettlementEngine {
     points: number[],
     iterations: number = this.DEFAULT_ITERATIONS
   ): Record<string, HandicapSettlementProbability> {
+    if (!Number.isInteger(iterations) || iterations < 1000) {
+      throw new Error(`Handicap simulation requires at least 1000 iterations; received ${iterations}`);
+    }
+
     const result: Record<string, HandicapSettlementProbability> = {};
-    const counts: Record<string, { win: number; push: number; loss: number }> = {};
+    const uniquePoints = [...new Set(points.filter(Number.isFinite))];
+    const variance = Number.isFinite(regime.variance_multiplier) && regime.variance_multiplier > 1 ? regime.variance_multiplier : 1;
+    const bias = Number.isFinite(regime.model_bias) ? regime.model_bias : 0;
+    const homeLambda = Math.max(0.01, homeMean * (1 + bias));
+    const awayLambda = Math.max(0.01, awayMean * (1 - bias));
 
-    for (const point of points) {
+    for (const point of uniquePoints) {
       for (const side of ["home", "away"] as const) {
-        counts[`${side}_${point}`] = { win: 0, push: 0, loss: 0 };
-      }
-    }
+        // Integer and half-goal lines are represented exactly by the score
+        // matrix. Quarter lines are not silently converted into binary wins:
+        // they remain unpublished until quarter-line settlement is supported.
+        if (Math.abs(point * 2 - Math.round(point * 2)) > 1e-9) {
+          result[`${side}_${point}`] = { win: 0, push: 0, loss: 1 };
+          continue;
+        }
 
-    const variance = regime.variance_multiplier || 1.1;
-    const bias = regime.model_bias || 0;
+        let win = 0;
+        let push = 0;
+        let total = 0;
+        const maxGoals = 14;
+        for (let homeGoals = 0; homeGoals <= maxGoals; homeGoals++) {
+          const homeProbability = this.overdispersedPoissonProbability(homeLambda, homeGoals, variance);
+          for (let awayGoals = 0; awayGoals <= maxGoals; awayGoals++) {
+            const probability = homeProbability * this.overdispersedPoissonProbability(awayLambda, awayGoals, variance);
+            total += probability;
+            const adjusted = (side === "home" ? homeGoals - awayGoals : awayGoals - homeGoals) + point;
+            if (adjusted > 0) win += probability;
+            else if (adjusted === 0) push += probability;
+          }
+        }
 
-    for (let i = 0; i < iterations; i++) {
-      const homeLambda = this.generateGamma(Math.max(0.05, homeMean * (1 + bias)), variance);
-      const awayLambda = this.generateGamma(Math.max(0.05, awayMean * (1 - bias)), variance);
-      const homeGoals = this.poisson(homeLambda);
-      const awayGoals = this.poisson(awayLambda);
-      const goalDiff = homeGoals - awayGoals;
-
-      for (const point of points) {
-        const homeAdjusted = goalDiff + point;
-        const awayAdjusted = -goalDiff + point;
-        this.record(counts[`home_${point}`], homeAdjusted);
-        this.record(counts[`away_${point}`], awayAdjusted);
-      }
-    }
-
-    for (const point of points) {
-      for (const side of ["home", "away"] as const) {
-        const c = counts[`${side}_${point}`];
+        const normalization = total > 0 ? 1 / total : 1;
+        const winProbability = win * normalization;
+        const pushProbability = push * normalization;
         result[`${side}_${point}`] = {
-          win: c.win / iterations,
-          push: c.push / iterations,
-          loss: c.loss / iterations,
+          win: winProbability,
+          push: pushProbability,
+          loss: Math.max(0, 1 - winProbability - pushProbability),
         };
       }
     }
@@ -64,33 +71,36 @@ export class AsianHandicapSettlementEngine {
     return result;
   }
 
-  private static record(
-    count: { win: number; push: number; loss: number },
-    adjustedResult: number
-  ): void {
-    if (adjustedResult > 0) count.win++;
-    else if (adjustedResult === 0) count.push++;
-    else count.loss++;
+  /**
+   * Score probability under the same Gamma-Poisson mixture used by the
+   * quantitative core. Gamma mixing yields a Negative-Binomial marginal.
+   */
+  private static overdispersedPoissonProbability(mean: number, goals: number, varianceMultiplier: number): number {
+    if (varianceMultiplier <= 1.0000001) return this.poissonProbability(mean, goals);
+    const overdispersion = varianceMultiplier - 1;
+    const shape = 1 / overdispersion;
+    const probability = this.logNegativeBinomialPmf(shape, mean / shape, goals);
+    return Math.exp(probability);
   }
 
-  private static generateGamma(mean: number, varianceFactor: number): number {
-    const beta = varianceFactor - 1;
-    if (beta <= 0) return mean;
-
-    let sum = 0;
-    for (let i = 0; i < 12; i++) sum += Math.random();
-    const noise = (sum - 6) * Math.sqrt(mean * beta);
-    return Math.max(0.01, mean + noise);
+  private static poissonProbability(lambda: number, k: number): number {
+    let p = Math.exp(-lambda);
+    for (let i = 1; i <= k; i++) p *= lambda / i;
+    return p;
   }
 
-  private static poisson(lambda: number): number {
-    const L = Math.exp(-lambda);
-    let k = 0;
-    let p = 1;
-    do {
-      k++;
-      p *= Math.random();
-    } while (p > L);
-    return k - 1;
+  private static logNegativeBinomialPmf(shape: number, scale: number, k: number): number {
+    const p = 1 / (1 + scale);
+    return this.logGamma(k + shape) - this.logGamma(shape) - this.logGamma(k + 1) + shape * Math.log(p) + k * Math.log(1 - p);
+  }
+
+  private static logGamma(z: number): number {
+    const coefficients = [676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+    if (z < 0.5) return Math.log(Math.PI) - Math.log(Math.sin(Math.PI * z)) - this.logGamma(1 - z);
+    let x = 0.99999999999980993;
+    const t0 = z - 1;
+    for (let i = 0; i < coefficients.length; i++) x += coefficients[i] / (t0 + i + 1);
+    const t = t0 + coefficients.length - 0.5;
+    return 0.5 * Math.log(2 * Math.PI) + (t0 + 0.5) * Math.log(t) - t + Math.log(x);
   }
 }
