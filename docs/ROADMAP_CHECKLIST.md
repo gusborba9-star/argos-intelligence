@@ -8,7 +8,7 @@
 
 Construir um motor de inteligência pré-jogo para futebol global comparável em disciplina quantitativa a operações profissionais de análise de mercado: probabilidades independentes, fair prices auditáveis, valor esperado, microestrutura de mercado, contexto externo, aprendizado histórico e distribuição escalável.
 
-**Princípio:** potência sem falsa precisão. O Argos deve procurar oportunidades; não deve fabricar confiança para aumentar volume.
+**Princípio:** potência sem falsa precisão. O Argos deve maximizar a qualidade preditiva quando houver evidência e identificar explicitamente quando a incerteza é elevada; não deve fabricar confiança para aumentar volume.
 
 ---
 
@@ -38,25 +38,33 @@ Construir um motor de inteligência pré-jogo para futebol global comparável em
 
 # Fase 11 — Quantitative Integrity & Calibration 🔥 ATUAL
 
-### C-003 — Fair Price / EV Integrity
+### C-003 — Fair Price / EV Integrity — ✓ CONCLUÍDO
 
-- [ ] Separar definitivamente `modelProbability`, `marketConsensusProbability` e `fairProbability`.
-- [ ] Eliminar qualquer semântica de "confidence" que possa ser interpretada como probabilidade de acerto.
-- [ ] Validar direção matemática de `realValue`.
-- [ ] Auditar pesos e duplicidade de bookmakers.
-- [ ] Auditar handicap `point`, `side`, linha normalizada e settlement.
-- [ ] Criar invariantes quantitativos para EV, fair odds, probability e Kelly.
-- [ ] Replay determinístico dos casos de sinais inflados já observados.
+- [x] Separar definitivamente `modelProbability`, `marketConsensusProbability` e `fairProbability`.
+- [x] Eliminar semântica de `confidence` como substituta de probabilidade.
+- [x] Preservar direção matemática de `realValue`.
+- [x] Estruturar evidência de mercado separadamente do resultado do modelo.
+- [x] Auditar contrato de handicap `point`, `side`, linha normalizada e settlement.
+- [x] Invariantes quantitativos para EV, fair odds, probability e Kelly.
+- [x] Replay/provenance dos sinais para auditoria posterior.
+- [x] Orchestrator alinhado ao contrato canônico de evidência de mercado (`0f17362`).
+- [x] Deployment `0f17362` validado como **Ready**.
 
-### C-004 — Probability Calibration
+### C-004 — Probability Calibration — 🔥 PRÓXIMO CICLO
 
+**Objetivo:** maximizar assertividade mensurável sem transformar calibração em mecanismo de inflação. O Argos deve saber simultaneamente **quando está forte** e **quando sua incerteza é alta**.
+
+- [ ] Separar explicitamente probabilidade `raw → calibrated → published`.
 - [ ] Calibração por liga.
 - [ ] Calibração por vertical/mercado.
 - [ ] Brier Score.
 - [ ] Log Loss.
 - [ ] Reliability curve.
-- [ ] Shrinkage por tamanho de amostra.
-- [ ] Separar probabilidade bruta → calibrada → publicada.
+- [ ] Shrinkage condicionado ao tamanho e à qualidade da amostra.
+- [ ] Validação temporal/out-of-sample obrigatória.
+- [ ] Gate de promoção: calibração só entra em produção se superar ou não degradar materialmente o baseline fora da amostra.
+- [ ] Medir intervalos/níveis de incerteza e desacordo do ensemble separadamente da probabilidade.
+- [ ] Impedir que dados insuficientes gerem falsa precisão.
 
 ### C-005 — Market Microstructure
 
@@ -159,4 +167,4 @@ Nenhum ciclo é marcado como concluído enquanto o deployment não estiver **Rea
 
 ---
 
-*Última atualização: 18/08/2026 — CTO Quantitative Integrity Program*
+*Última atualização: 19/08/2026 — CTO Quantitative Integrity Program — C-003 concluído; C-004 aberto.*
