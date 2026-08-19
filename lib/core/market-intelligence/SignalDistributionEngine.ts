@@ -3,17 +3,21 @@ import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
 import { telegramDispatcher, TelegramSignalPayload } from "@/lib/argos/notifications/TelegramDispatcher";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 import { hashSignalProvenance, PROVENANCE_SCHEMA_VERSION, SignalProvenanceSnapshot } from "@/lib/argos/provenance/SignalProvenance";
+import { calculatePredictionReliability } from "@/lib/core/PredictionReliabilityEngine";
 
 // ============================================================
-// SIGNAL DISTRIBUTION ENGINE v6.5.0 — CANONICAL PRESENTATION
+// SIGNAL DISTRIBUTION ENGINE v6.6.0 — CANONICAL PRESENTATION
 // Distribution never recalculates quantitative values.
 // Every published signal receives a deterministic provenance snapshot/hash.
+// Probability and evidence reliability are intentionally separate concepts.
 // ============================================================
 
 export interface DistributedSignal extends Opportunity {
   tier: "FREE" | "VIP" | "LOW" | "NOISE";
   priority: number;
   displayLabel?: string;
+  reliabilityScore?: number;
+  reliabilityLabel?: string;
 }
 
 export class SignalDistributionEngine {
@@ -29,6 +33,15 @@ export class SignalDistributionEngine {
     const vipOps = opportunities.filter((op) => op.hasEdge);
     const freeOps = [...opportunities].filter((op) => op.probability >= 0.70).sort((a, b) => b.probability - a.probability);
 
+    const enrich = (op: Opportunity) => calculatePredictionReliability({
+      sampleSize: op.sampleSize || 0,
+      marketDivergence: op.marketDivergence,
+      sharpReference: op.fairSource === "PINNACLE_SHARP",
+      bookmakerCount: undefined,
+      calibrationSource: op.calibrationSource,
+      regime: (regime as any)?.market_regime,
+    });
+
     const buildPayload = (op: Opportunity, tier: "FREE" | "VIP", context: { name: string; league: string; kickoff: string }): TelegramSignalPayload => ({
       matchName: context.name,
       leagueName: context.league,
@@ -43,18 +56,20 @@ export class SignalDistributionEngine {
       ratingLabel: op.ratingLabel || "VALUE",
       tier,
       line: op.line,
-      analysisSummary: `Análise Argos Intelligence: probabilidade ${(op.probability * 100).toFixed(1)}%; fair odd do modelo ${(op.fairOdd).toFixed(2)}; preço de mercado ${(op.odd).toFixed(2)}; EV ${(op.edge * 100).toFixed(1)}%.`,
+      analysisSummary: `Argos Intelligence: probabilidade ${(op.probability * 100).toFixed(1)}%; confiabilidade da evidência ${enrich(op).label}; fair odd do modelo ${(op.fairOdd).toFixed(2)}.`,
     });
 
     for (const op of vipOps) {
+      const reliability = enrich(op);
       const priority = op.probability * 0.6 + (op.expectedValue || 0) * 0.4;
-      distributed.push({ ...op, tier: "VIP", priority, displayLabel: this.buildDisplayLabel(op, "VIP") });
+      distributed.push({ ...op, tier: "VIP", priority, reliabilityScore: reliability.score, reliabilityLabel: reliability.label, displayLabel: this.buildDisplayLabel(op, "VIP", reliability.label) });
       signalsToDispatch.push(buildPayload(op, "VIP", matchContext));
     }
 
     for (const op of freeOps) {
+      const reliability = enrich(op);
       const priority = op.probability;
-      distributed.push({ ...op, tier: "FREE", priority, displayLabel: this.buildDisplayLabel(op, "FREE") });
+      distributed.push({ ...op, tier: "FREE", priority, reliabilityScore: reliability.score, reliabilityLabel: reliability.label, displayLabel: this.buildDisplayLabel(op, "FREE", reliability.label) });
       signalsToDispatch.push(buildPayload(op, "FREE", matchContext));
     }
 
@@ -73,6 +88,14 @@ export class SignalDistributionEngine {
         const supabase = getSupabaseClient();
         const rows = distributed.map((d) => {
           const marketImpliedProbability = Number.isFinite(d.odd) && d.odd > 0 ? 1 / d.odd : null;
+          const reliability = calculatePredictionReliability({
+            sampleSize: d.sampleSize || 0,
+            marketDivergence: d.marketDivergence,
+            sharpReference: d.fairSource === "PINNACLE_SHARP",
+            bookmakerCount: undefined,
+            calibrationSource: d.calibrationSource,
+            regime: (regime as any)?.market_regime,
+          });
           const snapshot: SignalProvenanceSnapshot = {
             schemaVersion: PROVENANCE_SCHEMA_VERSION,
             matchId: matchContext.matchId,
@@ -107,14 +130,15 @@ export class SignalDistributionEngine {
             odd: d.odd,
             probability: d.probability,
             expected_value: d.expectedValue,
-            confidence: d.probability,
+            // Reliability is evidence strength, never model probability.
+            confidence: reliability.score,
             regime: (regime as any)?.market_regime || "NEUTRAL",
             tier: d.tier,
             model_version: "ARGOS_CANONICAL_QUANT",
             analysis_timestamp: analysisTimestamp,
             odds_timestamp: analysisTimestamp,
             provenance_hash: provenanceHash,
-            provenance_snapshot: snapshot,
+            provenance_snapshot: { ...snapshot, evidenceReliability: reliability },
             model_probability: d.probability,
             market_implied_probability: marketImpliedProbability,
             fair_odd: d.fairOdd,
@@ -130,7 +154,7 @@ export class SignalDistributionEngine {
     return distributed;
   }
 
-  private static buildDisplayLabel(op: Opportunity, tier: string): string {
-    return `[${tier}] ${op.vertical} | ${op.selection} @ ${op.odd.toFixed(2)} | Model Fair: ${op.fairOdd.toFixed(2)} | EV: ${(op.edgePercent ?? op.edge * 100).toFixed(1)}% | Prob: ${(op.probability * 100).toFixed(1)}%`;
+  private static buildDisplayLabel(op: Opportunity, tier: string, reliabilityLabel: string): string {
+    return `[${tier}] ${op.vertical} | ${op.selection} @ ${op.odd.toFixed(2)} | Model Fair: ${op.fairOdd.toFixed(2)} | EV: ${(op.edgePercent ?? op.edge * 100).toFixed(1)}% | Prob: ${(op.probability * 100).toFixed(1)}% | Evidence: ${reliabilityLabel}`;
   }
 }
