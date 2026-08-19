@@ -1,7 +1,7 @@
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 
 // ============================================================
-// CALIBRATION ENGINE v6.3.0 — TIME-SPLIT, CONSERVATIVE
+// CALIBRATION ENGINE v6.3.1 — TIME-SPLIT, CONSERVATIVE
 // Learning is a calibration layer, not a prediction generator.
 // ============================================================
 
@@ -49,33 +49,66 @@ export class ContinuousLearningEngine {
       if (error || !data) return base;
 
       const observations: Observation[] = data
-        .map((row) => ({ probability: Number(row.probability), outcome: row.is_correct === true ? 1 : 0 }))
-        .filter((row) => Number.isFinite(row.probability) && row.probability > 0 && row.probability < 1);
+        .map((row): Observation => ({
+          probability: Number(row.probability),
+          outcome: row.is_correct === true ? 1 : 0,
+        }))
+        .filter(
+          (row) =>
+            Number.isFinite(row.probability) &&
+            row.probability > 0 &&
+            row.probability < 1,
+        );
 
-      if (observations.length < ContinuousLearningEngine.MIN_TRAINING_SAMPLE + ContinuousLearningEngine.MIN_VALIDATION_SAMPLE) {
+      if (
+        observations.length <
+        ContinuousLearningEngine.MIN_TRAINING_SAMPLE +
+          ContinuousLearningEngine.MIN_VALIDATION_SAMPLE
+      ) {
         return { ...base, sampleSize: observations.length };
       }
 
       // Strict temporal split: the newest observations never train the transform.
-      const validationSize = Math.max(ContinuousLearningEngine.MIN_VALIDATION_SAMPLE, Math.floor(observations.length * 0.2));
+      const validationSize = Math.max(
+        ContinuousLearningEngine.MIN_VALIDATION_SAMPLE,
+        Math.floor(observations.length * 0.2),
+      );
       const training = observations.slice(0, observations.length - validationSize);
       const validation = observations.slice(observations.length - validationSize);
       if (training.length < ContinuousLearningEngine.MIN_TRAINING_SAMPLE) {
-        return { ...base, sampleSize: training.length, validationSampleSize: validation.length };
+        return {
+          ...base,
+          sampleSize: training.length,
+          validationSampleSize: validation.length,
+        };
       }
 
       const fitted = this.fitLogisticCalibration(training);
       // Production currently applies only the intercept through ModelFactory.
       // Therefore the promotion gate evaluates exactly that transform.
-      const promotedIntercept = this.clamp(fitted.intercept, -ContinuousLearningEngine.MAX_INTERCEPT, ContinuousLearningEngine.MAX_INTERCEPT);
-      const calibratedPredictions = validation.map((o) => this.applyIntercept(o.probability, promotedIntercept));
+      const promotedIntercept = this.clamp(
+        fitted.intercept,
+        -ContinuousLearningEngine.MAX_INTERCEPT,
+        ContinuousLearningEngine.MAX_INTERCEPT,
+      );
+      const calibratedPredictions = validation.map((o) =>
+        this.applyIntercept(o.probability, promotedIntercept),
+      );
       const validationBrier = this.brier(calibratedPredictions, validation);
-      const baselineBrier = this.brier(validation.map((o) => o.probability), validation);
+      const baselineBrier = this.brier(
+        validation.map((o) => o.probability),
+        validation,
+      );
 
       // Calibration may only be promoted when out-of-sample performance is not
       // materially worse than the uncalibrated model.
       if (validationBrier > baselineBrier + 0.005) {
-        return { ...base, sampleSize: training.length, validationSampleSize: validation.length, validationBrier };
+        return {
+          ...base,
+          sampleSize: training.length,
+          validationSampleSize: validation.length,
+          validationBrier,
+        };
       }
 
       return {
@@ -94,7 +127,10 @@ export class ContinuousLearningEngine {
     }
   }
 
-  private fitLogisticCalibration(observations: Observation[]): { slope: number; intercept: number } {
+  private fitLogisticCalibration(observations: Observation[]): {
+    slope: number;
+    intercept: number;
+  } {
     let slope = 1;
     let intercept = 0;
 
@@ -129,8 +165,16 @@ export class ContinuousLearningEngine {
     }
 
     return {
-      slope: this.clamp(slope, ContinuousLearningEngine.MIN_SLOPE, ContinuousLearningEngine.MAX_SLOPE),
-      intercept: this.clamp(intercept, -ContinuousLearningEngine.MAX_INTERCEPT, ContinuousLearningEngine.MAX_INTERCEPT),
+      slope: this.clamp(
+        slope,
+        ContinuousLearningEngine.MIN_SLOPE,
+        ContinuousLearningEngine.MAX_SLOPE,
+      ),
+      intercept: this.clamp(
+        intercept,
+        -ContinuousLearningEngine.MAX_INTERCEPT,
+        ContinuousLearningEngine.MAX_INTERCEPT,
+      ),
     };
   }
 
@@ -140,7 +184,13 @@ export class ContinuousLearningEngine {
 
   private brier(predictions: number[], observations: Observation[]): number {
     if (observations.length === 0) return 0;
-    return predictions.reduce((sum, prediction, index) => sum + (prediction - observations[index].outcome) ** 2, 0) / observations.length;
+    return (
+      predictions.reduce(
+        (sum, prediction, index) =>
+          sum + (prediction - observations[index].outcome) ** 2,
+        0,
+      ) / observations.length
+    );
   }
 
   private logit(probability: number): number {
