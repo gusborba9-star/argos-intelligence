@@ -4,10 +4,10 @@ import { learningEngine } from "./ContinuousLearningEngine";
 import { applyCalibration } from "./CalibrationMath";
 
 // ============================================================
-// MODEL FACTORY v6.4.1 — QUANTITATIVE CORE
+// MODEL FACTORY v6.4.2 — QUANTITATIVE CORE
 // Gamma-Poisson + deterministic seeded PRNG + OOS calibration.
 // Count-stat simulations use the same regime-aware distribution
-// and now pass through the same conservative OOS calibration gate.
+// and pass through the same conservative OOS calibration gate.
 // ============================================================
 
 export interface MarketMetrics { homeMean: number; awayMean: number; dispersion?: number; }
@@ -93,6 +93,10 @@ export class ModelFactory {
   }
 
   static calculateEV(probability: number, marketOdd: number): ValueAnalysis { return OddsValueEngine.calculateValue(probability, marketOdd); }
+
+  public static seedForCountStat(matchId: string, marketType: string, homeMean: number, awayMean: number, lines: number[]): number {
+    return this.seedFrom(`${matchId}|${marketType}|${homeMean}|${awayMean}|${lines.join(",")}`);
+  }
 
   public static runCountStatSimulation(homeMean: number, awayMean: number, lines: number[], iterations: number = 5000, seed?: number, varianceMultiplier: number = 1.1): Record<string, number> {
     if (!Number.isInteger(iterations) || iterations < 1000) throw new Error("Count-stat Monte Carlo requires at least 1000 iterations");
