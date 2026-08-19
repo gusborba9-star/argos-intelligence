@@ -22,6 +22,13 @@ export interface SimulationResult {
 type RandomSource = () => number;
 type CalibratableMarket = "GOALS" | "CORNERS" | "CARDS" | "SHOTS" | "SHOTS_ON_TARGET" | "FOULS" | "TACKLES" | "SAVES" | "WINNER" | "BTTS" | "HANDICAP" | "GOALS_HT";
 
+type CountStatSeedRegime = Pick<RegimeProfile, "variance_multiplier" | "model_bias"> & {
+  /** Legacy execution payload compatibility; canonical RegimeProfile uses `regime`. */
+  regime?: RegimeProfile["regime"];
+  /** Transitional compatibility for older execution payloads. */
+  market_regime?: string;
+};
+
 export class ModelFactory {
   private static readonly DEFAULT_ITERATIONS = 10000;
   private static readonly MIN_LAMBDA = 0.01;
@@ -94,9 +101,9 @@ export class ModelFactory {
 
   static calculateEV(probability: number, marketOdd: number): ValueAnalysis { return OddsValueEngine.calculateValue(probability, marketOdd); }
 
-  public static seedForCountStat(matchId: string, marketType: string, homeMean: number, awayMean: number, lines: number[], regime?: Pick<RegimeProfile, "variance_multiplier" | "model_bias" | "market_regime">): number {
+  public static seedForCountStat(matchId: string, marketType: string, homeMean: number, awayMean: number, lines: number[], regime?: CountStatSeedRegime): number {
     const regimeKey = regime
-      ? `${regime.variance_multiplier}|${regime.model_bias}|${regime.market_regime}`
+      ? `${regime.variance_multiplier}|${regime.model_bias}|${regime.regime ?? regime.market_regime ?? "default"}`
       : "default";
     return this.seedFrom(`${matchId}|${marketType}|${homeMean}|${awayMean}|${lines.join(",")}|${regimeKey}`);
   }
@@ -164,7 +171,7 @@ export class ModelFactory {
     return 0.5 * Math.log(2 * Math.PI) + (t0 + 0.5) * Math.log(t) - t + Math.log(x);
   }
 
-  private static createRng(seed: number): RandomSource { let state = seed >>> 0 || 0x9e3779b9; return () => { state ^= state << 13; state ^= state >>> 17; state ^= state << 5; state >>>= 0; return (state + 1) / 4294967297; }; }
+  private static createRng(seed: number): RandomSource { let state = seed >>> 0 || 0x9e3779b9; return () => { state ^= state << 13; state ^= state >>> 17; state >>>= 0; return (state + 1) / 4294967297; }; }
 
   private static seedFrom(value: string): number { let hash = 2166136261; for (let i = 0; i < value.length; i++) { hash ^= value.charCodeAt(i); hash = Math.imul(hash, 16777619); } return hash >>> 0; }
 }
