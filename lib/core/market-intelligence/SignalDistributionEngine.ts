@@ -1,17 +1,39 @@
+import crypto from "crypto";
 import { Opportunity } from "./MarketDiscoveryEngine";
 import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
 import { telegramDispatcher, TelegramSignalPayload } from "@/lib/argos/notifications/TelegramDispatcher";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 
 // ============================================================
-// SIGNAL DISTRIBUTION ENGINE v6.4.0 — CANONICAL PRESENTATION
+// SIGNAL DISTRIBUTION ENGINE v6.5.0 — CANONICAL PRESENTATION
 // Distribution never recalculates quantitative values.
+// Every published signal receives a deterministic provenance snapshot/hash.
 // ============================================================
 
 export interface DistributedSignal extends Opportunity {
   tier: "FREE" | "VIP" | "LOW" | "NOISE";
   priority: number;
   displayLabel?: string;
+}
+
+interface ProvenanceSnapshot {
+  schemaVersion: "ARGOS_PROVENANCE_V1";
+  matchId: string;
+  league: string;
+  homeTeam: string;
+  awayTeam: string;
+  kickoff: string;
+  vertical: string;
+  selection: string;
+  line: number;
+  modelProbability: number;
+  marketImpliedProbability: number | null;
+  fairOdd: number;
+  executableOdd: number;
+  expectedValue: number;
+  edge: number;
+  modelProbabilitySource: string;
+  analysisTimestamp: string;
 }
 
 export class SignalDistributionEngine {
@@ -22,6 +44,7 @@ export class SignalDistributionEngine {
   ): Promise<DistributedSignal[]> {
     const distributed: DistributedSignal[] = [];
     const signalsToDispatch: TelegramSignalPayload[] = [];
+    const analysisTimestamp = new Date().toISOString();
 
     const vipOps = opportunities.filter((op) => op.hasEdge);
     const freeOps = [...opportunities].filter((op) => op.probability >= 0.70).sort((a, b) => b.probability - a.probability);
@@ -68,23 +91,57 @@ export class SignalDistributionEngine {
     if (distributed.length > 0) {
       try {
         const supabase = getSupabaseClient();
-        const rows = distributed.map((d) => ({
-          match_id: matchContext.matchId,
-          league_name: matchContext.league,
-          home_team: matchContext.homeTeam,
-          away_team: matchContext.awayTeam,
-          kickoff_at: matchContext.kickoff,
-          vertical: d.vertical,
-          market: d.vertical,
-          selection: d.selection,
-          line: d.line,
-          odd: d.odd,
-          probability: d.probability,
-          expected_value: d.expectedValue,
-          confidence: d.probability,
-          regime: (regime as any)?.market_regime || "NEUTRAL",
-          tier: d.tier,
-        }));
+        const rows = distributed.map((d) => {
+          const marketImpliedProbability = Number.isFinite(d.odd) && d.odd > 0 ? 1 / d.odd : null;
+          const snapshot: ProvenanceSnapshot = {
+            schemaVersion: "ARGOS_PROVENANCE_V1",
+            matchId: matchContext.matchId,
+            league: matchContext.league,
+            homeTeam: matchContext.homeTeam,
+            awayTeam: matchContext.awayTeam,
+            kickoff: matchContext.kickoff,
+            vertical: d.vertical,
+            selection: d.selection,
+            line: d.line,
+            modelProbability: d.probability,
+            marketImpliedProbability,
+            fairOdd: d.fairOdd,
+            executableOdd: d.odd,
+            expectedValue: d.expectedValue,
+            edge: d.edge,
+            modelProbabilitySource: d.modelProbabilitySource || "EXPLICIT_MODEL_PREDICTION",
+            analysisTimestamp,
+          };
+          const canonical = JSON.stringify(snapshot, Object.keys(snapshot).sort());
+          const provenanceHash = crypto.createHash("sha256").update(canonical).digest("hex");
+
+          return {
+            match_id: matchContext.matchId,
+            league_name: matchContext.league,
+            home_team: matchContext.homeTeam,
+            away_team: matchContext.awayTeam,
+            kickoff_at: matchContext.kickoff,
+            vertical: d.vertical,
+            market: d.vertical,
+            selection: d.selection,
+            line: d.line,
+            odd: d.odd,
+            probability: d.probability,
+            expected_value: d.expectedValue,
+            confidence: d.probability,
+            regime: (regime as any)?.market_regime || "NEUTRAL",
+            tier: d.tier,
+            model_version: "ARGOS_CANONICAL_QUANT",
+            analysis_timestamp: analysisTimestamp,
+            odds_timestamp: analysisTimestamp,
+            provenance_hash: provenanceHash,
+            provenance_snapshot: snapshot,
+            model_probability: d.probability,
+            market_implied_probability: marketImpliedProbability,
+            fair_odd: d.fairOdd,
+            executable_odd: d.odd,
+          };
+        });
         await supabase.from("argos_signal_ledger").insert(rows);
       } catch (err: any) {
         console.error("[SignalDistribution] ledger write failed:", err.message);
