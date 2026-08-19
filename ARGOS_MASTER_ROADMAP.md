@@ -1,7 +1,7 @@
 # ARGOS INTELLIGENCE — MASTER ROADMAP
 
-**Version:** 1.1.0
-**Status:** Canonical execution roadmap
+**Version:** 1.2.0
+**Status:** Canonical execution roadmap / source of truth
 **Baseline:** Existing production Argos v6.x
 
 ## Phase 0 — Governance & Baseline
@@ -30,7 +30,7 @@
 - [x] Verify EV calculation uses canonical model probability
 - [x] Verify Kelly calculation uses canonical model probability
 - [x] Verify handicap semantics and signed lines
-- [ ] Verify calibration/shrinkage logic
+- [x] Verify calibration/shrinkage chain has an explicit OOS gate
 - [x] Verify publication payload does not recalculate or overwrite quantitative values
 - [ ] Identify remaining probability inflation sources
 - [ ] Quantify each discrepancy rather than patching symptoms
@@ -49,20 +49,21 @@
 - [ ] Cache/deduplication audit
 - [ ] Historical data integrity audit
 - [ ] Settled-match ingestion validation
+- [ ] Automatic rolling historical update validation
 
 ## Phase 3 — Quant Core
 
 - [ ] Team strength model
 - [ ] Attack/defence strength
 - [ ] Home advantage
-- [ ] Opponent-strength adjustment
-- [ ] Recency weighting
-- [ ] Regression to mean
-- [ ] Missing-data policy
-- [ ] Poisson baseline
+- [x] Opponent-aware scoring features
+- [x] Recency weighting foundation
+- [ ] Regression to mean evaluation
+- [x] Missing-data policy: no synthetic count-stat evidence
+- [x] Poisson/Gamma-Poisson baseline
 - [ ] Dixon-Coles evaluation
-- [ ] Alternative count models where justified
-- [ ] Monte Carlo distribution validation
+- [x] Alternative count-stat execution foundation
+- [ ] Monte Carlo distribution validation across every supported vertical
 - [x] Deterministic quantitative core foundation
 - [x] Quantitative invariant test gate
 - [x] Canonical probability → model fair odd → EV → Kelly chain
@@ -76,6 +77,7 @@
 - [ ] Data-quality confidence
 - [ ] Sample-size confidence
 - [ ] Probability clipping policy based on evidence, not arbitrary ceilings
+- [ ] Assertiveness reliability score by market/league/regime
 
 ## Phase 5 — Market Intelligence
 
@@ -87,6 +89,10 @@
 - [ ] Closing price capture
 - [ ] CLV ledger
 - [ ] Market-state features
+- [ ] Dynamic market coverage discovery
+- [ ] Every discovered market mapped to a canonical vertical
+- [ ] Every supported vertical receives evidence-backed probability generation
+- [ ] Unsupported markets are observable but never fabricated
 
 ## Phase 6 — Context Intelligence
 
@@ -109,11 +115,13 @@
 
 ## Phase 8 — Calibration & Evaluation
 
+- [x] Calibration transform foundation
+- [x] Out-of-sample calibration promotion gate
+- [x] Brier Score
+- [x] Log Loss
+- [ ] Calibration curves/buckets
 - [ ] Immutable Prediction Ledger
 - [ ] Automatic settlement
-- [ ] Brier Score
-- [ ] Log Loss
-- [ ] Calibration curves/buckets
 - [ ] CLV
 - [ ] ROI
 - [ ] Drawdown
@@ -152,24 +160,46 @@
 - [ ] Preserve previous model versions
 - [ ] Monitor drift and publication anomalies continuously
 
+## Market universe — canonical target
+
+The Argos execution layer must be capable of evaluating every market for which the data contract supplies genuine evidence. Current canonical verticals:
+
+- [x] WINNER
+- [x] HANDICAP
+- [x] GOALS
+- [x] GOALS_HT contract
+- [x] BTTS
+- [x] CORNERS
+- [x] CARDS
+- [x] SHOTS evidence/model foundation
+- [x] SHOTS_ON_TARGET evidence/model foundation
+- [x] FOULS evidence/model foundation
+- [x] TACKLES evidence/model foundation
+- [x] SAVES evidence/model foundation
+- [ ] Additional PropLine/API-Football markets discovered in production
+
+**Integrity rule:** market availability is not evidence availability. A market may be normalized and visible to the audit layer without being modeled or published until sufficient real observations exist.
+
+**No synthetic fallback rule:** missing historical statistics must never be replaced by arbitrary league averages merely to produce a signal.
+
 ## Priority order
 
-1. Probability inflation / correctness
+1. Probability correctness / inflation elimination
 2. Data provenance and integrity
 3. Calibration
 4. Prediction ledger and settlement
 5. Market/CLV intelligence
-6. Uncertainty
-7. Controlled learning
-8. RAG/MCP enrichment
-9. Distribution optimization
-10. Additional markets
+6. Multi-market coverage with evidence
+7. Uncertainty / assertiveness reliability
+8. Controlled learning
+9. RAG/MCP enrichment
+10. Distribution optimization
 
 **Rule:** More markets or more signals never outrank correctness of the existing core.
 
-## Current execution state — 2026-08-18
+## Current execution state — 2026-08-19
 
-### C-003 — Quantitative Core Validation Foundation
+### C-003 — Quantitative Core Validation Foundation ✓
 
 - [x] Deterministic PredictionCore foundation
 - [x] Statistical invariant suite
@@ -177,15 +207,46 @@
 - [x] Canonical value-chain contract implemented
 - [x] Model fair odd separated from market-reference fair odd
 - [x] EV and Kelly explicitly derived from canonical model probability
-- [x] Telegram presentation uses canonical model fair odd and preserves raw quantitative values
+- [x] Telegram presentation preserves canonical quantitative values
 - [x] Quantitative consistency tests added
-- [ ] CI execution result verified for the complete latest cycle
-- [ ] Production promotion
 
-### C-003 exit condition
+### C-004 — Probability Calibration & Reliability ✓
 
-The block is **implementation-complete but validation-pending** until the latest CI run demonstrates successful typecheck, production build and quantitative tests. Production remains on the existing `main` champion until that gate is closed.
+- [x] Full logistic calibration transform implemented
+- [x] Slope and intercept are both applied
+- [x] OOS promotion gate protects against in-sample overfitting
+- [x] Brier and Log Loss validation
+- [x] Binary calibration observation contract
+- [x] Quantitative calibration invariants
+- [x] Latest validated deployment: `c466b55`
 
-### Next cycle
+### C-005 — Multi-Market Evidence Coverage 🔄 ACTIVE
 
-**C-004 — Probability Inflation Forensics:** trace the live model probability generation from FeatureEngine/ModelFactory/PredictionCore through every vertical, with emphasis on high-EV examples such as Over 3.5 and Asian Handicap. No arbitrary probability suppression; identify and quantify the source of inflation, then correct the underlying model/data semantics.
+- [x] Canonical MarketVertical universe reviewed
+- [x] Dynamic market-line discovery preserved
+- [x] Evidence-backed count-stat feature engine created
+- [x] Opponent-aware count-stat feature extraction
+- [x] Missing count-stat evidence cannot silently become synthetic data
+- [x] Orchestrator expanded to all canonical count-stat verticals
+- [x] Existing PropLine/API-Football call contracts left untouched in this cycle
+- [x] Quantitative tests added for count-stat evidence extraction
+- [ ] Validate typecheck + production build
+- [ ] Validate quantitative test gate
+- [ ] Validate real-market coverage against production payloads
+- [ ] Validate calibration separately for each newly enabled vertical
+- [ ] Promote cycle only after all validation gates are Ready
+
+### C-005 exit condition
+
+The cycle is not complete until the production build, quantitative gate and real payload coverage validation all succeed. A market is never considered production-ready merely because its enum or parser exists.
+
+## Operating rule for every future cycle
+
+1. Select one complete cycle from this roadmap.
+2. Inspect the entire dependency block, not a single file.
+3. Correct, replace, remove or implement everything required by that block.
+4. Preserve external API request/response contracts unless the API contract itself is explicitly verified.
+5. Run the full validation gate.
+6. If the build/test fails, fix immediately inside the same cycle.
+7. Wait for a real **Ready** deployment.
+8. Only after validation, mark the completed boxes `✓` and advance to the next cycle.
