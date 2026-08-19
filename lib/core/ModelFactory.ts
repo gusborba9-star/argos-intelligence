@@ -1,10 +1,11 @@
 import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
 import { OddsValueEngine, ValueAnalysis } from "./market-intelligence/OddsValueEngine";
 import { learningEngine } from "./ContinuousLearningEngine";
+import { applyCalibration } from "./CalibrationMath";
 
 // ============================================================
-// MODEL FACTORY v6.2.0 — QUANTITATIVE CORE
-// Actual Gamma-Poisson mixture + deterministic seeded PRNG.
+// MODEL FACTORY v6.3.0 — QUANTITATIVE CORE
+// Gamma-Poisson + deterministic seeded PRNG + OOS calibration.
 // ============================================================
 
 export interface MarketMetrics {
@@ -49,27 +50,27 @@ export class ModelFactory {
 
     const baseOver = baseResult.probabilities.over;
     if (baseOver !== undefined && probabilities.under !== undefined) {
-      const adjustedOver = this.applyBinaryBias(baseOver, calibration.probabilityAdjustment);
+      const adjustedOver = applyCalibration(
+        baseOver,
+        calibration.logitSlope,
+        calibration.logitIntercept,
+      );
       probabilities.over = adjustedOver;
       probabilities.under = 1 - adjustedOver;
       calibrationApplied = adjustedOver - baseOver;
     }
 
     if (probabilities.btts_yes !== undefined && probabilities.btts_no !== undefined) {
-      const adjustedYes = this.applyBinaryBias(probabilities.btts_yes, calibration.probabilityAdjustment);
+      const adjustedYes = applyCalibration(
+        probabilities.btts_yes,
+        calibration.logitSlope,
+        calibration.logitIntercept,
+      );
       probabilities.btts_yes = adjustedYes;
       probabilities.btts_no = 1 - adjustedYes;
     }
 
     return { ...baseResult, probabilities, calibrationApplied };
-  }
-
-  private static applyBinaryBias(probability: number, bias: number): number {
-    const p = Math.max(0.001, Math.min(0.999, probability));
-    const boundedBias = Math.max(-0.15, Math.min(0.15, Number.isFinite(bias) ? bias : 0));
-    const logit = Math.log(p / (1 - p));
-    const adjusted = 1 / (1 + Math.exp(-(logit + boundedBias)));
-    return Math.max(0.001, Math.min(0.999, adjusted));
   }
 
   static runMonteCarlo(
@@ -115,7 +116,6 @@ export class ModelFactory {
     const awayMean = Math.max(this.MIN_LAMBDA, metrics.awayMean * (1 - bias));
 
     // Gamma-Poisson mixture: E[lambda]=mean and Var[lambda]=mean²*(v-1).
-    // This replaces the old normal perturbation incorrectly labelled Gamma.
     for (let i = 0; i < iterations; i++) {
       const hLambda = this.gammaPoissonLambda(homeMean, varianceMultiplier, random);
       const aLambda = this.gammaPoissonLambda(awayMean, varianceMultiplier, random);
