@@ -26,11 +26,17 @@ export interface Opportunity {
   risk: number;
   source: string;
   divergence?: number;
+  marketDivergence?: number;
   marketConsensusProbability?: number;
   kellyCriterion?: number;
   ratingLabel?: string;
   hasEdge?: boolean;
   modelProbabilitySource?: string;
+  sampleSize?: number;
+  fairSource?: string;
+  calibrationSource?: string;
+  pushProbability?: number;
+  lossProbability?: number;
 }
 
 export interface DiscoveryReport {
@@ -115,6 +121,7 @@ export class MarketDiscoveryEngine {
           risk: this.calculateRisk(value.edge, liquidity, fairLine.evidence.divergence),
           source: fairLine.source,
           divergence: fairLine.evidence.divergence,
+          marketDivergence: fairLine.evidence.divergence,
           marketConsensusProbability: fairLine.marketConsensusProbability,
           kellyCriterion: value.kellyCriterion,
           ratingLabel: value.ratingLabel,
@@ -140,29 +147,15 @@ export class MarketDiscoveryEngine {
       positiveEVCount: positiveEV.length,
       eliteCount: elite.length,
       verticalBreakdown,
-      discardedReason: opportunities.length === 0 ? "NO_INDEPENDENT_MODEL_PROBABILITY" : undefined,
     };
   }
 
-  private static estimateLiquidity(bookmaker: string, isSharp: boolean): number {
-    if (isSharp) return bookmaker === "pinnacle" ? 1.0 : 0.9;
-    const weights: Record<string, number> = {
-      bet365: 0.85,
-      betfair: 0.85,
-      bwin: 0.70,
-      unibet: 0.65,
-      draftkings: 0.65,
-      fanduel: 0.65,
-      williamhill: 0.60,
-      betway: 0.55,
-    };
-    return weights[bookmaker.toLowerCase()] ?? 0.50;
+  private static estimateLiquidity(bookmaker: string, isSharp?: boolean): number {
+    if (isSharp || bookmaker.toLowerCase() === "pinnacle") return 1;
+    return 0.7;
   }
 
   private static calculateRisk(edge: number, liquidity: number, divergence: number): number {
-    const edgePenalty = Math.max(0, Math.min(0.50, edge * 2));
-    const liquidityPenalty = (1 - liquidity) * 0.25;
-    const divergencePenalty = Math.min(0.25, Math.max(0, divergence));
-    return Number(Math.max(0.05, 1 - edgePenalty + liquidityPenalty + divergencePenalty).toFixed(4));
+    return Math.max(0, Math.min(1, 1 - Math.abs(edge) * 0.5 + divergence * 0.25 - liquidity * 0.15));
   }
 }
