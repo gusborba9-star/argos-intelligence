@@ -11,8 +11,10 @@ import { SignalDistributionEngine } from "../../core/market-intelligence/SignalD
 import { MarketVertical } from "../../core/ArgosUnifiedEngine";
 import { getSupabaseClient } from "../../core/SupabaseClient";
 import { apiFootballService } from "../../core/ApiFootballService";
+import { learningEngine } from "../../core/ContinuousLearningEngine";
+import { applyCalibration } from "../../core/CalibrationMath";
 
-const MAX_ANALYSIS_HORIZON_HOURS = 48;
+const MAX_ANALYSIS_HORIZON_HOURS = 24;
 const COUNT_STAT_VERTICALS = [
   MarketVertical.CORNERS,
   MarketVertical.CARDS,
@@ -24,7 +26,7 @@ const COUNT_STAT_VERTICALS = [
 ] as const;
 
 export class ArgosMasterOrchestrator {
-  private static readonly VERSION = "6.4.0-MASTER";
+  private static readonly VERSION = "6.5.0-MASTER";
   private static readonly MIN_REAL_SAMPLE = 1;
   private static readonly MAX_PLAUSIBLE_EV = 1.0;
   private static readonly MAX_ODD_MARKET_REFERENCE_RATIO = 3.0;
@@ -33,11 +35,11 @@ export class ArgosMasterOrchestrator {
     console.log(`[ArgosMaster] Starting v${this.VERSION}: ${matchId}`);
 
     const kickoff = rawData.commence_time ? new Date(rawData.commence_time).getTime() : null;
-    if (kickoff && kickoff < Date.now() - 10 * 60 * 1000) return { status: "SKIPPED_EXPIRED", matchId };
     if (!kickoff || !Number.isFinite(kickoff)) return { status: "SKIPPED_INVALID_KICKOFF", matchId };
     const hoursToKickoff = (kickoff - Date.now()) / (1000 * 60 * 60);
+    if (hoursToKickoff < -10 / 60) return { status: "SKIPPED_EXPIRED", matchId };
     if (hoursToKickoff > MAX_ANALYSIS_HORIZON_HOURS) {
-      console.log(`[ArgosMaster] Skipping ${matchId}: kickoff is ${hoursToKickoff.toFixed(1)}h away, horizon=${MAX_ANALYSIS_HORIZON_HOURS}h.`);
+      console.log(`[ArgosMaster] Skipping ${matchId}: kickoff is ${hoursToKickoff.toFixed(1)}h away, maturity horizon=${MAX_ANALYSIS_HORIZON_HOURS}h.`);
       return { status: "SKIPPED_OUTSIDE_ANALYSIS_HORIZON", matchId, hoursToKickoff, maxHours: MAX_ANALYSIS_HORIZON_HOURS };
     }
 
@@ -106,7 +108,6 @@ export class ArgosMasterOrchestrator {
         }
       }
 
-      // No synthetic fallback: a count market requires actual observations.
       if (homeMean === null || awayMean === null || sampleSize < this.MIN_REAL_SAMPLE) continue;
       countStatProbabilities[vertical] = ModelFactory.runCountStatSimulation(homeMean, awayMean, lines);
       countStatSamples[vertical] = sampleSize;
@@ -117,11 +118,13 @@ export class ArgosMasterOrchestrator {
       try { h2hSummary = await apiFootballService.getH2HSummary(rawData.home_team, rawData.away_team); } catch { h2hSummary = null; }
     }
 
+    // Only verticals with a real quantitative execution path are promoted.
+    // Registry coverage remains broader: unsupported normalized markets stay observable
+    // rather than being assigned fabricated probabilities.
     const verticalsToAnalyze = [
       MarketVertical.WINNER,
       MarketVertical.HANDICAP,
       MarketVertical.GOALS,
-      MarketVertical.GOALS_HT,
       MarketVertical.BTTS,
       ...COUNT_STAT_VERTICALS,
     ];
@@ -135,7 +138,7 @@ export class ArgosMasterOrchestrator {
     const expectedAwayGoals = Math.max(0.05, (awayAttack + homeDefence) / 2);
 
     for (const vertical of verticalsToAnalyze) {
-      if (!hasRealData && [MarketVertical.GOALS, MarketVertical.GOALS_HT, MarketVertical.BTTS, MarketVertical.HANDICAP].includes(vertical)) continue;
+      if (!hasRealData && [MarketVertical.GOALS, MarketVertical.BTTS, MarketVertical.HANDICAP].includes(vertical)) continue;
       const isCountStatVertical = COUNT_STAT_VERTICALS.includes(vertical as (typeof COUNT_STAT_VERTICALS)[number]);
       if (isCountStatVertical && !countStatProbabilities[vertical]) continue;
       const isHandicap = vertical === MarketVertical.HANDICAP;
@@ -147,6 +150,7 @@ export class ArgosMasterOrchestrator {
       const selections = this.getSelectionsForVertical(vertical, normalizedMarkets, rawData.home_team, rawData.away_team);
       const handicapPoints = isHandicap ? [...new Set(selections.filter((s): s is HandicapSelection => s.kind === "handicap").map((s) => s.point))] : [];
       const handicapSettlement = isHandicap ? AsianHandicapSettlementEngine.simulate(expectedHomeGoals, expectedAwayGoals, regime as any, handicapPoints) : {};
+      const handicapCalibration = isHandicap ? await learningEngine.getCalibration(leagueIdentifier, "HANDICAP") : null;
 
       for (const selection of selections) {
         const marketReference = FairOddsCalculator.calculate(normalizedMarkets, vertical, selection.label, selection.line);
@@ -156,15 +160,30 @@ export class ArgosMasterOrchestrator {
 
         let modelProbability: number;
         let valueAnalysis: any;
+        let pushProbability = 0;
+        let lossProbability: number;
         if (selection.kind === "handicap") {
           const settlement = handicapSettlement[`${selection.side}_${selection.point}`];
           if (!settlement) continue;
-          modelProbability = this.clipProbability(settlement.win);
-          valueAnalysis = OddsValueEngine.calculateAsianHandicapValue(modelProbability, settlement.push, marketOdd, marketReference.fairOdd);
+          // Handicap has a third state (push). Calibrate only the conditional
+          // win/loss mass, then restore the immutable push mass.
+          const decisiveMass = settlement.win + settlement.loss;
+          const rawConditionalWin = decisiveMass > 0 ? settlement.win / decisiveMass : 0.5;
+          const calibratedConditionalWin = applyCalibration(
+            rawConditionalWin,
+            handicapCalibration?.logitSlope ?? 1,
+            handicapCalibration?.logitIntercept ?? 0,
+          );
+          pushProbability = this.clipProbability(settlement.push);
+          const remainingMass = Math.max(0, 1 - pushProbability);
+          modelProbability = this.clipProbability(calibratedConditionalWin * remainingMass);
+          lossProbability = Math.max(0, remainingMass - modelProbability);
+          valueAnalysis = OddsValueEngine.calculateAsianHandicapValue(modelProbability, pushProbability, marketOdd, marketReference.fairOdd);
         } else {
           const rawProb = simulation?.probabilities[selection.key];
           if (rawProb === undefined || !Number.isFinite(rawProb)) continue;
           modelProbability = this.clipProbability(rawProb);
+          lossProbability = Math.max(0, 1 - modelProbability);
           valueAnalysis = OddsValueEngine.calculateValue(modelProbability, marketOdd, marketReference.fairOdd);
         }
 
@@ -183,8 +202,8 @@ export class ArgosMasterOrchestrator {
           handicapPoint: selection.kind === "handicap" ? selection.point : undefined,
           probability: modelProbability,
           modelProbability,
-          pushProbability: valueAnalysis.pushProbability ?? 0,
-          lossProbability: valueAnalysis.lossProbability,
+          pushProbability,
+          lossProbability,
           modelFairOdd,
           fairOdd: modelFairOdd,
           marketReferenceOdd: marketFairOdd,
@@ -201,6 +220,7 @@ export class ArgosMasterOrchestrator {
           hasEdge: valueAnalysis.isPositive,
           sampleSize: isCountStatVertical ? countStatSamples[vertical] || 0 : Math.min(homeHistory.length, awayHistory.length),
           h2hMatches: h2hSummary?.matchesPlayed ?? 0,
+          calibrationSource: isHandicap ? "OOS_HANDICAP_CONDITIONAL" : "OOS_VERTICAL",
         });
       }
     }
