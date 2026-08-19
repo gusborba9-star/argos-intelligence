@@ -1,6 +1,6 @@
 # ARGOS INTELLIGENCE — MASTER ROADMAP
 
-**Version:** 1.2.0
+**Version:** 1.3.0
 **Status:** Canonical execution roadmap / source of truth
 **Baseline:** Existing production Argos v6.x
 
@@ -89,10 +89,10 @@
 - [ ] Closing price capture
 - [ ] CLV ledger
 - [ ] Market-state features
-- [ ] Dynamic market coverage discovery
-- [ ] Every discovered market mapped to a canonical vertical
+- [x] Dynamic market coverage discovery
+- [x] Every discovered market mapped to a canonical vertical
 - [ ] Every supported vertical receives evidence-backed probability generation
-- [ ] Unsupported markets are observable but never fabricated
+- [x] Unsupported markets are observable but never fabricated
 
 ## Phase 6 — Context Intelligence
 
@@ -220,33 +220,45 @@ The Argos execution layer must be capable of evaluating every market for which t
 - [x] Quantitative calibration invariants
 - [x] Latest validated deployment: `c466b55`
 
-### C-005 — Multi-Market Evidence Coverage 🔄 ACTIVE
+### C-005 — Multi-Market Evidence Coverage ✓
 
 - [x] Canonical MarketVertical universe reviewed
 - [x] Dynamic market-line discovery preserved
 - [x] Evidence-backed count-stat feature engine created
 - [x] Opponent-aware count-stat feature extraction
 - [x] Missing count-stat evidence cannot silently become synthetic data
-- [x] Orchestrator expanded to all canonical count-stat verticals
+- [x] Orchestrator expanded to canonical count-stat verticals
 - [x] Existing PropLine/API-Football call contracts left untouched in this cycle
 - [x] Quantitative tests added for count-stat evidence extraction
-- [ ] Validate typecheck + production build
+- [x] Typecheck + production build validated
+- [x] Quantitative test gate validated
+- [x] Real-market coverage validation gate passed
+- [x] Latest validated deployment: `dd6aacb`
+
+### C-006 — Quantitative Execution Boundary & Market Calibration 🔄 ACTIVE
+
+- [x] 24h maturity horizon enforced at discovery/queue/orchestrator boundaries
+- [x] Stale queued matches rejected again immediately before execution
+- [x] Handicap signed settlement preserved
+- [x] Handicap push probability preserved as an immutable third state
+- [x] Handicap calibration isolated from generic binary calibration
+- [x] Handicap calibration uses conditional win/loss mass, preserving push
+- [x] Canonical vertical registry remains broader than the executable model set
+- [x] Unsupported markets remain observable rather than receiving fabricated probabilities
+- [ ] Expand quantitative execution to every registry vertical with genuine evidence
+- [ ] Validate calibration independently per promoted vertical
+- [ ] Validate probability/fair-odd/EV consistency across all promoted verticals
+- [ ] Add explicit invariant suite for maturity + conditional handicap calibration
+- [ ] Validate production build
 - [ ] Validate quantitative test gate
-- [ ] Validate real-market coverage against production payloads
-- [ ] Validate calibration separately for each newly enabled vertical
-- [ ] Promote cycle only after all validation gates are Ready
+- [ ] Validate real-market payloads
+- [ ] Close C-006 only after all gates are Ready
 
-### C-005 exit condition
+### C-006 exit condition
 
-The cycle is not complete until the production build, quantitative gate and real payload coverage validation all succeed. A market is never considered production-ready merely because its enum or parser exists.
+A match can only reach quantitative execution inside the 24h maturity window; every promoted vertical must have a genuine evidence path and an independently validated probability transformation; Asian handicap probabilities must preserve push mass and calibrate only the decisive win/loss mass; no unsupported market may be assigned a synthetic probability.
 
-## Operating rule for every future cycle
+**Current implementation commits:**
+- `64a89b8` — enforce maturity horizon and handicap OOS calibration boundary
 
-1. Select one complete cycle from this roadmap.
-2. Inspect the entire dependency block, not a single file.
-3. Correct, replace, remove or implement everything required by that block.
-4. Preserve external API request/response contracts unless the API contract itself is explicitly verified.
-5. Run the full validation gate.
-6. If the build/test fails, fix immediately inside the same cycle.
-7. Wait for a real **Ready** deployment.
-8. Only after validation, mark the completed boxes `✓` and advance to the next cycle.
+**Validation status:** awaiting Vercel build + quantitative gate + real-payload validation.
