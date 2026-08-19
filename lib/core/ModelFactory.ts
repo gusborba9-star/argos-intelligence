@@ -4,11 +4,10 @@ import { learningEngine } from "./ContinuousLearningEngine";
 import { applyCalibration } from "./CalibrationMath";
 
 // ============================================================
-// MODEL FACTORY v6.4.0 — QUANTITATIVE CORE
+// MODEL FACTORY v6.4.1 — QUANTITATIVE CORE
 // Gamma-Poisson + deterministic seeded PRNG + OOS calibration.
-// Every binary probability exposed to the orchestrator is calibrated
-// from the same market-specific transform and complementary state.
-// Count-stat simulations use the same over-dispersion regime as goals.
+// Count-stat simulations use the same regime-aware distribution
+// and now pass through the same conservative OOS calibration gate.
 // ============================================================
 
 export interface MarketMetrics { homeMean: number; awayMean: number; dispersion?: number; }
@@ -21,7 +20,7 @@ export interface SimulationResult {
 }
 
 type RandomSource = () => number;
-type CalibratableMarket = "GOALS" | "CORNERS" | "CARDS" | "SHOTS" | "WINNER" | "BTTS" | "HANDICAP" | "GOALS_HT";
+type CalibratableMarket = "GOALS" | "CORNERS" | "CARDS" | "SHOTS" | "SHOTS_ON_TARGET" | "FOULS" | "TACKLES" | "SAVES" | "WINNER" | "BTTS" | "HANDICAP" | "GOALS_HT";
 
 export class ModelFactory {
   private static readonly DEFAULT_ITERATIONS = 10000;
@@ -110,6 +109,22 @@ export class ModelFactory {
     const probabilities: Record<string, number> = {};
     lines.forEach((line) => { const over = overCounts[line] / iterations; probabilities[`over_${line}`] = over; probabilities[`under_${line}`] = 1 - over; });
     return probabilities;
+  }
+
+  public static async runCountStatWithLearning(homeMean: number, awayMean: number, lines: number[], leagueId: string, marketType: CalibratableMarket, regime: RegimeProfile, iterations: number = 5000, seed?: number): Promise<Record<string, number>> {
+    const raw = this.runCountStatSimulation(homeMean, awayMean, lines, iterations, seed, regime.variance_multiplier);
+    const calibration = await learningEngine.getCalibration(leagueId, marketType);
+    const calibrated: Record<string, number> = {};
+    for (const line of lines) {
+      const overKey = `over_${line}`;
+      const underKey = `under_${line}`;
+      const rawOver = raw[overKey];
+      if (!Number.isFinite(rawOver)) continue;
+      const adjustedOver = applyCalibration(rawOver, calibration.logitSlope, calibration.logitIntercept);
+      calibrated[overKey] = adjustedOver;
+      calibrated[underKey] = 1 - adjustedOver;
+    }
+    return calibrated;
   }
 
   private static gammaPoissonLambda(mean: number, varianceMultiplier: number, random: RandomSource): number {
