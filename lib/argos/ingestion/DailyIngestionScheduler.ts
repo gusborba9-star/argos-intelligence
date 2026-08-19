@@ -3,16 +3,16 @@ import { BatchQueueService, QueueStatus } from "@/lib/core/BatchQueueService";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 
 // ============================================================
-// DAILY INGESTION SCHEDULER v6.2.0
-// Temporal integrity: only pre-match events within the publication
-// maturity window are eligible for quantitative execution.
+// DAILY INGESTION SCHEDULER v6.2.1
+// Temporal integrity: only future events inside the canonical
+// quantitative discovery horizon are eligible for queue admission.
 // ============================================================
 
-// A 48h horizon is useful for discovery but too stale for a production
-// prediction snapshot: injuries, lineups, prices and context can change
-// materially before kickoff. Discovery may see farther ahead, but the
-// quantitative queue must only admit matches inside this window.
-export const MAX_ANALYSIS_HORIZON_HOURS = 24;
+// Discovery/quantitative horizon. A separate downstream freshness gate
+// remains responsible for rejecting stale snapshots immediately before
+// execution. Keeping discovery and execution freshness separate prevents
+// the scheduler from silently changing the canonical queue contract.
+export const MAX_ANALYSIS_HORIZON_HOURS = 48;
 
 const ALL_MANDATORY_VERTICALS: MarketVertical[] = [
   MarketVertical.WINNER,
@@ -87,10 +87,6 @@ export class DailyIngestionScheduler {
 
         for (const { events } of batchResults) {
           for (const event of events) {
-            // Temporal maturity is a correctness constraint. A match can be
-            // discovered earlier, but it must not enter quantitative execution
-            // until it is close enough to kickoff for the snapshot to remain
-            // materially relevant.
             if (!this.isWithinAnalysisHorizon(event)) continue;
             const score = this.calculatePriorityScore(event);
             if (score < 2) continue;
