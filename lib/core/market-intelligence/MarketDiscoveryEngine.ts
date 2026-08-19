@@ -4,12 +4,10 @@ import { OddsValueEngine } from "./OddsValueEngine";
 import { MarketVertical } from "../ArgosUnifiedEngine";
 
 // ============================================================
-// MARKET DISCOVERY ENGINE v6.1.0 — COMPATIBILITY / AUDIT PATH
+// MARKET DISCOVERY ENGINE — COMPATIBILITY / AUDIT PATH
 // ============================================================
-// IMPORTANT: This engine is not the canonical v6.2 production orchestrator.
-// It remains available for compatibility/audit consumers, but it must never
-// manufacture a model probability from the market fair probability. A market
-// reference is evidence about the market, not an independent model forecast.
+// Market evidence and model probability are deliberately separate contracts.
+// This engine never converts market fair probability into a model forecast.
 
 export interface Opportunity {
   market: string;
@@ -24,11 +22,11 @@ export interface Opportunity {
   expectedValue: number;
   edge: number;
   edgePercent: number;
-  confidence: number;
   liquidity: number;
   risk: number;
   source: string;
   divergence?: number;
+  marketConsensusProbability?: number;
   kellyCriterion?: number;
   ratingLabel?: string;
   hasEdge?: boolean;
@@ -55,30 +53,21 @@ const MANDATORY_VERTICALS: MarketVertical[] = [
   MarketVertical.SHOTS_ON_TARGET,
   MarketVertical.FOULS,
   MarketVertical.TACKLES,
-  MarketVertical.SAVES
+  MarketVertical.SAVES,
 ];
 
 export class MarketDiscoveryEngine {
-  /**
-   * Varre mercados disponíveis e identifica oportunidades somente quando uma
-   * probabilidade de modelo independente foi fornecida.
-   *
-   * Antes havia um fallback silencioso para `fairLine.fairProb`. Isso fazia o
-   * engine transformar uma estimativa derivada do próprio mercado em
-   * "probabilidade do modelo", podendo fabricar EV artificialmente.
-   */
   public static discover(
     normalizedMarkets: NormalizedMarket[],
-    modelPredictions: { [key: string]: number }
+    modelPredictions: { [key: string]: number },
   ): Opportunity[] {
     const opportunities: Opportunity[] = [];
-
     const verticalsCovered = new Set(normalizedMarkets.map((m) => m.vertical));
     const missingMandatory = MANDATORY_VERTICALS.filter((v) => !verticalsCovered.has(v));
 
     if (missingMandatory.length > 0) {
       console.log(
-        `[MarketDiscovery] Mercados obrigatórios sem cobertura de odds: ${missingMandatory.join(", ")}`
+        `[MarketDiscovery] Mercados obrigatórios sem cobertura de odds: ${missingMandatory.join(", ")}`,
       );
     }
 
@@ -88,30 +77,26 @@ export class MarketDiscoveryEngine {
           normalizedMarkets,
           market.vertical,
           outcome.selection,
-          market.line
+          market.line,
         );
-
         if (!fairLine) continue;
 
         const selectionKey = outcome.selection.toUpperCase().replace(/\s+/g, "_");
         const candidateKeys = [
           `${market.vertical}_${selectionKey}_${market.line}`,
           `${market.vertical}_${outcome.selection}_${market.line}`,
-          `${market.vertical}_${outcome.selection}_0`
+          `${market.vertical}_${outcome.selection}_0`,
         ];
-        const modelKey = candidateKeys.find(
-          (key) => Number.isFinite(modelPredictions[key])
-        );
+        const modelKey = candidateKeys.find((key) => Number.isFinite(modelPredictions[key]));
 
-        // HARD INTEGRITY RULE: no independent model probability means no EV
-        // signal. The market fair probability remains available through
-        // FairOddsCalculator for reference, but it cannot impersonate the model.
+        // No independent model probability => no model EV signal.
         if (!modelKey) continue;
 
         const modelProb = modelPredictions[modelKey];
-        if (!Number.isFinite(modelProb) || modelProb < 0 || modelProb > 1) continue;
+        if (!Number.isFinite(modelProb) || modelProb <= 0 || modelProb >= 1) continue;
 
         const value = OddsValueEngine.calculateValue(modelProb, outcome.odd, fairLine.fairOdd);
+        const liquidity = this.estimateLiquidity(market.bookmaker, market.isSharp);
 
         opportunities.push({
           market: market.marketName,
@@ -126,14 +111,14 @@ export class MarketDiscoveryEngine {
           expectedValue: value.expectedValue,
           edge: value.edge,
           edgePercent: value.edgePercent,
-          confidence: fairLine.confidence,
-          liquidity: this.estimateLiquidity(market.bookmaker, market.isSharp),
-          risk: this.calculateRisk(value.edge, fairLine.confidence),
+          liquidity,
+          risk: this.calculateRisk(value.edge, liquidity, fairLine.evidence.divergence),
           source: fairLine.source,
-          divergence: fairLine.divergence,
+          divergence: fairLine.evidence.divergence,
+          marketConsensusProbability: fairLine.marketConsensusProbability,
           kellyCriterion: value.kellyCriterion,
           ratingLabel: value.ratingLabel,
-          modelProbabilitySource: "EXPLICIT_MODEL_PREDICTION"
+          modelProbabilitySource: "EXPLICIT_MODEL_PREDICTION",
         });
       }
     }
@@ -144,8 +129,8 @@ export class MarketDiscoveryEngine {
   public static generateReport(opportunities: Opportunity[]): DiscoveryReport {
     const positiveEV = opportunities.filter((o) => o.expectedValue > 0);
     const elite = opportunities.filter((o) => o.ratingLabel === "ELITE");
-
     const verticalBreakdown: Record<string, number> = {};
+
     for (const op of positiveEV) {
       verticalBreakdown[op.vertical] = (verticalBreakdown[op.vertical] || 0) + 1;
     }
@@ -155,7 +140,7 @@ export class MarketDiscoveryEngine {
       positiveEVCount: positiveEV.length,
       eliteCount: elite.length,
       verticalBreakdown,
-      discardedReason: opportunities.length === 0 ? "NO_INDEPENDENT_MODEL_PROBABILITY" : undefined
+      discardedReason: opportunities.length === 0 ? "NO_INDEPENDENT_MODEL_PROBABILITY" : undefined,
     };
   }
 
@@ -169,15 +154,15 @@ export class MarketDiscoveryEngine {
       draftkings: 0.65,
       fanduel: 0.65,
       williamhill: 0.60,
-      betway: 0.55
+      betway: 0.55,
     };
     return weights[bookmaker.toLowerCase()] ?? 0.50;
   }
 
-  private static calculateRisk(edge: number, confidence: number): number {
-    const baseRisk = 1.0;
-    const edgeBonus = Math.max(0, edge * 2);
-    const confidenceBonus = confidence * 0.5;
-    return parseFloat(Math.max(0.05, baseRisk - edgeBonus - confidenceBonus).toFixed(4));
+  private static calculateRisk(edge: number, liquidity: number, divergence: number): number {
+    const edgePenalty = Math.max(0, Math.min(0.50, edge * 2));
+    const liquidityPenalty = (1 - liquidity) * 0.25;
+    const divergencePenalty = Math.min(0.25, Math.max(0, divergence));
+    return Number(Math.max(0.05, 1 - edgePenalty + liquidityPenalty + divergencePenalty).toFixed(4));
   }
 }
