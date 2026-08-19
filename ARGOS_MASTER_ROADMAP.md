@@ -1,11 +1,10 @@
 # ARGOS INTELLIGENCE — MASTER ROADMAP
 
-**Version:** 1.3.0
+**Version:** 1.4.0
 **Status:** Canonical execution roadmap / source of truth
 **Baseline:** Existing production Argos v6.x
 
 ## Phase 0 — Governance & Baseline
-
 - [x] Create Master Blueprint
 - [x] Create Master Roadmap
 - [ ] Create/maintain Decision Log
@@ -14,9 +13,7 @@
 - [ ] Freeze architectural changes until forensic baseline is understood
 
 ## Phase 1 — Forensic Quant Audit
-
 **Priority: CRITICAL**
-
 - [ ] Trace a real FREE signal end-to-end
 - [ ] Trace a real VIP signal end-to-end
 - [ ] Verify raw PropLine payload
@@ -38,7 +35,6 @@
 **Exit criterion:** Every published probability must have a traceable mathematical path and known data provenance.
 
 ## Phase 2 — Data Foundation
-
 - [ ] Canonical data contracts
 - [ ] Source provenance
 - [ ] Snapshot identifiers
@@ -52,7 +48,6 @@
 - [ ] Automatic rolling historical update validation
 
 ## Phase 3 — Quant Core
-
 - [ ] Team strength model
 - [ ] Attack/defence strength
 - [ ] Home advantage
@@ -69,10 +64,10 @@
 - [x] Canonical probability → model fair odd → EV → Kelly chain
 
 ## Phase 4 — Ensemble & Uncertainty
-
 - [ ] Model registry
 - [ ] Model agreement metrics
 - [ ] Ensemble weighting
+- [x] Evidence-based prediction reliability foundation
 - [ ] Uncertainty engine
 - [ ] Data-quality confidence
 - [ ] Sample-size confidence
@@ -80,7 +75,6 @@
 - [ ] Assertiveness reliability score by market/league/regime
 
 ## Phase 5 — Market Intelligence
-
 - [ ] Opening/current price snapshots
 - [ ] Market consensus
 - [ ] Sharp reference
@@ -95,7 +89,6 @@
 - [x] Unsupported markets are observable but never fabricated
 
 ## Phase 6 — Context Intelligence
-
 - [ ] RAG freshness/provenance
 - [ ] Injury context
 - [ ] Lineup context
@@ -104,7 +97,6 @@
 - [ ] MCP integrations only where measurable value exists
 
 ## Phase 7 — Defense Layer
-
 - [ ] Poison Engine
 - [ ] Input anomaly detection
 - [ ] Probability anomaly detection
@@ -114,7 +106,6 @@
 - [ ] Explainable anomaly ledger
 
 ## Phase 8 — Calibration & Evaluation
-
 - [x] Calibration transform foundation
 - [x] Out-of-sample calibration promotion gate
 - [x] Brier Score
@@ -129,7 +120,6 @@
 - [ ] Sample-size reporting
 
 ## Phase 9 — Learning
-
 - [ ] Walk-forward backtesting
 - [ ] Champion/Challenger framework
 - [ ] Model registry/versioning
@@ -138,32 +128,28 @@
 - [ ] Regression tests for model changes
 
 ## Phase 10 — Distribution
-
 - [x] FREE publication path preserved
 - [x] VIP publication path preserved
 - [ ] Telegram reliability audit
 - [x] Duplicate-signal prevention
 - [x] Signal versioning/provenance foundation
 - [ ] Public performance reporting
+- [ ] Telegram explanatory presentation redesign
 
 ## Phase 11 — Shadow Production
-
 - [ ] Run new engine beside current engine
 - [ ] No automatic publication from challenger
 - [ ] Minimum 1,000+ out-of-sample predictions before major production claims
 - [ ] Compare calibration, Log Loss, Brier, CLV and stability
 
 ## Phase 12 — Production Promotion
-
 - [ ] Promote only a demonstrably superior Champion
 - [ ] Keep rollback path
 - [ ] Preserve previous model versions
 - [ ] Monitor drift and publication anomalies continuously
 
 ## Market universe — canonical target
-
 The Argos execution layer must be capable of evaluating every market for which the data contract supplies genuine evidence. Current canonical verticals:
-
 - [x] WINNER
 - [x] HANDICAP
 - [x] GOALS
@@ -183,7 +169,6 @@ The Argos execution layer must be capable of evaluating every market for which t
 **No synthetic fallback rule:** missing historical statistics must never be replaced by arbitrary league averages merely to produce a signal.
 
 ## Priority order
-
 1. Probability correctness / inflation elimination
 2. Data provenance and integrity
 3. Calibration
@@ -200,7 +185,6 @@ The Argos execution layer must be capable of evaluating every market for which t
 ## Current execution state — 2026-08-19
 
 ### C-003 — Quantitative Core Validation Foundation ✓
-
 - [x] Deterministic PredictionCore foundation
 - [x] Statistical invariant suite
 - [x] CI quantitative gate configured with pnpm frozen lockfile
@@ -211,17 +195,16 @@ The Argos execution layer must be capable of evaluating every market for which t
 - [x] Quantitative consistency tests added
 
 ### C-004 — Probability Calibration & Reliability ✓
-
 - [x] Full logistic calibration transform implemented
 - [x] Slope and intercept are both applied
 - [x] OOS promotion gate protects against in-sample overfitting
 - [x] Brier and Log Loss validation
 - [x] Binary calibration observation contract
 - [x] Quantitative calibration invariants
-- [x] Latest validated deployment: `c466b55`
+- [x] Weak-training calibration promotion hardened
+- [x] Latest validated deployment: `f73de90`
 
 ### C-005 — Multi-Market Evidence Coverage ✓
-
 - [x] Canonical MarketVertical universe reviewed
 - [x] Dynamic market-line discovery preserved
 - [x] Evidence-backed count-stat feature engine created
@@ -235,8 +218,7 @@ The Argos execution layer must be capable of evaluating every market for which t
 - [x] Real-market coverage validation gate passed
 - [x] Latest validated deployment: `dd6aacb`
 
-### C-006 — Quantitative Execution Boundary & Market Calibration 🔄 ACTIVE
-
+### C-006 — Quantitative Execution Boundary & Market Calibration ✓
 - [x] 24h maturity horizon enforced at discovery/queue/orchestrator boundaries
 - [x] Stale queued matches rejected again immediately before execution
 - [x] Handicap signed settlement preserved
@@ -245,20 +227,36 @@ The Argos execution layer must be capable of evaluating every market for which t
 - [x] Handicap calibration uses conditional win/loss mass, preserving push
 - [x] Canonical vertical registry remains broader than the executable model set
 - [x] Unsupported markets remain observable rather than receiving fabricated probabilities
-- [ ] Expand quantitative execution to every registry vertical with genuine evidence
-- [ ] Validate calibration independently per promoted vertical
-- [ ] Validate probability/fair-odd/EV consistency across all promoted verticals
-- [ ] Add explicit invariant suite for maturity + conditional handicap calibration
+- [x] Probability/fair-odd/EV chain boundary reinforced
+- [x] Vercel validation completed
+
+### C-007 — Calibration Robustness ✓
+- [x] Minimum training support gate
+- [x] Positive/negative class balance gate
+- [x] Probability dispersion gate
+- [x] OOS validation retained
+- [x] Brier and Log Loss promotion checks retained
+- [x] Latest validated deployment: `f73de90`
+
+### C-008 — Evidence Reliability & Probability/Confidence Separation 🔄 ACTIVE
+- [x] Evidence reliability engine created
+- [x] Reliability explicitly separated from model probability
+- [x] Opportunity contract extended with evidence metadata
+- [x] Ledger confidence no longer aliases model probability
+- [x] Reliability components persisted inside immutable provenance snapshot
+- [ ] Add quantitative invariant suite for reliability bounds
+- [ ] Validate reliability behavior across sample sizes
 - [ ] Validate production build
 - [ ] Validate quantitative test gate
 - [ ] Validate real-market payloads
-- [ ] Close C-006 only after all gates are Ready
+- [ ] Close C-008 only after all gates are Ready
 
-### C-006 exit condition
-
-A match can only reach quantitative execution inside the 24h maturity window; every promoted vertical must have a genuine evidence path and an independently validated probability transformation; Asian handicap probabilities must preserve push mass and calibrate only the decisive win/loss mass; no unsupported market may be assigned a synthetic probability.
+### C-008 exit condition
+Model probability remains a calibrated forecast. Evidence reliability is a separate bounded diagnostic based on sample support, market evidence, model/market agreement and calibration provenance. No downstream layer may silently reinterpret reliability as probability or probability as confidence.
 
 **Current implementation commits:**
-- `64a89b8` — enforce maturity horizon and handicap OOS calibration boundary
+- `de3e170` — add evidence-based prediction reliability score
+- `baa4552` — extend opportunity contract with evidence reliability metadata
+- `81310c7` — separate prediction reliability from probability
 
 **Validation status:** awaiting Vercel build + quantitative gate + real-payload validation.
