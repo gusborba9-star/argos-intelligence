@@ -3,9 +3,9 @@
 This file is the operational progress ledger. `docs/ARGOS_BLUEPRINT.md` remains the architectural and quantitative source of truth.
 
 ## Active cycle
-**P0.2-C — Canonical Execution Boundary & Legacy Bypass Elimination**
+**P1.1 — Out-of-Sample Calibration Integrity**
 
-### Completed and validated
+### P0.2-C — Canonical Execution Boundary & Legacy Bypass Elimination — ✓ COMPLETED AND VALIDATED
 - [x] Asian handicap integer-line PUSH settlement corrected.
 - [x] Team-history feature extraction corrected to distinguish home/away orientation.
 - [x] Non-conservative probability inflation from learning removed.
@@ -28,40 +28,36 @@ This file is the operational progress ledger. `docs/ARGOS_BLUEPRINT.md` remains 
 - [x] Provenance quantitative invariants implemented and validated.
 - [x] Provenance replay cycle validated through Ready deployments and accepted validation.
 - [x] Signal snapshots migrated from the removed quantitative engine to the canonical `ArgosSignal` contract; deployment `d62ff5c` validated Ready.
+- [x] Canonical production entrypoints audited and bound to `ArgosMasterOrchestrator`.
+- [x] Obsolete quantitative execution/harness bypasses removed.
+- [x] `MarketVertical` extracted into a pure canonical domain contract.
+- [x] Historical `ArgosUnifiedEngine.ts` reduced to compatibility-only contract re-export.
+- [x] Canonical quantitative boundary validated by accepted Ready deployment `a1b0679`.
 
-### Canonical execution-boundary batch — implementation completed, validation pending
-- [x] Audited canonical production entrypoints: `/api/argos/v6` and `/api/argos/v6/worker` execute `ArgosMasterOrchestrator`.
-- [x] Removed the obsolete quantitative implementation formerly exposed through `ArgosUnifiedEngine`.
-- [x] Removed the obsolete `DeepAnalysisTest` harness that depended on the legacy engine and synthetic contextual multipliers.
-- [x] Removed the obsolete `ProductionDeepAnalysis` script that duplicated production orchestration responsibilities and contained unused legacy-engine imports.
-- [x] Identified the legacy `ContextualFactorsEngine` as non-canonical because it converted contextual inputs directly into a multiplicative probability adjustment; it is no longer referenced by the production path.
-- [x] Canonical worker path remains explicitly bound to `ArgosMasterOrchestrator`.
-- [x] Canonical API path remains explicitly bound to `ArgosMasterOrchestrator`.
-- [x] Extracted `MarketVertical` into `lib/core/contracts/MarketVertical.ts` as a pure domain contract.
-- [x] Converted the historical `ArgosUnifiedEngine.ts` path into a compatibility-only re-export shim; it contains no quantitative execution logic.
+## P1.1 — Out-of-Sample Calibration Integrity
+### Implementation batch
+- [x] Replaced raw historical average prediction-vs-outcome bias with a time-split calibration fit.
+- [x] Calibration training and validation windows are temporally separated.
+- [x] Calibration promotion is gated by out-of-sample Brier performance.
+- [x] Calibration adjustment is bounded to a conservative logit intercept.
+- [x] Calibration remains isolated from EV calculation and market-reference construction.
+- [ ] Add pure calibration-math invariant tests.
+- [ ] Validate `pnpm run test:quant`.
+- [ ] Validate `pnpm exec tsc --noEmit`.
+- [ ] Validate `pnpm run build`.
+- [ ] Validate Vercel deployment reaches `Ready`.
+- [ ] Validate real-data signal probabilities after calibration change.
+- [ ] Mark P1.1 ✓ only after every gate passes.
 
-### Quantitative boundary now enforced by architecture
-- [x] External context is evidence, not an arbitrary probability multiplier.
-- [x] Production probability generation remains centralized in the calibrated quantitative chain.
-- [x] Legacy synthetic probability paths cannot silently compete with the canonical production engine.
-- [x] Telegram/distribution remains downstream of the canonical orchestration path rather than an independent prediction engine.
-- [x] Domain market taxonomy is separated from quantitative execution.
-
-### Validation gate — OPEN
-1. [ ] `pnpm run test:quant` passes on the branch.
-2. [ ] `pnpm exec tsc --noEmit` passes.
-3. [ ] `pnpm run build` passes.
-4. [ ] Vercel deployment for this branch reaches `Ready`.
-5. [ ] Production/API smoke test confirms `/api/argos/v6` and `/api/argos/v6/worker` resolve only through the canonical orchestrator.
-6. [ ] No repository references remain to the removed legacy quantitative implementation; compatibility import paths are allowed only as pure contract shims during migration.
-7. [ ] Only after all gates above: mark this cycle **✓ COMPLETED AND VALIDATED**.
-
-### Next blocks after closure
-- [ ] Walk-forward calibration metrics: Brier, Log Loss, reliability/calibration error and calibration slope/intercept by league and vertical.
-- [ ] Live signal ledger validation against model probability, executable price and settlement outcomes.
-- [ ] Specialist probability-engine audit, beginning with corners and cards.
-- [ ] Market-selection breadth audit so goals/BTTS/handicap do not dominate merely because their legacy engines are more mature.
-- [ ] Data freshness and re-analysis policy audit for the 48-hour horizon.
+### Following P1.1 blocks
+- [ ] Specialist probability engine for corners with league/team sample controls.
+- [ ] Specialist probability engine for cards with referee/team/context features.
+- [ ] Market breadth and dominance audit across goals, BTTS, handicap, corners and cards.
+- [ ] Fair-price / EV / CLV measurement integrity.
+- [ ] Settlement expansion with verified PropLine outcome/stat contracts.
+- [ ] Walk-forward league/vertical calibration reports.
+- [ ] Drift detection and champion/challenger model governance.
+- [ ] Opportunity ranking across matches and markets.
 
 ## Operating protocol
 ```text
@@ -91,6 +87,4 @@ No-veto principle: internal analysis is broad and observations are retained. Pub
 - Every published signal must eventually be reproducible from stored inputs, model version, feature set, timestamp, price snapshot, and decision path.
 - Publication filters may select/rank evidence but must not silently alter the underlying quantitative result.
 - Contextual/RAG evidence may modify features only through calibrated, auditable model components.
-
-## Next target
-**P0.2-C — Canonical Execution Boundary & Legacy Bypass Elimination — validation gate open**
+- Calibration must be trained on past observations and promoted only from a temporally separated validation set.
