@@ -11,6 +11,7 @@
 - **Provenance:** cada previsão deve permitir reconstruir dados, versão do motor, features, seed, simulação e transformação de calibração.
 - **Deterministic Replay:** uma previsão histórica deve poder ser reproduzida com o mesmo snapshot e seed.
 - **Calibration Before Claims:** assertividade só pode ser alegada depois de validação out-of-sample por Brier, Log Loss e reliability analysis.
+- **Adaptive Precision:** o objetivo é maximizar qualidade preditiva quando houver evidência e medir explicitamente incerteza, desacordo e condições de baixa confiabilidade; incerteza não deve ser convertida artificialmente em confiança.
 - **API Contract Protection:** alterações em PropLine/API-Football exigem preservação explícita dos contratos de request/response e respeito às quotas antes de qualquer refatoração.
 - **Validation Gate:** ciclo = analisar → implementar → testar/build → deployment Ready → registrar progresso.
 
@@ -26,43 +27,55 @@
 - [x] Preservados `side` e `point` para settlement asiático.
 - [x] Deployment `fe818bd` validado como **Ready**.
 
-## Current Quantitative Integrity Cycle — C-003
+### C-003 — Fair Price / EV Integrity — ✓ CONCLUÍDO
+- [x] Separados `modelProbability`, `marketConsensusProbability` e `fairProbability`.
+- [x] Removida semântica de `confidence` como substituta de probabilidade.
+- [x] Preservada a direção matemática de `realValue`.
+- [x] Evidência de mercado separada semanticamente do resultado do modelo.
+- [x] Contrato de handicap `point`, `side`, linha e settlement preservado.
+- [x] Invariantes quantitativos para EV, fair odds, probability e Kelly adicionados.
+- [x] Provenance/replay estrutural reforçado.
+- [x] `ArgosMasterOrchestrator` alinhado ao contrato canônico de evidência de mercado.
+- [x] Deployment `0f17362` validado como **Ready**.
 
-### Status: IN PROGRESS
+## Current Quantitative Integrity Cycle — C-004
 
-### Findings confirmed
-- [x] `ModelFactory` atual usa RNG não determinístico via `Math.random()`.
-- [x] A geração Gamma atual é uma aproximação aditiva e não uma amostragem Gamma estatisticamente adequada.
-- [x] O Monte Carlo atual mistura dispersão de forma genérica com o parâmetro de gols.
-- [x] Handicap perde informação de sinal ao armazenar contagens por `Math.abs(point)`.
-- [x] Probabilidade bruta, calibração e referência de mercado precisam permanecer semanticamente separadas.
+### Status: IN PROGRESS — CALIBRATION + ASSERTIVENESS OBSERVABILITY
 
-### Execution boundary
-O núcleo preditivo será tratado como componente estatístico independente, auditável e reproduzível. Não será considerado concluído apenas porque o build passa.
+### Objective
+Maximizar assertividade mensurável sem permitir inflação probabilística. O Argos deverá produzir simultaneamente uma estimativa probabilística e uma leitura objetiva de **quando essa estimativa merece maior confiança estatística e quando a incerteza é elevada**.
+
+### Current baseline already present
+- [x] Observações binárias com contrato `0 | 1`.
+- [x] Separação temporal treino/validação.
+- [x] Amostra mínima de treino e validação.
+- [x] Fit logístico de calibração.
+- [x] Limites conservadores para transformação de calibração.
+- [x] Promoção condicionada ao desempenho Brier out-of-sample.
 
 ### Required implementation
-- [ ] RNG determinístico com seed e replay.
-- [ ] Distribuições estatísticas explícitas e testáveis.
-- [ ] Poisson/Skellam para modelagem de gols quando as hipóteses forem válidas.
-- [ ] Distribuição conjunta do placar.
-- [ ] Monte Carlo reproduzível sobre parâmetros versionados.
-- [ ] Contrato de handicap preservando `side` + `point` assinados.
-- [ ] Snapshot de features e provenance da fonte.
-- [ ] Metadados de modelo/feature version.
-- [ ] Testes de invariantes probabilísticos.
+- [ ] Separação explícita `rawProbability → calibratedProbability → publishedProbability` em toda a cadeia.
+- [ ] Calibração específica por liga.
+- [ ] Calibração específica por vertical/mercado.
+- [ ] Brier Score e Log Loss como métricas de promoção.
+- [ ] Reliability analysis por faixa de probabilidade.
+- [ ] Shrinkage condicionado ao tamanho efetivo e à qualidade da amostra.
+- [ ] Validação temporal/out-of-sample obrigatória.
+- [ ] Medição de incerteza e desacordo entre modelos sem convertê-los em probabilidade artificial.
+- [ ] Gate para impedir publicação de precisão falsa quando a evidência estatística for insuficiente.
+- [ ] Métricas de assertividade separadas de valor de mercado.
+- [ ] Testes de invariantes para garantir monotonicidade, limites [0,1] e estabilidade da calibração.
 
-### Not Yet Done
-- [ ] C-003 não concluído.
-- [ ] Nenhum claim de assertividade será tratado como comprovado.
-- [ ] Adaptadores PropLine/API-Football permanecem fora deste ciclo até auditoria específica dos contratos.
+### Definition of Done C-004
+1. implementação integral da cadeia de calibração;
+2. testes/invariantes quantitativos;
+3. build/deployment;
+4. deployment **Ready**;
+5. replay de casos anteriormente inflados;
+6. atualização deste ledger e do roadmap com `✓`;
+7. nenhum mecanismo de calibração pode aumentar probabilidade apenas para produzir mais sinais.
 
 ## Next Cycles
-
-### C-004 — Probability Calibration
-- Calibração por liga/mercado.
-- Brier score, log loss e reliability curves.
-- Shrinkage por tamanho de amostra.
-- Separação entre probabilidade bruta, calibrada e publicada.
 
 ### C-005 — Market Microstructure / Benchmarking
 - Consenso multi-book.
@@ -70,6 +83,7 @@ O núcleo preditivo será tratado como componente estatístico independente, aud
 - Divergência entre fontes.
 - Registro de snapshots para avaliação retrospectiva.
 - Detecção de stale data.
+- CLV observado após fechamento.
 
 ### C-006 — Historical Learning Loop
 - Registro de previsão + snapshot + resultado oficial.
@@ -77,6 +91,7 @@ O núcleo preditivo será tratado como componente estatístico independente, aud
 - Feedback somente após o evento.
 - Proteção contra leakage.
 - Versionamento de modelos.
+- Drift monitoring.
 
 ### C-007 — Model Ensemble
 - Poisson/Skellam para gols.
