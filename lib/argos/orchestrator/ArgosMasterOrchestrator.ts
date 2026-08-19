@@ -26,7 +26,7 @@ const COUNT_STAT_VERTICALS = [
 ] as const;
 
 export class ArgosMasterOrchestrator {
-  private static readonly VERSION = "6.5.0-MASTER";
+  private static readonly VERSION = "6.5.1-MASTER";
   private static readonly MIN_REAL_SAMPLE = 1;
   private static readonly MAX_PLAUSIBLE_EV = 1.0;
   private static readonly MAX_ODD_MARKET_REFERENCE_RATIO = 3.0;
@@ -109,7 +109,16 @@ export class ArgosMasterOrchestrator {
       }
 
       if (homeMean === null || awayMean === null || sampleSize < this.MIN_REAL_SAMPLE) continue;
-      countStatProbabilities[vertical] = ModelFactory.runCountStatSimulation(homeMean, awayMean, lines);
+      countStatProbabilities[vertical] = await ModelFactory.runCountStatWithLearning(
+        homeMean,
+        awayMean,
+        lines,
+        leagueIdentifier,
+        vertical,
+        regime as any,
+        5000,
+        ModelFactory.seedForCountStat(matchId, vertical, homeMean, awayMean, lines),
+      );
       countStatSamples[vertical] = sampleSize;
     }
 
@@ -118,9 +127,6 @@ export class ArgosMasterOrchestrator {
       try { h2hSummary = await apiFootballService.getH2HSummary(rawData.home_team, rawData.away_team); } catch { h2hSummary = null; }
     }
 
-    // Only verticals with a real quantitative execution path are promoted.
-    // Registry coverage remains broader: unsupported normalized markets stay observable
-    // rather than being assigned fabricated probabilities.
     const verticalsToAnalyze = [
       MarketVertical.WINNER,
       MarketVertical.HANDICAP,
@@ -165,8 +171,6 @@ export class ArgosMasterOrchestrator {
         if (selection.kind === "handicap") {
           const settlement = handicapSettlement[`${selection.side}_${selection.point}`];
           if (!settlement) continue;
-          // Handicap has a third state (push). Calibrate only the conditional
-          // win/loss mass, then restore the immutable push mass.
           const decisiveMass = settlement.win + settlement.loss;
           const rawConditionalWin = decisiveMass > 0 ? settlement.win / decisiveMass : 0.5;
           const calibratedConditionalWin = applyCalibration(
