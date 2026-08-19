@@ -4,6 +4,7 @@ import { OddsValueEngine } from "../../core/market-intelligence/OddsValueEngine"
 import { ModelFactory } from "../../core/ModelFactory";
 import { AsianHandicapSettlementEngine } from "../../core/market-intelligence/AsianHandicapSettlementEngine";
 import { FeatureEngine } from "../../core/FeatureEngine";
+import { MarketStatFeatureEngine } from "../../core/MarketStatFeatureEngine";
 import { DataIngestionService } from "../../core/DataIngestionService";
 import { RAGContextEngine } from "../regime/RAGContextEngine";
 import { SignalDistributionEngine } from "../../core/market-intelligence/SignalDistributionEngine";
@@ -12,9 +13,18 @@ import { getSupabaseClient } from "../../core/SupabaseClient";
 import { apiFootballService } from "../../core/ApiFootballService";
 
 const MAX_ANALYSIS_HORIZON_HOURS = 48;
+const COUNT_STAT_VERTICALS = [
+  MarketVertical.CORNERS,
+  MarketVertical.CARDS,
+  MarketVertical.SHOTS,
+  MarketVertical.SHOTS_ON_TARGET,
+  MarketVertical.FOULS,
+  MarketVertical.TACKLES,
+  MarketVertical.SAVES,
+] as const;
 
 export class ArgosMasterOrchestrator {
-  private static readonly VERSION = "6.3.2-MASTER";
+  private static readonly VERSION = "6.4.0-MASTER";
   private static readonly MIN_REAL_SAMPLE = 1;
   private static readonly MAX_PLAUSIBLE_EV = 1.0;
   private static readonly MAX_ODD_MARKET_REFERENCE_RATIO = 3.0;
@@ -34,7 +44,7 @@ export class ArgosMasterOrchestrator {
     const leagueIdentifier = String(rawData.league_id ?? rawData.sport_key ?? rawData.sport_title ?? "unknown_league");
     const normalizedMarkets = MarketNormalizer.normalize(rawData);
     const report = MarketNormalizer.generateReport(normalizedMarkets);
-    console.log(`[ArgosMaster] Markets=${report.totalMarkets} sharp=${report.hasSharpReference}`);
+    console.log(`[ArgosMaster] Markets=${report.totalMarkets} sharp=${report.hasSharpReference} coverage=${JSON.stringify(report.verticalCoverage)}`);
 
     const ragEngine = new RAGContextEngine(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, process.env.GOOGLE_AI_API_KEY!);
     const context = await ragEngine.retrieveContext(matchId, leagueIdentifier);
@@ -42,25 +52,79 @@ export class ArgosMasterOrchestrator {
 
     const dataService = new DataIngestionService();
     const sportKey = rawData.sport_key || leagueIdentifier;
-    const [homeHistory, awayHistory] = await Promise.all([dataService.getRealTeamHistory(sportKey, rawData.home_team), dataService.getRealTeamHistory(sportKey, rawData.away_team)]);
+    const [homeHistory, awayHistory] = await Promise.all([
+      dataService.getRealTeamHistory(sportKey, rawData.home_team),
+      dataService.getRealTeamHistory(sportKey, rawData.away_team),
+    ]);
     const hasRealData = homeHistory.length >= this.MIN_REAL_SAMPLE && awayHistory.length >= this.MIN_REAL_SAMPLE;
-    const features = FeatureEngine.generateFeatureVector({ ...rawData, homeHistory: rawData.homeHistory?.length ? rawData.homeHistory : homeHistory, awayHistory: rawData.awayHistory?.length ? rawData.awayHistory : awayHistory });
+    const features = FeatureEngine.generateFeatureVector({
+      ...rawData,
+      homeHistory: rawData.homeHistory?.length ? rawData.homeHistory : homeHistory,
+      awayHistory: rawData.awayHistory?.length ? rawData.awayHistory : awayHistory,
+    });
 
-    const [homeExtra, awayExtra] = await Promise.all([dataService.getTeamExtraStats(sportKey, rawData.home_team), dataService.getTeamExtraStats(sportKey, rawData.away_team)]);
-    const hasExtraStats = !!homeExtra && !!awayExtra;
+    const [homeExtra, awayExtra] = await Promise.all([
+      dataService.getTeamExtraStats(sportKey, rawData.home_team),
+      dataService.getTeamExtraStats(sportKey, rawData.away_team),
+    ]);
     const countStatProbabilities: Record<string, Record<string, number>> = {};
-    if (homeExtra && awayExtra) {
-      const cornersHomeMean = (homeExtra.cornersFor + awayExtra.cornersAgainst) / 2;
-      const cornersAwayMean = (awayExtra.cornersFor + homeExtra.cornersAgainst) / 2;
-      const cardsHomeMean = (homeExtra.cardsFor + awayExtra.cardsAgainst) / 2;
-      const cardsAwayMean = (awayExtra.cardsFor + homeExtra.cardsAgainst) / 2;
-      countStatProbabilities[MarketVertical.CORNERS] = ModelFactory.runCountStatSimulation(cornersHomeMean, cornersAwayMean, [7.5, 8.5, 9.5, 10.5, 11.5, 12.5]);
-      countStatProbabilities[MarketVertical.CARDS] = ModelFactory.runCountStatSimulation(cardsHomeMean, cardsAwayMean, [2.5, 3.5, 4.5, 5.5, 6.5]);
+    const countStatSamples: Record<string, number> = {};
+
+    for (const vertical of COUNT_STAT_VERTICALS) {
+      const lines = [...new Set(
+        normalizedMarkets
+          .filter((market) => market.vertical === vertical)
+          .map((market) => market.line)
+          .filter((line): line is number => Number.isFinite(line)),
+      )];
+      if (lines.length === 0) continue;
+
+      let homeMean: number | null = null;
+      let awayMean: number | null = null;
+      let sampleSize = 0;
+
+      if (vertical === MarketVertical.CORNERS && homeExtra && awayExtra) {
+        homeMean = (homeExtra.cornersFor + awayExtra.cornersAgainst) / 2;
+        awayMean = (awayExtra.cornersFor + homeExtra.cornersAgainst) / 2;
+        sampleSize = Math.min(homeExtra.sampleSize || 0, awayExtra.sampleSize || 0);
+      } else if (vertical === MarketVertical.CARDS && homeExtra && awayExtra) {
+        homeMean = (homeExtra.cardsFor + awayExtra.cardsAgainst) / 2;
+        awayMean = (awayExtra.cardsFor + homeExtra.cardsAgainst) / 2;
+        sampleSize = Math.min(homeExtra.sampleSize || 0, awayExtra.sampleSize || 0);
+      } else {
+        const profile = MarketStatFeatureEngine.build(
+          vertical,
+          rawData.homeHistory?.length ? rawData.homeHistory : homeHistory,
+          rawData.awayHistory?.length ? rawData.awayHistory : awayHistory,
+          rawData.home_team,
+          rawData.away_team,
+        );
+        if (profile) {
+          homeMean = (profile.homeFor + profile.awayAgainst) / 2;
+          awayMean = (profile.awayFor + profile.homeAgainst) / 2;
+          sampleSize = Math.min(profile.homeSample, profile.awaySample);
+        }
+      }
+
+      // No synthetic fallback: a count market requires actual observations.
+      if (homeMean === null || awayMean === null || sampleSize < this.MIN_REAL_SAMPLE) continue;
+      countStatProbabilities[vertical] = ModelFactory.runCountStatSimulation(homeMean, awayMean, lines);
+      countStatSamples[vertical] = sampleSize;
     }
 
     let h2hSummary: any = null;
-    if (hasRealData) { try { h2hSummary = await apiFootballService.getH2HSummary(rawData.home_team, rawData.away_team); } catch { h2hSummary = null; } }
-    const verticalsToAnalyze = [MarketVertical.WINNER, MarketVertical.HANDICAP, MarketVertical.GOALS, MarketVertical.GOALS_HT, MarketVertical.BTTS, MarketVertical.CORNERS, MarketVertical.CARDS];
+    if (hasRealData) {
+      try { h2hSummary = await apiFootballService.getH2HSummary(rawData.home_team, rawData.away_team); } catch { h2hSummary = null; }
+    }
+
+    const verticalsToAnalyze = [
+      MarketVertical.WINNER,
+      MarketVertical.HANDICAP,
+      MarketVertical.GOALS,
+      MarketVertical.GOALS_HT,
+      MarketVertical.BTTS,
+      ...COUNT_STAT_VERTICALS,
+    ];
     const opportunities: any[] = [];
 
     const homeAttack = features.homeMetrics.goals;
@@ -72,10 +136,14 @@ export class ArgosMasterOrchestrator {
 
     for (const vertical of verticalsToAnalyze) {
       if (!hasRealData && [MarketVertical.GOALS, MarketVertical.GOALS_HT, MarketVertical.BTTS, MarketVertical.HANDICAP].includes(vertical)) continue;
-      if ([MarketVertical.CORNERS, MarketVertical.CARDS].includes(vertical) && !hasExtraStats) continue;
-      const isCountStatVertical = [MarketVertical.CORNERS, MarketVertical.CARDS].includes(vertical);
+      const isCountStatVertical = COUNT_STAT_VERTICALS.includes(vertical as (typeof COUNT_STAT_VERTICALS)[number]);
+      if (isCountStatVertical && !countStatProbabilities[vertical]) continue;
       const isHandicap = vertical === MarketVertical.HANDICAP;
-      const simulation = isCountStatVertical ? { probabilities: countStatProbabilities[vertical] || {} } : isHandicap ? null : await ModelFactory.runMonteCarloWithLearning({ homeMean: expectedHomeGoals, awayMean: expectedAwayGoals }, regime as any, leagueIdentifier, vertical as any);
+      const simulation = isCountStatVertical
+        ? { probabilities: countStatProbabilities[vertical] || {} }
+        : isHandicap
+          ? null
+          : await ModelFactory.runMonteCarloWithLearning({ homeMean: expectedHomeGoals, awayMean: expectedAwayGoals }, regime as any, leagueIdentifier, vertical as any);
       const selections = this.getSelectionsForVertical(vertical, normalizedMarkets, rawData.home_team, rawData.away_team);
       const handicapPoints = isHandicap ? [...new Set(selections.filter((s): s is HandicapSelection => s.kind === "handicap").map((s) => s.point))] : [];
       const handicapSettlement = isHandicap ? AsianHandicapSettlementEngine.simulate(expectedHomeGoals, expectedAwayGoals, regime as any, handicapPoints) : {};
@@ -108,12 +176,43 @@ export class ArgosMasterOrchestrator {
           continue;
         }
 
-        opportunities.push({ vertical, selection: selection.label, line: selection.line, handicapPoint: selection.kind === "handicap" ? selection.point : undefined, probability: modelProbability, modelProbability, pushProbability: valueAnalysis.pushProbability ?? 0, lossProbability: valueAnalysis.lossProbability, modelFairOdd, fairOdd: modelFairOdd, marketReferenceOdd: marketFairOdd, fairSource: marketReference.source, marketReferenceProbability: this.clipProbability(marketReference.marketConsensusProbability), marketConsensusProbability: marketReference.marketConsensusProbability, marketDivergence: marketReference.evidence.divergence, odd: marketOdd, expectedValue: valueAnalysis.expectedValue, edge: valueAnalysis.edge, edgePercent: valueAnalysis.edgePercent, kellyCriterion: valueAnalysis.kellyCriterion, ratingLabel: valueAnalysis.ratingLabel, hasEdge: valueAnalysis.isPositive, sampleSize: isCountStatVertical ? Math.min(homeExtra?.sampleSize || 0, awayExtra?.sampleSize || 0) : Math.min(homeHistory.length, awayHistory.length), h2hMatches: h2hSummary?.matchesPlayed ?? 0 });
+        opportunities.push({
+          vertical,
+          selection: selection.label,
+          line: selection.line,
+          handicapPoint: selection.kind === "handicap" ? selection.point : undefined,
+          probability: modelProbability,
+          modelProbability,
+          pushProbability: valueAnalysis.pushProbability ?? 0,
+          lossProbability: valueAnalysis.lossProbability,
+          modelFairOdd,
+          fairOdd: modelFairOdd,
+          marketReferenceOdd: marketFairOdd,
+          fairSource: marketReference.source,
+          marketReferenceProbability: this.clipProbability(marketReference.marketConsensusProbability),
+          marketConsensusProbability: marketReference.marketConsensusProbability,
+          marketDivergence: marketReference.evidence.divergence,
+          odd: marketOdd,
+          expectedValue: valueAnalysis.expectedValue,
+          edge: valueAnalysis.edge,
+          edgePercent: valueAnalysis.edgePercent,
+          kellyCriterion: valueAnalysis.kellyCriterion,
+          ratingLabel: valueAnalysis.ratingLabel,
+          hasEdge: valueAnalysis.isPositive,
+          sampleSize: isCountStatVertical ? countStatSamples[vertical] || 0 : Math.min(homeHistory.length, awayHistory.length),
+          h2hMatches: h2hSummary?.matchesPlayed ?? 0,
+        });
       }
     }
 
     const analysisSummary = this.generateDeepAnalysis(context, features, opportunities);
-    if (opportunities.length > 0) await SignalDistributionEngine.processAndDispatch(opportunities.map((op) => ({ ...op, analysisSummary })), regime as any, { matchId, name: `${rawData.home_team} vs ${rawData.away_team}`, homeTeam: rawData.home_team, awayTeam: rawData.away_team, league: features.leagueProfile.name, kickoff: rawData.commence_time || rawData.kickoff_at || null });
+    if (opportunities.length > 0) {
+      await SignalDistributionEngine.processAndDispatch(
+        opportunities.map((op) => ({ ...op, analysisSummary })),
+        regime as any,
+        { matchId, name: `${rawData.home_team} vs ${rawData.away_team}`, homeTeam: rawData.home_team, awayTeam: rawData.away_team, league: features.leagueProfile.name, kickoff: rawData.commence_time || rawData.kickoff_at || null },
+      );
+    }
     return { status: "SUCCESS", version: this.VERSION, matchId, opportunitiesFound: opportunities.length, timestamp: new Date().toISOString() };
   }
 
@@ -122,17 +221,21 @@ export class ArgosMasterOrchestrator {
 
   private static getSelectionsForVertical(vertical: MarketVertical, normalizedMarkets: any[], homeTeam?: string, awayTeam?: string): Selection[] {
     switch (vertical) {
-      case MarketVertical.WINNER: return [{ kind: "standard", key: "home", label: "Home", line: 0 }, { kind: "standard", key: "draw", label: "Draw", line: 0 }, { kind: "standard", key: "away", label: "Away", line: 0 }];
-      case MarketVertical.GOALS: {
-        const lines = new Set<number>(normalizedMarkets.filter((m) => m.vertical === vertical).map((m) => m.line).filter((l: number) => Number.isFinite(l)));
-        return [...lines].flatMap((line) => [{ kind: "standard", key: `over_${line}`, label: "Over", line }, { kind: "standard", key: `under_${line}`, label: "Under", line }]);
-      }
+      case MarketVertical.WINNER:
+        return [{ kind: "standard", key: "home", label: "Home", line: 0 }, { kind: "standard", key: "draw", label: "Draw", line: 0 }, { kind: "standard", key: "away", label: "Away", line: 0 }];
+      case MarketVertical.GOALS:
       case MarketVertical.CORNERS:
-      case MarketVertical.CARDS: {
+      case MarketVertical.CARDS:
+      case MarketVertical.SHOTS:
+      case MarketVertical.SHOTS_ON_TARGET:
+      case MarketVertical.FOULS:
+      case MarketVertical.TACKLES:
+      case MarketVertical.SAVES: {
         const lines = new Set<number>(normalizedMarkets.filter((m) => m.vertical === vertical).map((m) => m.line).filter((l: number) => Number.isFinite(l)));
         return [...lines].flatMap((line) => [{ kind: "standard", key: `over_${line}`, label: "Over", line }, { kind: "standard", key: `under_${line}`, label: "Under", line }]);
       }
-      case MarketVertical.BTTS: return [{ kind: "standard", key: "btts_yes", label: "Yes", line: 0 }, { kind: "standard", key: "btts_no", label: "No", line: 0 }];
+      case MarketVertical.BTTS:
+        return [{ kind: "standard", key: "btts_yes", label: "Yes", line: 0 }, { kind: "standard", key: "btts_no", label: "No", line: 0 }];
       case MarketVertical.HANDICAP: {
         if (!homeTeam || !awayTeam) return [];
         const selections: HandicapSelection[] = [];
@@ -160,7 +263,7 @@ export class ArgosMasterOrchestrator {
   private static generateDeepAnalysis(context: any, features: any, opportunities: any[]): string {
     let summary = opportunities.length > 3 ? "O modelo identificou múltiplas oportunidades quantitativas independentes. " : "O modelo identificou uma oportunidade quantitativa pontual. ";
     if (context.lesoes.length > 0) summary += `Contexto de ausências: ${context.lesoes.slice(0, 2).join(", ")}. `;
-    if (features.homeRecentForm > 0.7) summary += "Dominância recente do mandante foi incorporada como contexto. ";
+    if (features.historicalContext.homeRecentForm > 0.7) summary += "Dominância recente do mandante foi incorporada como contexto. ";
     summary += "Probabilidade, fair odd do modelo, preço de mercado, EV e Kelly pertencem à mesma cadeia quantitativa canônica.";
     return summary;
   }
