@@ -1,5 +1,5 @@
 // ============================================================
-// ODDS VALUE ENGINE v6.1.0 — CANONICAL QUANTITATIVE CHAIN
+// ODDS VALUE ENGINE v6.1.1 — CANONICAL QUANTITATIVE CHAIN
 // Model probability is the sole source for model fair odds, EV and Kelly.
 // Market fair/reference prices are metadata and never masquerade as model fair.
 // ============================================================
@@ -27,6 +27,10 @@ export class OddsValueEngine {
 
   public static calculateValue(modelProbability: number, marketOdd: number, marketFairOdd?: number): ValueAnalysis {
     const chain = buildCanonicalValueChain(modelProbability, marketOdd, this.FRACTIONAL_KELLY);
+    if (marketFairOdd !== undefined && (!Number.isFinite(marketFairOdd) || marketFairOdd <= 1)) {
+      throw new Error(`Invalid market fair odd: ${marketFairOdd}`);
+    }
+
     const ev = chain.expectedValue;
     const fullKelly = chain.fullKelly;
     const finalKelly = Math.min(this.MAX_EXPOSURE, chain.fractionalKelly);
@@ -59,11 +63,18 @@ export class OddsValueEngine {
     if (!Number.isFinite(pushProbability) || pushProbability < 0 || pushProbability >= 1) {
       throw new Error(`Invalid handicap push probability: ${pushProbability}`);
     }
-    const lossProbability = 1 - winProbability - pushProbability;
-    if (lossProbability < -1e-9) throw new Error("Invalid handicap settlement probabilities");
     if (!Number.isFinite(marketOdd) || marketOdd <= 1) throw new Error(`Invalid market odd: ${marketOdd}`);
+    if (marketFairOdd !== undefined && (!Number.isFinite(marketFairOdd) || marketFairOdd <= 1)) {
+      throw new Error(`Invalid market fair odd: ${marketFairOdd}`);
+    }
 
-    const loss = Math.max(0, lossProbability);
+    const rawLossProbability = 1 - winProbability - pushProbability;
+    if (rawLossProbability < -1e-9) throw new Error("Invalid handicap settlement probabilities");
+
+    // Quantize settlement probabilities at a tighter-than-display precision.
+    // This removes IEEE-754 residue (e.g. 0.35000000000000003) without
+    // changing the economic value of the settlement partition.
+    const loss = Math.max(0, Number(rawLossProbability.toFixed(12)));
     const b = marketOdd - 1;
     const ev = winProbability * b - loss;
     const fullKelly = b > 0 ? Math.max(0, ev / b) : 0;
