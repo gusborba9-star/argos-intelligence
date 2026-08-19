@@ -8,7 +8,7 @@ import {
 } from "./CalibrationMath";
 
 // ============================================================
-// CALIBRATION ENGINE v6.5.0 — TIME-SPLIT, CONSERVATIVE
+// CALIBRATION ENGINE v6.6.0 — TIME-SPLIT, CONSERVATIVE
 // Learning is a calibration layer, not a prediction generator.
 // ============================================================
 
@@ -31,6 +31,10 @@ export class ContinuousLearningEngine {
   private static readonly MIN_SLOPE = 0.8;
   private static readonly MAX_SLOPE = 1.25;
   private static readonly MAX_ROWS = 500;
+  private static readonly MIN_CLASS_RATE = 0.10;
+  private static readonly MIN_PROBABILITY_SPREAD = 0.05;
+  private static readonly MAX_VALIDATION_DEGRADATION_BRIER = 0.005;
+  private static readonly MAX_VALIDATION_DEGRADATION_LOGLOSS = 0.02;
   private supabase = getSupabaseClient();
 
   public async getCalibration(leagueId: string, vertical: string): Promise<LearningCalibration> {
@@ -83,6 +87,18 @@ export class ContinuousLearningEngine {
         };
       }
 
+      // A calibration transform cannot be trusted when the training window is
+      // nearly one-class or contains almost no probability dispersion. In
+      // those regimes logistic fitting can become numerically stable while
+      // still producing a misleading transform.
+      if (!this.hasCalibrationSupport(training)) {
+        return {
+          ...base,
+          sampleSize: training.length,
+          validationSampleSize: validation.length,
+        };
+      }
+
       const fitted = fitLogisticCalibration(training);
       const promotedSlope = Math.max(
         ContinuousLearningEngine.MIN_SLOPE,
@@ -104,8 +120,12 @@ export class ContinuousLearningEngine {
 
       // Promotion is strictly out-of-sample. Calibration must not materially
       // degrade either proper scoring rule before it can influence production.
-      const brierDegrades = validationBrier > baselineBrier + 0.005;
-      const logLossDegrades = validationLogLoss > baselineLogLoss + 0.02;
+      const brierDegrades =
+        validationBrier >
+        baselineBrier + ContinuousLearningEngine.MAX_VALIDATION_DEGRADATION_BRIER;
+      const logLossDegrades =
+        validationLogLoss >
+        baselineLogLoss + ContinuousLearningEngine.MAX_VALIDATION_DEGRADATION_LOGLOSS;
       if (brierDegrades || logLossDegrades) {
         return {
           ...base,
@@ -131,6 +151,26 @@ export class ContinuousLearningEngine {
       console.error("[CalibrationEngine] Erro ao obter calibração:", error);
       return base;
     }
+  }
+
+  private hasCalibrationSupport(observations: CalibrationObservation[]): boolean {
+    if (observations.length < ContinuousLearningEngine.MIN_TRAINING_SAMPLE) return false;
+
+    const positiveRate =
+      observations.reduce((sum, observation) => sum + observation.outcome, 0) /
+      observations.length;
+    const negativeRate = 1 - positiveRate;
+    if (
+      positiveRate < ContinuousLearningEngine.MIN_CLASS_RATE ||
+      negativeRate < ContinuousLearningEngine.MIN_CLASS_RATE
+    ) {
+      return false;
+    }
+
+    const probabilities = observations.map((observation) => observation.probability);
+    const minProbability = Math.min(...probabilities);
+    const maxProbability = Math.max(...probabilities);
+    return maxProbability - minProbability >= ContinuousLearningEngine.MIN_PROBABILITY_SPREAD;
   }
 
   private safeDefault(): LearningCalibration {
