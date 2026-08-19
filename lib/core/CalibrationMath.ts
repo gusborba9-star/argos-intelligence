@@ -53,8 +53,20 @@ export function fitLogisticCalibration(observations: CalibrationObservation[]): 
   };
 }
 
+/** Apply the complete promoted logistic calibration transform. */
+export function applyCalibration(
+  probability: number,
+  slope: number,
+  intercept: number,
+): number {
+  const safeSlope = clamp(slope, MIN_SLOPE, MAX_SLOPE);
+  const safeIntercept = clamp(intercept, -MAX_INTERCEPT, MAX_INTERCEPT);
+  return sigmoid(safeSlope * logit(probability) + safeIntercept);
+}
+
+/** Backward-compatible intercept-only transform. */
 export function applyCalibrationIntercept(probability: number, intercept: number): number {
-  return sigmoid(logit(probability) + clamp(intercept, -MAX_INTERCEPT, MAX_INTERCEPT));
+  return applyCalibration(probability, 1, intercept);
 }
 
 export function brierScore(predictions: number[], observations: CalibrationObservation[]): number {
@@ -67,6 +79,19 @@ export function brierScore(predictions: number[], observations: CalibrationObser
     (sum, prediction, index) => sum + (prediction - observations[index].outcome) ** 2,
     0,
   ) / observations.length;
+}
+
+export function logLoss(predictions: number[], observations: CalibrationObservation[]): number {
+  if (predictions.length !== observations.length) {
+    throw new Error("Log loss requires prediction and observation arrays of equal length");
+  }
+  if (observations.length === 0) return 0;
+
+  return predictions.reduce((sum, prediction, index) => {
+    const p = clamp(prediction, MIN_PROBABILITY, 1 - MIN_PROBABILITY);
+    const outcome = observations[index].outcome;
+    return sum - (outcome * Math.log(p) + (1 - outcome) * Math.log(1 - p));
+  }, 0) / observations.length;
 }
 
 function logit(probability: number): number {
