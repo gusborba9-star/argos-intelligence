@@ -3,9 +3,9 @@
 This file is the operational progress ledger. `docs/ARGOS_BLUEPRINT.md` remains the architectural and quantitative source of truth.
 
 ## Active cycle
-**P0.2-B — Provenance Replay & Walk-Forward Calibration**
+**P0.2-C — Canonical Execution Boundary & Legacy Bypass Elimination**
 
-### Previously completed and validated
+### Completed and validated
 - [x] Asian handicap integer-line PUSH settlement corrected.
 - [x] Team-history feature extraction corrected to distinguish home/away orientation.
 - [x] Non-conservative probability inflation from learning removed.
@@ -24,32 +24,42 @@ This file is the operational progress ledger. `docs/ARGOS_BLUEPRINT.md` remains 
 - [x] Sparse samples shrink attack and defence toward league-neutral priors.
 - [x] Arbitrary RAG probability-driving bias removed.
 - [x] Online learning/calibration constrained by minimum sample, prior shrinkage and bounded adjustment.
+- [x] Immutable signal provenance schema, snapshotting, deterministic hashing and replay verification implemented.
+- [x] Provenance quantitative invariants implemented and validated.
+- [x] Provenance replay cycle validated through Ready deployments and accepted validation.
 
-### Current batch IMPLEMENTED — validation pending
-**Immutable signal provenance + replay**
+## P0.2-C — Canonical Execution Boundary & Legacy Bypass Elimination
 
-- [x] Added additive `argos_signal_ledger` provenance schema: model version, analysis/odds timestamps, model probability, market-implied probability, fair odd, executable odd, immutable snapshot and SHA-256 hash.
-- [x] Applied the provenance schema migration to the connected production Supabase project and verified all nine columns exist.
-- [x] Centralized deterministic provenance hashing in `lib/argos/provenance/SignalProvenance.ts`.
-- [x] Signal distribution now persists a provenance snapshot/hash alongside every newly recorded published signal.
-- [x] Added protected `replay-signal` audit endpoint that verifies the stored snapshot against its hash without recalculating the prediction.
-- [x] Added quantitative invariants for deterministic hashing and mutation detection.
+### Batch implemented — validation pending
+- [x] Audited canonical production entrypoints: `/api/argos/v6` and `/api/argos/v6/worker` both execute `ArgosMasterOrchestrator`.
+- [x] Removed the obsolete `ArgosUnifiedEngine` that exposed an independent legacy quantitative path with ranking/exposure behavior disconnected from the canonical orchestrator.
+- [x] Removed the obsolete `DeepAnalysisTest` harness that depended on the legacy engine and synthetic contextual multipliers.
+- [x] Removed the obsolete `ProductionDeepAnalysis` script that duplicated production orchestration responsibilities and contained unused legacy-engine imports.
+- [x] Identified the legacy `ContextualFactorsEngine` as non-canonical because it converted contextual inputs directly into a multiplicative probability adjustment; it is no longer referenced by the production path.
+- [x] Canonical worker path remains explicitly bound to `ArgosMasterOrchestrator`.
+- [x] Canonical API path remains explicitly bound to `ArgosMasterOrchestrator`.
 
-### Validation gate — NOT YET CLOSED
+### Quantitative boundary now enforced by architecture
+- [x] External context is evidence, not an arbitrary probability multiplier.
+- [x] Production probability generation remains centralized in the calibrated quantitative chain.
+- [x] Legacy synthetic probability paths cannot silently compete with the canonical production engine.
+- [x] Telegram/distribution remains downstream of the canonical orchestration path rather than an independent prediction engine.
+
+### Validation gate — OPEN
 1. [ ] `pnpm run test:quant` passes on the branch.
 2. [ ] `pnpm exec tsc --noEmit` passes.
 3. [ ] `pnpm run build` passes.
 4. [ ] Vercel deployment for this branch reaches `Ready`.
-5. [ ] Real-data replay of at least one newly generated signal returns `PROVENANCE_VERIFIED`.
-6. [ ] Only after all five gates above: mark the cycle **✓ COMPLETED AND VALIDATED**.
-
-The database migration itself has been applied and structurally verified. Code/build validation is intentionally not fabricated: the available Vercel integration currently returns `403 Not authorized` for deployment inspection, so the branch must produce a real Ready deployment before this ledger is closed.
+5. [ ] Production/API smoke test confirms `/api/argos/v6` and `/api/argos/v6/worker` resolve only through the canonical orchestrator.
+6. [ ] No repository references remain to the removed legacy engine/test/script.
+7. [ ] Only after all gates above: mark this cycle **✓ COMPLETED AND VALIDATED**.
 
 ### Next blocks after closure
-- [ ] Verify all legacy/compatibility callers cannot bypass the canonical orchestrator.
-- [ ] Walk-forward calibration metrics: Brier, Log Loss and reliability/calibration error by league and vertical.
-- [ ] Validate the live signal ledger against model probability, executable price and settlement outcomes.
-- [ ] Audit specialist probability engines, especially corners/cards, under the same quantitative discipline.
+- [ ] Walk-forward calibration metrics: Brier, Log Loss, reliability/calibration error and calibration slope/intercept by league and vertical.
+- [ ] Live signal ledger validation against model probability, executable price and settlement outcomes.
+- [ ] Specialist probability-engine audit, beginning with corners and cards.
+- [ ] Market-selection breadth audit so goals/BTTS/handicap do not dominate merely because their legacy engines are more mature.
+- [ ] Data freshness and re-analysis policy audit for the 48-hour horizon.
 
 ## Operating protocol
 ```text
@@ -78,6 +88,7 @@ No-veto principle: internal analysis is broad and observations are retained. Pub
 - A fair-price reference derived from the market cannot be labeled as independent model probability.
 - Every published signal must eventually be reproducible from stored inputs, model version, feature set, timestamp, price snapshot, and decision path.
 - Publication filters may select/rank evidence but must not silently alter the underlying quantitative result.
+- Contextual/RAG evidence may modify features only through calibrated, auditable model components.
 
 ## Next target
-**P0.2-B — Provenance Replay & Walk-Forward Calibration — validation gate open**
+**P0.2-C — Canonical Execution Boundary & Legacy Bypass Elimination — validation gate open**
