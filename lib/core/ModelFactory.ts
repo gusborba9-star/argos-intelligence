@@ -4,7 +4,7 @@ import { learningEngine } from "./ContinuousLearningEngine";
 import { applyCalibration } from "./CalibrationMath";
 
 // ============================================================
-// MODEL FACTORY v6.4.2 — QUANTITATIVE CORE
+// MODEL FACTORY v6.4.3 — QUANTITATIVE CORE
 // Gamma-Poisson + deterministic seeded PRNG + OOS calibration.
 // Count-stat simulations use the same regime-aware distribution
 // and pass through the same conservative OOS calibration gate.
@@ -94,8 +94,11 @@ export class ModelFactory {
 
   static calculateEV(probability: number, marketOdd: number): ValueAnalysis { return OddsValueEngine.calculateValue(probability, marketOdd); }
 
-  public static seedForCountStat(matchId: string, marketType: string, homeMean: number, awayMean: number, lines: number[]): number {
-    return this.seedFrom(`${matchId}|${marketType}|${homeMean}|${awayMean}|${lines.join(",")}`);
+  public static seedForCountStat(matchId: string, marketType: string, homeMean: number, awayMean: number, lines: number[], regime?: Pick<RegimeProfile, "variance_multiplier" | "model_bias" | "market_regime">): number {
+    const regimeKey = regime
+      ? `${regime.variance_multiplier}|${regime.model_bias}|${regime.market_regime}`
+      : "default";
+    return this.seedFrom(`${matchId}|${marketType}|${homeMean}|${awayMean}|${lines.join(",")}|${regimeKey}`);
   }
 
   public static runCountStatSimulation(homeMean: number, awayMean: number, lines: number[], iterations: number = 5000, seed?: number, varianceMultiplier: number = 1.1): Record<string, number> {
