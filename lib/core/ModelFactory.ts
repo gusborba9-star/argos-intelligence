@@ -4,8 +4,10 @@ import { learningEngine } from "./ContinuousLearningEngine";
 import { applyCalibration } from "./CalibrationMath";
 
 // ============================================================
-// MODEL FACTORY v6.3.0 — QUANTITATIVE CORE
+// MODEL FACTORY v6.3.1 — QUANTITATIVE CORE
 // Gamma-Poisson + deterministic seeded PRNG + OOS calibration.
+// Every binary probability exposed to the orchestrator is calibrated
+// from the same market-specific transform and complementary state.
 // ============================================================
 
 export interface MarketMetrics {
@@ -29,6 +31,7 @@ export interface SimulationResult {
 }
 
 type RandomSource = () => number;
+type CalibratableMarket = "GOALS" | "CORNERS" | "CARDS" | "SHOTS" | "WINNER" | "BTTS" | "HANDICAP" | "GOALS_HT";
 
 export class ModelFactory {
   private static readonly DEFAULT_ITERATIONS = 10000;
@@ -39,7 +42,7 @@ export class ModelFactory {
     metrics: MarketMetrics,
     regime: RegimeProfile,
     leagueId: string,
-    marketType: "GOALS" | "CORNERS" | "CARDS" | "SHOTS" | "WINNER" | "BTTS" | "HANDICAP" | "GOALS_HT" = "GOALS",
+    marketType: CalibratableMarket = "GOALS",
     iterations: number = ModelFactory.DEFAULT_ITERATIONS
   ): Promise<SimulationResult> {
     const calibration = await learningEngine.getCalibration(leagueId, marketType);
@@ -48,26 +51,36 @@ export class ModelFactory {
     const probabilities = { ...baseResult.probabilities };
     let calibrationApplied = 0;
 
-    const baseOver = baseResult.probabilities.over;
-    if (baseOver !== undefined && probabilities.under !== undefined) {
-      const adjustedOver = applyCalibration(
-        baseOver,
-        calibration.logitSlope,
-        calibration.logitIntercept,
-      );
-      probabilities.over = adjustedOver;
-      probabilities.under = 1 - adjustedOver;
-      calibrationApplied = adjustedOver - baseOver;
+    // Calibrate every binary over/under line independently from its raw
+    // simulation probability, while deriving the complementary state as
+    // 1-p. The old implementation calibrated only Over 2.5, leaving lines
+    // such as Over 3.5 and Over 5.5 raw and therefore on a different scale.
+    for (const key of Object.keys(probabilities)) {
+      if (!key.startsWith("over_")) continue;
+      const rawOver = probabilities[key];
+      if (rawOver === undefined) continue;
+      const adjustedOver = applyCalibration(rawOver, calibration.logitSlope, calibration.logitIntercept);
+      probabilities[key] = adjustedOver;
+      const line = key.slice("over_".length);
+      const underKey = `under_${line}`;
+      if (probabilities[underKey] !== undefined) probabilities[underKey] = 1 - adjustedOver;
+      calibrationApplied += adjustedOver - rawOver;
     }
 
-    if (probabilities.btts_yes !== undefined && probabilities.btts_no !== undefined) {
-      const adjustedYes = applyCalibration(
-        probabilities.btts_yes,
-        calibration.logitSlope,
-        calibration.logitIntercept,
-      );
+    // Keep the legacy top-level over/under pair explicitly tied to the
+    // calibrated 2.5 line, avoiding a second independent transform.
+    if (probabilities.over !== undefined) {
+      const adjustedOver = applyCalibration(probabilities.over, calibration.logitSlope, calibration.logitIntercept);
+      probabilities.over = adjustedOver;
+      if (probabilities.under !== undefined) probabilities.under = 1 - adjustedOver;
+    }
+
+    if (probabilities.btts_yes !== undefined) {
+      const rawYes = probabilities.btts_yes;
+      const adjustedYes = applyCalibration(rawYes, calibration.logitSlope, calibration.logitIntercept);
       probabilities.btts_yes = adjustedYes;
-      probabilities.btts_no = 1 - adjustedYes;
+      if (probabilities.btts_no !== undefined) probabilities.btts_no = 1 - adjustedYes;
+      calibrationApplied += adjustedYes - rawYes;
     }
 
     return { ...baseResult, probabilities, calibrationApplied };
