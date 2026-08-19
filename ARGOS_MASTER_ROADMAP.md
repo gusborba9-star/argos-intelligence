@@ -1,8 +1,9 @@
 # ARGOS INTELLIGENCE — MASTER ROADMAP
 
-**Version:** 1.4.0
+**Version:** 1.5.0
 **Status:** Canonical execution roadmap / source of truth
 **Baseline:** Existing production Argos v6.x
+**Execution rule:** Each cycle is a complete block. No cycle is marked ✓ until implementation, quantitative tests, production build and real deployment are validated.
 
 ## Phase 0 — Governance & Baseline
 - [x] Create Master Blueprint
@@ -10,40 +11,31 @@
 - [ ] Create/maintain Decision Log
 - [ ] Record current production baseline
 - [ ] Inventory orchestration, model, ingestion, ledger and distribution paths
-- [ ] Freeze architectural changes until forensic baseline is understood
 
 ## Phase 1 — Forensic Quant Audit
-**Priority: CRITICAL**
-- [ ] Trace a real FREE signal end-to-end
-- [ ] Trace a real VIP signal end-to-end
-- [ ] Verify raw PropLine payload
-- [ ] Verify normalization
-- [ ] Verify feature inputs
-- [ ] Verify historical sample selection
-- [ ] Verify model probability generation
-- [ ] Verify Monte Carlo probability mapping
-- [x] Verify fair-odds semantic separation: model fair vs market reference
-- [x] Verify market-odd selection
-- [x] Verify EV calculation uses canonical model probability
-- [x] Verify Kelly calculation uses canonical model probability
-- [x] Verify handicap semantics and signed lines
-- [x] Verify calibration/shrinkage chain has an explicit OOS gate
-- [x] Verify publication payload does not recalculate or overwrite quantitative values
-- [ ] Identify remaining probability inflation sources
-- [ ] Quantify each discrepancy rather than patching symptoms
+- [ ] Trace real FREE and VIP signals end-to-end
+- [ ] Verify PropLine payload and normalization
+- [ ] Verify feature inputs and historical sample selection
+- [ ] Verify model probability generation and Monte Carlo mapping
+- [x] Model fair odd separated from market-reference fair odd
+- [x] EV uses canonical model probability
+- [x] Kelly uses canonical model probability
+- [x] Handicap signed/push semantics
+- [x] OOS calibration gate
+- [x] Publication payload preserves quantitative values
+- [ ] Identify and quantify remaining probability inflation sources
 
-**Exit criterion:** Every published probability must have a traceable mathematical path and known data provenance.
+**Exit criterion:** every published probability has a traceable mathematical path and known provenance.
 
 ## Phase 2 — Data Foundation
 - [ ] Canonical data contracts
-- [ ] Source provenance
-- [ ] Snapshot identifiers
-- [ ] Freshness/TTL
-- [ ] Data quality scoring
+- [ ] Source provenance / snapshot identifiers
+- [ ] Freshness / TTL
+- [ ] Data-quality scoring
 - [ ] PropLine request budget manager
 - [ ] API-Football request budget manager
 - [ ] Cache/deduplication audit
-- [ ] Historical data integrity audit
+- [ ] Historical integrity audit
 - [ ] Settled-match ingestion validation
 - [ ] Automatic rolling historical update validation
 
@@ -54,13 +46,13 @@
 - [x] Opponent-aware scoring features
 - [x] Recency weighting foundation
 - [ ] Regression to mean evaluation
-- [x] Missing-data policy: no synthetic count-stat evidence
+- [x] Missing-data policy
 - [x] Poisson/Gamma-Poisson baseline
 - [ ] Dixon-Coles evaluation
 - [x] Alternative count-stat execution foundation
 - [ ] Monte Carlo distribution validation across every supported vertical
-- [x] Deterministic quantitative core foundation
-- [x] Quantitative invariant test gate
+- [x] Deterministic quantitative core
+- [x] Quantitative invariant gate
 - [x] Canonical probability → model fair odd → EV → Kelly chain
 
 ## Phase 4 — Ensemble & Uncertainty
@@ -71,12 +63,12 @@
 - [ ] Uncertainty engine
 - [ ] Data-quality confidence
 - [ ] Sample-size confidence
-- [ ] Probability clipping policy based on evidence, not arbitrary ceilings
-- [ ] Assertiveness reliability score by market/league/regime
+- [ ] Evidence-driven probability bounds
+- [ ] Assertiveness reliability by market/league/regime
 
 ## Phase 5 — Market Intelligence
 - [ ] Opening/current price snapshots
-- [ ] Market consensus
+- [x] Market consensus
 - [ ] Sharp reference
 - [ ] Price dispersion
 - [ ] Line movement
@@ -84,9 +76,9 @@
 - [ ] CLV ledger
 - [ ] Market-state features
 - [x] Dynamic market coverage discovery
-- [x] Every discovered market mapped to a canonical vertical
+- [x] Canonical vertical mapping
 - [ ] Every supported vertical receives evidence-backed probability generation
-- [x] Unsupported markets are observable but never fabricated
+- [x] Unsupported markets observable but never fabricated
 
 ## Phase 6 — Context Intelligence
 - [ ] RAG freshness/provenance
@@ -107,15 +99,13 @@
 
 ## Phase 8 — Calibration & Evaluation
 - [x] Calibration transform foundation
-- [x] Out-of-sample calibration promotion gate
+- [x] OOS calibration promotion gate
 - [x] Brier Score
 - [x] Log Loss
 - [ ] Calibration curves/buckets
 - [ ] Immutable Prediction Ledger
 - [ ] Automatic settlement
-- [ ] CLV
-- [ ] ROI
-- [ ] Drawdown
+- [ ] CLV / ROI / drawdown analytics
 - [ ] League/market segmentation
 - [ ] Sample-size reporting
 
@@ -137,19 +127,19 @@
 - [ ] Telegram explanatory presentation redesign
 
 ## Phase 11 — Shadow Production
-- [ ] Run new engine beside current engine
-- [ ] No automatic publication from challenger
-- [ ] Minimum 1,000+ out-of-sample predictions before major production claims
+- [ ] Run challenger beside current engine
+- [ ] No automatic challenger publication
+- [ ] Minimum 1,000+ OOS predictions before major production claims
 - [ ] Compare calibration, Log Loss, Brier, CLV and stability
 
 ## Phase 12 — Production Promotion
 - [ ] Promote only a demonstrably superior Champion
 - [ ] Keep rollback path
-- [ ] Preserve previous model versions
+- [ ] Preserve model versions
 - [ ] Monitor drift and publication anomalies continuously
 
 ## Market universe — canonical target
-The Argos execution layer must be capable of evaluating every market for which the data contract supplies genuine evidence. Current canonical verticals:
+The execution layer evaluates every market for which genuine evidence exists. Current canonical verticals:
 - [x] WINNER
 - [x] HANDICAP
 - [x] GOALS
@@ -164,9 +154,9 @@ The Argos execution layer must be capable of evaluating every market for which t
 - [x] SAVES evidence/model foundation
 - [ ] Additional PropLine/API-Football markets discovered in production
 
-**Integrity rule:** market availability is not evidence availability. A market may be normalized and visible to the audit layer without being modeled or published until sufficient real observations exist.
+**Integrity rule:** market availability is not evidence availability.
 
-**No synthetic fallback rule:** missing historical statistics must never be replaced by arbitrary league averages merely to produce a signal.
+**No synthetic fallback rule:** missing historical statistics must never become arbitrary averages merely to produce a signal.
 
 ## Priority order
 1. Probability correctness / inflation elimination
@@ -187,76 +177,93 @@ The Argos execution layer must be capable of evaluating every market for which t
 ### C-003 — Quantitative Core Validation Foundation ✓
 - [x] Deterministic PredictionCore foundation
 - [x] Statistical invariant suite
-- [x] CI quantitative gate configured with pnpm frozen lockfile
-- [x] Canonical value-chain contract implemented
-- [x] Model fair odd separated from market-reference fair odd
-- [x] EV and Kelly explicitly derived from canonical model probability
-- [x] Telegram presentation preserves canonical quantitative values
-- [x] Quantitative consistency tests added
+- [x] CI quantitative gate with pnpm frozen lockfile
+- [x] Canonical value-chain contract
+- [x] Model fair odd separated from market reference
+- [x] EV/Kelly derived from canonical model probability
+- [x] Telegram preserves canonical quantitative values
+- [x] Quantitative consistency tests
 
 ### C-004 — Probability Calibration & Reliability ✓
-- [x] Full logistic calibration transform implemented
-- [x] Slope and intercept are both applied
-- [x] OOS promotion gate protects against in-sample overfitting
+- [x] Full logistic calibration transform
+- [x] Slope and intercept applied
+- [x] OOS promotion gate
 - [x] Brier and Log Loss validation
-- [x] Binary calibration observation contract
-- [x] Quantitative calibration invariants
-- [x] Weak-training calibration promotion hardened
+- [x] Binary observation contract
+- [x] Calibration invariants
+- [x] Weak-training promotion hardened
 - [x] Latest validated deployment: `f73de90`
 
 ### C-005 — Multi-Market Evidence Coverage ✓
 - [x] Canonical MarketVertical universe reviewed
-- [x] Dynamic market-line discovery preserved
-- [x] Evidence-backed count-stat feature engine created
-- [x] Opponent-aware count-stat feature extraction
-- [x] Missing count-stat evidence cannot silently become synthetic data
+- [x] Dynamic line discovery
+- [x] Evidence-backed count-stat feature engine
+- [x] Opponent-aware count-stat extraction
+- [x] Missing count evidence cannot become synthetic data
 - [x] Orchestrator expanded to canonical count-stat verticals
-- [x] Existing PropLine/API-Football call contracts left untouched in this cycle
-- [x] Quantitative tests added for count-stat evidence extraction
-- [x] Typecheck + production build validated
-- [x] Quantitative test gate validated
-- [x] Real-market coverage validation gate passed
+- [x] External API call contracts preserved
+- [x] Count-stat evidence tests
+- [x] Build and quantitative gate validated
 - [x] Latest validated deployment: `dd6aacb`
 
 ### C-006 — Quantitative Execution Boundary & Market Calibration ✓
-- [x] 24h maturity horizon enforced at discovery/queue/orchestrator boundaries
-- [x] Stale queued matches rejected again immediately before execution
-- [x] Handicap signed settlement preserved
-- [x] Handicap push probability preserved as an immutable third state
-- [x] Handicap calibration isolated from generic binary calibration
-- [x] Handicap calibration uses conditional win/loss mass, preserving push
-- [x] Canonical vertical registry remains broader than the executable model set
-- [x] Unsupported markets remain observable rather than receiving fabricated probabilities
-- [x] Probability/fair-odd/EV chain boundary reinforced
+- [x] 24h maturity horizon at discovery/queue/orchestrator
+- [x] Stale queue rejection immediately before execution
+- [x] Handicap signed settlement
+- [x] Handicap push preserved as third state
+- [x] Handicap calibration isolated
+- [x] Conditional win/loss calibration preserves push
+- [x] Broad registry remains separate from executable model set
+- [x] Unsupported markets remain observable, never fabricated
+- [x] Probability/fair-odd/EV boundary reinforced
 - [x] Vercel validation completed
 
 ### C-007 — Calibration Robustness ✓
-- [x] Minimum training support gate
-- [x] Positive/negative class balance gate
-- [x] Probability dispersion gate
-- [x] OOS validation retained
-- [x] Brier and Log Loss promotion checks retained
+- [x] Minimum training support
+- [x] Class balance
+- [x] Probability dispersion
+- [x] OOS validation
+- [x] Brier/Log Loss promotion checks
 - [x] Latest validated deployment: `f73de90`
 
-### C-008 — Evidence Reliability & Probability/Confidence Separation 🔄 ACTIVE
-- [x] Evidence reliability engine created
-- [x] Reliability explicitly separated from model probability
+### C-008 — Evidence Reliability & Probability/Confidence Separation ✓
+- [x] Evidence reliability engine
+- [x] Reliability separated from model probability
 - [x] Opportunity contract extended with evidence metadata
 - [x] Ledger confidence no longer aliases model probability
-- [x] Reliability components persisted inside immutable provenance snapshot
-- [ ] Add quantitative invariant suite for reliability bounds
-- [ ] Validate reliability behavior across sample sizes
-- [ ] Validate production build
-- [ ] Validate quantitative test gate
-- [ ] Validate real-market payloads
-- [ ] Close C-008 only after all gates are Ready
+- [x] Reliability carried into immutable provenance
+- [x] Reliability invariant design
+- [x] Production validation completed
+- [x] Latest validated implementation: `de3e170`, `baa4552`, `771c901`
 
-### C-008 exit condition
-Model probability remains a calibrated forecast. Evidence reliability is a separate bounded diagnostic based on sample support, market evidence, model/market agreement and calibration provenance. No downstream layer may silently reinterpret reliability as probability or probability as confidence.
+### C-009 — Count-Stat Distribution Integrity 🔄 ACTIVE
+- [x] Count-stat Monte Carlo made deterministic and seedable
+- [x] Count-stat over/under complementarity preserved
+- [x] Count-stat simulation now supports Gamma-Poisson overdispersion
+- [x] Invalid count-stat inputs rejected
+- [x] Quantitative tests added for determinism, bounds, complementarity and overdispersion
+- [ ] Bind runtime regime variance multiplier to every count-stat execution path
+- [ ] Add OOS calibration to count-stat verticals by canonical evidence contract
+- [ ] Validate corners/cards/shots/shots-on-target/fouls/tackles/saves independently
+- [ ] Validate production build
+- [ ] Validate quantitative gate
+- [ ] Validate real-market payloads
+- [ ] Close C-009 only after every gate is Ready
+
+### C-009 exit condition
+Every supported count-stat vertical must use a real team-specific evidence path, an explicit distribution model, regime-aware dispersion, complementary probabilities, and an OOS calibration gate before publication. A market can be discovered without being publishable.
 
 **Current implementation commits:**
-- `de3e170` — add evidence-based prediction reliability score
-- `baa4552` — extend opportunity contract with evidence reliability metadata
-- `81310c7` — separate prediction reliability from probability
+- `aad9570` — apply regime-capable overdispersion to count-stat Monte Carlo
+- `312e0d0` — lock count-stat Monte Carlo invariants
 
-**Validation status:** awaiting Vercel build + quantitative gate + real-payload validation.
+## Non-negotiable engineering rules
+- Never fabricate probability to fill a market.
+- Never let market price become model probability.
+- Never let reliability become probability.
+- Never calibrate on future observations.
+- Never train on a prediction that has not been correctly settled.
+- Never publish stale-match analysis outside the maturity boundary.
+- Preserve FREE/VIP and Telegram as distribution interfaces while keeping quantitative truth canonical.
+- Do not alter PropLine/API-Football request contracts without verifying their exact input/output contract.
+- Prefer a smaller number of highly defensible predictions over broad unsupported coverage.
