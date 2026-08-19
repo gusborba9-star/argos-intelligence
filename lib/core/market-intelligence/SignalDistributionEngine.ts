@@ -1,8 +1,8 @@
-import crypto from "crypto";
 import { Opportunity } from "./MarketDiscoveryEngine";
 import { RegimeProfile } from "@/lib/argos/regime/RegimeSchema";
 import { telegramDispatcher, TelegramSignalPayload } from "@/lib/argos/notifications/TelegramDispatcher";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
+import { hashSignalProvenance, PROVENANCE_SCHEMA_VERSION, SignalProvenanceSnapshot } from "@/lib/argos/provenance/SignalProvenance";
 
 // ============================================================
 // SIGNAL DISTRIBUTION ENGINE v6.5.0 — CANONICAL PRESENTATION
@@ -14,26 +14,6 @@ export interface DistributedSignal extends Opportunity {
   tier: "FREE" | "VIP" | "LOW" | "NOISE";
   priority: number;
   displayLabel?: string;
-}
-
-interface ProvenanceSnapshot {
-  schemaVersion: "ARGOS_PROVENANCE_V1";
-  matchId: string;
-  league: string;
-  homeTeam: string;
-  awayTeam: string;
-  kickoff: string;
-  vertical: string;
-  selection: string;
-  line: number;
-  modelProbability: number;
-  marketImpliedProbability: number | null;
-  fairOdd: number;
-  executableOdd: number;
-  expectedValue: number;
-  edge: number;
-  modelProbabilitySource: string;
-  analysisTimestamp: string;
 }
 
 export class SignalDistributionEngine {
@@ -93,8 +73,8 @@ export class SignalDistributionEngine {
         const supabase = getSupabaseClient();
         const rows = distributed.map((d) => {
           const marketImpliedProbability = Number.isFinite(d.odd) && d.odd > 0 ? 1 / d.odd : null;
-          const snapshot: ProvenanceSnapshot = {
-            schemaVersion: "ARGOS_PROVENANCE_V1",
+          const snapshot: SignalProvenanceSnapshot = {
+            schemaVersion: PROVENANCE_SCHEMA_VERSION,
             matchId: matchContext.matchId,
             league: matchContext.league,
             homeTeam: matchContext.homeTeam,
@@ -112,8 +92,7 @@ export class SignalDistributionEngine {
             modelProbabilitySource: d.modelProbabilitySource || "EXPLICIT_MODEL_PREDICTION",
             analysisTimestamp,
           };
-          const canonical = JSON.stringify(snapshot, Object.keys(snapshot).sort());
-          const provenanceHash = crypto.createHash("sha256").update(canonical).digest("hex");
+          const provenanceHash = hashSignalProvenance(snapshot);
 
           return {
             match_id: matchContext.matchId,
