@@ -27,7 +27,10 @@ export interface QueueItem {
 }
 
 const CLEANUP_RETENTION_HOURS = 24;
-const MAX_ANALYSIS_HORIZON_HOURS = 48;
+// A match may be discovered earlier, but quantitative execution requires a
+// fresh pre-match snapshot. Keep this identical to the scheduler gate so a
+// stale queued item cannot bypass the admission policy.
+export const MAX_ANALYSIS_HORIZON_HOURS = 24;
 
 export class BatchQueueService {
   private supabase;
@@ -54,6 +57,9 @@ export class BatchQueueService {
     const kickoff = rawData.commence_time ? new Date(rawData.commence_time).getTime() : null;
     if (kickoff && kickoff < Date.now() - 10 * 60 * 1000) {
       throw new Error(`[BatchQueue] Kickoff expirado para ${uniqueKey}`);
+    }
+    if (kickoff && ((kickoff - Date.now()) / (1000 * 60 * 60)) > MAX_ANALYSIS_HORIZON_HOURS) {
+      throw new Error(`[BatchQueue] Partida fora da janela de maturidade quantitativa para ${uniqueKey}`);
     }
 
     const COOLDOWN_MS = 60 * 60 * 1000;
