@@ -7,7 +7,7 @@
     "dev": "next dev",
     "start": "next start",
     "lint": "next lint",
-    "build": "next build",
+    "build": "pnpm test:quant && next build",
     "test:quant": "tsx --test tests/quant/*.test.ts"
   },
   "pnpm": {
