@@ -4,10 +4,11 @@ import { learningEngine } from "./ContinuousLearningEngine";
 import { applyCalibration } from "./CalibrationMath";
 
 // ============================================================
-// MODEL FACTORY v6.3.2 — QUANTITATIVE CORE
+// MODEL FACTORY v6.4.0 — QUANTITATIVE CORE
 // Gamma-Poisson + deterministic seeded PRNG + OOS calibration.
 // Every binary probability exposed to the orchestrator is calibrated
 // from the same market-specific transform and complementary state.
+// Count-stat simulations use the same over-dispersion regime as goals.
 // ============================================================
 
 export interface MarketMetrics { homeMean: number; awayMean: number; dispersion?: number; }
@@ -42,13 +43,9 @@ export class ModelFactory {
       probabilities[key] = adjustedOver;
       const underKey = `under_${key.slice("over_".length)}`;
       if (probabilities[underKey] !== undefined) probabilities[underKey] = 1 - adjustedOver;
-      // Keep one representative delta for telemetry. It must not be a sum
-      // across lines, otherwise the magnitude becomes meaningless.
       if (key === "over_2.5") calibrationApplied = adjustedOver - rawOver;
     }
 
-    // The legacy top-level pair aliases the 2.5 line. It must reference the
-    // already-calibrated value rather than applying the transform twice.
     if (probabilities.over !== undefined && probabilities["over_2.5"] !== undefined) {
       probabilities.over = probabilities["over_2.5"];
       if (probabilities.under !== undefined) probabilities.under = 1 - probabilities.over;
@@ -98,12 +95,20 @@ export class ModelFactory {
 
   static calculateEV(probability: number, marketOdd: number): ValueAnalysis { return OddsValueEngine.calculateValue(probability, marketOdd); }
 
-  public static runCountStatSimulation(homeMean: number, awayMean: number, lines: number[], iterations: number = 5000, seed?: number): Record<string, number> {
+  public static runCountStatSimulation(homeMean: number, awayMean: number, lines: number[], iterations: number = 5000, seed?: number, varianceMultiplier: number = 1.1): Record<string, number> {
     if (!Number.isInteger(iterations) || iterations < 1000) throw new Error("Count-stat Monte Carlo requires at least 1000 iterations");
-    const random = this.createRng(seed ?? this.seedFrom(`${homeMean}|${awayMean}|${lines.join(",")}`));
+    if (!Number.isFinite(homeMean) || !Number.isFinite(awayMean) || homeMean < 0 || awayMean < 0) throw new Error("Invalid count-stat means");
+    const random = this.createRng(seed ?? this.seedFrom(`${homeMean}|${awayMean}|${lines.join(",")}|${varianceMultiplier}`));
     const overCounts: Record<string, number> = {}; lines.forEach((line) => (overCounts[line] = 0));
-    for (let i = 0; i < iterations; i++) { const h = this.poisson(Math.max(this.MIN_LAMBDA, homeMean), random), a = this.poisson(Math.max(this.MIN_LAMBDA, awayMean), random), total = h + a; lines.forEach((line) => { if (total > line) overCounts[line]++; }); }
-    const probabilities: Record<string, number> = {}; lines.forEach((line) => { const over = overCounts[line] / iterations; probabilities[`over_${line}`] = over; probabilities[`under_${line}`] = 1 - over; });
+    const safeVariance = Number.isFinite(varianceMultiplier) && varianceMultiplier > 1 ? varianceMultiplier : 1;
+    for (let i = 0; i < iterations; i++) {
+      const h = this.poisson(this.gammaPoissonLambda(Math.max(this.MIN_LAMBDA, homeMean), safeVariance, random), random);
+      const a = this.poisson(this.gammaPoissonLambda(Math.max(this.MIN_LAMBDA, awayMean), safeVariance, random), random);
+      const total = h + a;
+      lines.forEach((line) => { if (total > line) overCounts[line]++; });
+    }
+    const probabilities: Record<string, number> = {};
+    lines.forEach((line) => { const over = overCounts[line] / iterations; probabilities[`over_${line}`] = over; probabilities[`under_${line}`] = 1 - over; });
     return probabilities;
   }
 
