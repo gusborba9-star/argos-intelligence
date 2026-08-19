@@ -3,11 +3,16 @@ import { BatchQueueService, QueueStatus } from "@/lib/core/BatchQueueService";
 import { MarketVertical } from "@/lib/core/ArgosUnifiedEngine";
 
 // ============================================================
-// DAILY INGESTION SCHEDULER v6.1.0
-// Temporal integrity: only pre-match events within 48h are eligible.
+// DAILY INGESTION SCHEDULER v6.2.0
+// Temporal integrity: only pre-match events within the publication
+// maturity window are eligible for quantitative execution.
 // ============================================================
 
-export const MAX_ANALYSIS_HORIZON_HOURS = 48;
+// A 48h horizon is useful for discovery but too stale for a production
+// prediction snapshot: injuries, lineups, prices and context can change
+// materially before kickoff. Discovery may see farther ahead, but the
+// quantitative queue must only admit matches inside this window.
+export const MAX_ANALYSIS_HORIZON_HOURS = 24;
 
 const ALL_MANDATORY_VERTICALS: MarketVertical[] = [
   MarketVertical.WINNER,
@@ -45,7 +50,7 @@ export class DailyIngestionScheduler {
   }
 
   async scheduleDailyIngestion(): Promise<{ totalProcessed: number; status: string; details: any }> {
-    console.log(`[Argos-v6.1] Starting temporal-safe discovery...`);
+    console.log(`[Argos-v6.2] Starting temporal-maturity-safe discovery...`);
     const startTime = Date.now();
 
     try {
@@ -82,9 +87,10 @@ export class DailyIngestionScheduler {
 
         for (const { events } of batchResults) {
           for (const event of events) {
-            // HARD GATE: the temporal window is a correctness constraint,
-            // not merely a ranking preference. A future match outside the
-            // horizon must never reach the analysis queue.
+            // Temporal maturity is a correctness constraint. A match can be
+            // discovered earlier, but it must not enter quantitative execution
+            // until it is close enough to kickoff for the snapshot to remain
+            // materially relevant.
             if (!this.isWithinAnalysisHorizon(event)) continue;
             const score = this.calculatePriorityScore(event);
             if (score < 2) continue;
@@ -132,7 +138,7 @@ export class DailyIngestionScheduler {
         },
       };
     } catch (error: any) {
-      console.error("[Argos-v6.1] Erro crítico no Scheduler:", error.message);
+      console.error("[Argos-v6.2] Erro crítico no Scheduler:", error.message);
       return { totalProcessed: 0, status: "FAILED", details: { error: error.message } };
     }
   }
@@ -183,7 +189,7 @@ export class DailyIngestionScheduler {
     if (!Number.isFinite(hoursToStart) || hoursToStart < 0 || hoursToStart > MAX_ANALYSIS_HORIZON_HOURS) return 0;
 
     if (hoursToStart <= 6) score += 4;
-    else if (hoursToStart <= 24) score += 3;
+    else if (hoursToStart <= 12) score += 3;
     else score += 2;
 
     const title = (
