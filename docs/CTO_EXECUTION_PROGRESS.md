@@ -3,52 +3,53 @@
 This file is the operational progress ledger. `docs/ARGOS_BLUEPRINT.md` remains the architectural and quantitative source of truth.
 
 ## Active cycle
-**P0.2-B — Quantitative Chain Integrity & Provenance**
+**P0.2-B — Provenance Replay & Walk-Forward Calibration**
 
-### Completed and validated
+### Previously completed and validated
 - [x] Asian handicap integer-line PUSH settlement corrected.
 - [x] Team-history feature extraction corrected to distinguish home/away orientation.
 - [x] Non-conservative probability inflation from learning removed.
 - [x] Binary calibration preserves complementarity.
 - [x] TypeScript dependency/lockfile mismatch corrected.
 - [x] Optional-probability TypeScript narrowing in `ModelFactory` corrected.
-- [x] Model probability separated from market-reference probability; market reference no longer directly becomes the model probability through the audited path.
-- [x] H2H removed as an arbitrary direct 10% probability blend; retained as contextual data for future calibrated feature use.
-- [x] Legacy `ArgosUnifiedEngine` artificial `+2%` probability inflation removed.
-- [x] Signal distribution idempotency strengthened to include market line in the deduplication identity.
-- [x] Signal provenance semantics strengthened so a market fair probability cannot silently substitute for an independent model probability.
+- [x] Model probability separated from market-reference probability.
+- [x] H2H removed as an arbitrary direct 10% probability blend.
+- [x] Legacy artificial probability inflation removed.
+- [x] Signal distribution idempotency strengthened to include market line.
+- [x] Signal provenance semantics strengthened.
 - [x] Analysis horizon restricted to 48 hours.
 - [x] Stale queued matches are prevented from reaching the analysis worker.
 - [x] Quantitative CI gate and statistical invariant suite established.
-- [x] `FeatureEngine` preserves separate team attack (`goals`) and defensive concession (`goalsAgainst`) rates.
-- [x] Sparse samples shrink both attack and defence toward the league-neutral prior.
-- [x] Master orchestration no longer feeds a team's raw scoring average directly into the match scoring model.
-- [x] Expected home scoring combines home attack with away defensive concession.
-- [x] Expected away scoring combines away attack with home defensive concession.
-- [x] RAG motivation/context no longer applies an arbitrary `+/-5%` probability-driving model bias.
-- [x] Online learning requires at least 50 resolved observations before changing model probabilities.
-- [x] Online calibration uses explicit prior shrinkage and a bounded logit adjustment.
-- [x] Dynamic FREE/VIP thresholds are no longer silently mutated by empirical bias.
-- [x] Deterministic feature-scoring invariants are covered by the quantitative test suite.
+- [x] Opponent-aware scoring features implemented and validated.
+- [x] Sparse samples shrink attack and defence toward league-neutral priors.
+- [x] Arbitrary RAG probability-driving bias removed.
+- [x] Online learning/calibration constrained by minimum sample, prior shrinkage and bounded adjustment.
 
-### Validation evidence
-- [x] Quantitative test suite passed and deployment reported `Ready` for the implementation batch.
-- [x] Opponent-aware scoring implementation reached `Ready` (`d8807e6`).
-- [x] Quantitative invariant suite reached `Ready` (`a989f48`).
-- [x] Calibration-cycle documentation reached `Ready` (`7e1b53c`).
-- [x] Validation-state ledger update reached `Ready` (`5216a25`).
+### Current batch IMPLEMENTED — validation pending
+**Immutable signal provenance + replay**
 
-### Cycle status
-**✓ COMPLETED AND VALIDATED**
+- [x] Added additive `argos_signal_ledger` provenance schema: model version, analysis/odds timestamps, model probability, market-implied probability, fair odd, executable odd, immutable snapshot and SHA-256 hash.
+- [x] Applied the provenance schema migration to the connected production Supabase project and verified all nine columns exist.
+- [x] Centralized deterministic provenance hashing in `lib/argos/provenance/SignalProvenance.ts`.
+- [x] Signal distribution now persists a provenance snapshot/hash alongside every newly recorded published signal.
+- [x] Added protected `replay-signal` audit endpoint that verifies the stored snapshot against its hash without recalculating the prediction.
+- [x] Added quantitative invariants for deterministic hashing and mutation detection.
 
-The cycle is closed. The next cycle must not assume that model quality is solved merely because the build is green. Quantitative authority now requires out-of-sample evidence and replayability.
+### Validation gate — NOT YET CLOSED
+1. [ ] `pnpm run test:quant` passes on the branch.
+2. [ ] `pnpm exec tsc --noEmit` passes.
+3. [ ] `pnpm run build` passes.
+4. [ ] Vercel deployment for this branch reaches `Ready`.
+5. [ ] Real-data replay of at least one newly generated signal returns `PROVENANCE_VERIFIED`.
+6. [ ] Only after all five gates above: mark the cycle **✓ COMPLETED AND VALIDATED**.
 
-### Next P0.2-B work
-- [ ] Complete provenance replay coverage across every published signal.
-- [ ] [ ] Verify all legacy/compatibility callers cannot bypass the canonical orchestrator.
-- [ ] Complete walk-forward calibration metrics (Brier, Log Loss and reliability/calibration error) by league and vertical.
-- [ ] Validate the live Argos signal ledger against model probability, market price and settlement outcomes.
-- [ ] Audit all remaining market-specific probability engines, especially corners/cards, for the same attack/defence and calibration discipline.
+The database migration itself has been applied and structurally verified. Code/build validation is intentionally not fabricated: the available Vercel integration currently returns `403 Not authorized` for deployment inspection, so the branch must produce a real Ready deployment before this ledger is closed.
+
+### Next blocks after closure
+- [ ] Verify all legacy/compatibility callers cannot bypass the canonical orchestrator.
+- [ ] Walk-forward calibration metrics: Brier, Log Loss and reliability/calibration error by league and vertical.
+- [ ] Validate the live signal ledger against model probability, executable price and settlement outcomes.
+- [ ] Audit specialist probability engines, especially corners/cards, under the same quantitative discipline.
 
 ## Operating protocol
 ```text
@@ -79,4 +80,4 @@ No-veto principle: internal analysis is broad and observations are retained. Pub
 - Publication filters may select/rank evidence but must not silently alter the underlying quantitative result.
 
 ## Next target
-**P0.2-B — Provenance Replay & Walk-Forward Calibration**
+**P0.2-B — Provenance Replay & Walk-Forward Calibration — validation gate open**
