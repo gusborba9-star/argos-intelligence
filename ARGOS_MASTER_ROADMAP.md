@@ -1,6 +1,6 @@
 # ARGOS INTELLIGENCE — MASTER ROADMAP
 
-**Version:** 1.5.0
+**Version:** 1.6.0
 **Status:** Canonical execution roadmap / source of truth
 **Baseline:** Existing production Argos v6.x
 
@@ -62,6 +62,9 @@
 - [x] Deterministic quantitative core foundation
 - [x] Quantitative invariant test gate
 - [x] Canonical probability → model fair odd → EV → Kelly chain
+- [x] Count-stat regime overdispersion execution
+- [x] Count-stat deterministic seed contract
+- [ ] Count-stat calibration by vertical/line
 
 ## Phase 4 — Ensemble & Uncertainty
 - [ ] Model registry
@@ -238,48 +241,36 @@ The Argos execution layer must be capable of evaluating every market for which t
 - [x] Brier and Log Loss promotion checks retained
 - [x] Latest validated deployment: `f73de90`
 
-### C-008 — Evidence Reliability & Probability/Confidence Separation ✓
-- [x] Evidence reliability engine created
-- [x] Reliability explicitly separated from model probability
-- [x] Opportunity contract extended with evidence metadata
-- [x] Ledger confidence no longer aliases model probability
-- [x] Reliability components persisted inside immutable provenance snapshot
-- [x] Production validation completed
-- [x] Latest validated implementation: `de3e170`, `baa4552`, `771c901`
+### C-008 — Evidence Reliability ✓
+- [x] Prediction probability separated from evidence reliability
+- [x] Reliability score uses evidence components rather than probability duplication
+- [x] Reliability metadata propagated through Opportunity contract
+- [x] Signal ledger semantics preserved
+- [x] Telegram output preserved
+- [x] Vercel validation completed
+- [x] Latest validated deployment: `771c901`
 
-### C-009 — Count-Stat Distribution Integrity 🔄 ACTIVE
-- [x] Count-stat Monte Carlo made deterministic and seedable
-- [x] Count-stat over/under complementarity preserved
-- [x] Count-stat simulation supports Gamma-Poisson overdispersion
-- [x] Invalid count-stat inputs rejected
-- [x] Quantitative tests/invariants for determinism, bounds, complementarity and overdispersion
-- [x] Runtime regime variance multiplier propagated from RAG regime into every count-stat execution
-- [x] Count-stat executions use stable match/vertical seeds for reproducibility
-- [x] Count-stat verticals use the canonical OOS calibration engine
-- [x] Calibration fallback remains identity until sufficient historical support exists
-- [x] Corners/cards/shots/shots-on-target/fouls/tackles/saves share the same evidence → distribution → calibration boundary
-- [ ] Validate production build
-- [ ] Validate quantitative gate
-- [ ] Validate real-market payloads
-- [ ] Close C-009 only after every gate is Ready
+### C-009 — Count-Stat Distribution Integrity 🔄
+- [x] Gamma-Poisson count-stat distribution
+- [x] Regime overdispersion support
+- [x] Deterministic count-stat execution
+- [x] Stable seed contract
+- [x] Count-stat OOS calibration path
+- [x] Runtime propagation of regime into count-stat execution
+- [x] Full-regime binding in count-stat seed
+- [x] Complementary Over/Under invariant tests
+- [x] Overdispersion distribution invariant tests
+- [x] Same-regime seed determinism test
+- [x] Regime-change seed divergence test
+- [ ] Production build validation
+- [ ] Quantitative gate validation
+- [ ] Real payload validation
+- [ ] Close C-009 after all validation gates pass
 
-### C-009 exit condition
-Every supported count-stat vertical uses a real team-specific evidence path, an explicit regime-aware distribution model, deterministic reproducibility, complementary probabilities, and the canonical conservative OOS calibration gate before publication. A market can be discovered without being publishable.
+**C-009 execution boundary:**
+`team evidence → opponent-aware features → count-stat means → RAG regime → regime-bound deterministic seed → Gamma-Poisson simulation → vertical OOS calibration → canonical probability → market evidence → value chain → reliability → publication`
 
-**Current implementation commits:**
-- `aad9570` — apply regime-capable overdispersion to count-stat Monte Carlo
-- `312e0d0` — lock count-stat Monte Carlo invariants
-- `ccefd28` — add OOS learning boundary for count-stat distributions
-- `2775fb7` — expose stable count-stat execution seed
-- `4d510cf` — propagate regime and OOS calibration through orchestrator
+**C-009 integrity rule:** a count-stat execution may not silently change regime, calibration market, seed inputs, or probability semantics between model execution and publication.
 
-## Non-negotiable engineering rules
-- Never fabricate probability to fill a market.
-- Never let market price become model probability.
-- Never let reliability become probability.
-- Never calibrate on future observations.
-- Never train on a prediction that has not been correctly settled.
-- Never publish stale-match analysis outside the maturity boundary.
-- Preserve FREE/VIP and Telegram as distribution interfaces while keeping quantitative truth canonical.
-- Do not alter PropLine/API-Football request contracts without verifying their exact input/output contract.
-- Prefer a smaller number of highly defensible predictions over broad unsupported coverage.
+## CTO operating rule
+Every cycle is executed as a complete block. When a defect or optimization opportunity is discovered inside the active boundary, it is corrected in the same cycle whenever it can be safely established from repository evidence. Validation remains the final gate; a cycle is not marked ✓ until build, quantitative tests, and applicable runtime/payload checks are Ready.
