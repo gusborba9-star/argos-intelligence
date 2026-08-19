@@ -26,3 +26,24 @@ test("count-stat overdispersion changes the simulated distribution without chang
   const overdispersed = ModelFactory.runCountStatSimulation(4.2, 3.1, [6.5], 10000, 24680, 1.3);
   assert.notEqual(overdispersed["over_6.5"], baseline["over_6.5"]);
 });
+
+test("count-stat seed is deterministic for the same full execution regime", () => {
+  const regime = { variance_multiplier: 1.3, model_bias: 0, market_regime: "NEUTRAL" } as const;
+  const first = ModelFactory.seedForCountStat("match-1", "CORNERS", 4.2, 3.1, [2.5, 4.5], regime);
+  const second = ModelFactory.seedForCountStat("match-1", "CORNERS", 4.2, 3.1, [2.5, 4.5], regime);
+  assert.equal(first, second);
+});
+
+test("count-stat seed changes when the quantitative regime changes", () => {
+  const base = ModelFactory.seedForCountStat("match-1", "CORNERS", 4.2, 3.1, [2.5, 4.5], {
+    variance_multiplier: 1.1,
+    model_bias: 0,
+    market_regime: "NEUTRAL",
+  });
+  const changedVariance = ModelFactory.seedForCountStat("match-1", "CORNERS", 4.2, 3.1, [2.5, 4.5], {
+    variance_multiplier: 1.3,
+    model_bias: 0,
+    market_regime: "NEUTRAL",
+  });
+  assert.notEqual(changedVariance, base);
+});
