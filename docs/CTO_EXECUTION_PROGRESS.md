@@ -27,23 +27,25 @@ This file is the operational progress ledger. `docs/ARGOS_BLUEPRINT.md` remains 
 - [x] Immutable signal provenance schema, snapshotting, deterministic hashing and replay verification implemented.
 - [x] Provenance quantitative invariants implemented and validated.
 - [x] Provenance replay cycle validated through Ready deployments and accepted validation.
+- [x] Signal snapshots migrated from the removed quantitative engine to the canonical `ArgosSignal` contract; deployment `d62ff5c` validated Ready.
 
-## P0.2-C — Canonical Execution Boundary & Legacy Bypass Elimination
-
-### Batch implemented — validation pending
-- [x] Audited canonical production entrypoints: `/api/argos/v6` and `/api/argos/v6/worker` both execute `ArgosMasterOrchestrator`.
-- [x] Removed the obsolete `ArgosUnifiedEngine` that exposed an independent legacy quantitative path with ranking/exposure behavior disconnected from the canonical orchestrator.
+### Canonical execution-boundary batch — implementation completed, validation pending
+- [x] Audited canonical production entrypoints: `/api/argos/v6` and `/api/argos/v6/worker` execute `ArgosMasterOrchestrator`.
+- [x] Removed the obsolete quantitative implementation formerly exposed through `ArgosUnifiedEngine`.
 - [x] Removed the obsolete `DeepAnalysisTest` harness that depended on the legacy engine and synthetic contextual multipliers.
 - [x] Removed the obsolete `ProductionDeepAnalysis` script that duplicated production orchestration responsibilities and contained unused legacy-engine imports.
 - [x] Identified the legacy `ContextualFactorsEngine` as non-canonical because it converted contextual inputs directly into a multiplicative probability adjustment; it is no longer referenced by the production path.
 - [x] Canonical worker path remains explicitly bound to `ArgosMasterOrchestrator`.
 - [x] Canonical API path remains explicitly bound to `ArgosMasterOrchestrator`.
+- [x] Extracted `MarketVertical` into `lib/core/contracts/MarketVertical.ts` as a pure domain contract.
+- [x] Converted the historical `ArgosUnifiedEngine.ts` path into a compatibility-only re-export shim; it contains no quantitative execution logic.
 
 ### Quantitative boundary now enforced by architecture
 - [x] External context is evidence, not an arbitrary probability multiplier.
 - [x] Production probability generation remains centralized in the calibrated quantitative chain.
 - [x] Legacy synthetic probability paths cannot silently compete with the canonical production engine.
 - [x] Telegram/distribution remains downstream of the canonical orchestration path rather than an independent prediction engine.
+- [x] Domain market taxonomy is separated from quantitative execution.
 
 ### Validation gate — OPEN
 1. [ ] `pnpm run test:quant` passes on the branch.
@@ -51,7 +53,7 @@ This file is the operational progress ledger. `docs/ARGOS_BLUEPRINT.md` remains 
 3. [ ] `pnpm run build` passes.
 4. [ ] Vercel deployment for this branch reaches `Ready`.
 5. [ ] Production/API smoke test confirms `/api/argos/v6` and `/api/argos/v6/worker` resolve only through the canonical orchestrator.
-6. [ ] No repository references remain to the removed legacy engine/test/script.
+6. [ ] No repository references remain to the removed legacy quantitative implementation; compatibility import paths are allowed only as pure contract shims during migration.
 7. [ ] Only after all gates above: mark this cycle **✓ COMPLETED AND VALIDATED**.
 
 ### Next blocks after closure
