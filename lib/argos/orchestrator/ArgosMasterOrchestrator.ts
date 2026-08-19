@@ -38,9 +38,6 @@ export class ArgosMasterOrchestrator {
 
     const ragEngine = new RAGContextEngine(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, process.env.GOOGLE_AI_API_KEY!);
     const context = await ragEngine.retrieveContext(matchId, leagueIdentifier);
-    // External context is evidence, not an arbitrary probability multiplier.
-    // Until a calibrated feature model exists for motivation/absence impact,
-    // it must not move the scoring mean directly.
     const regime = { variance_multiplier: context.lesoes.length > 0 || context.clima !== "Condições normais" ? 1.3 : 1.1, model_bias: 0, market_regime: "NEUTRAL" };
 
     const dataService = new DataIngestionService();
@@ -66,10 +63,6 @@ export class ArgosMasterOrchestrator {
     const verticalsToAnalyze = [MarketVertical.WINNER, MarketVertical.HANDICAP, MarketVertical.GOALS, MarketVertical.GOALS_HT, MarketVertical.BTTS, MarketVertical.CORNERS, MarketVertical.CARDS];
     const opportunities: any[] = [];
 
-    // Expected scoring rate is an attack/defence fusion, not simply the team's
-    // own recent goals. This prevents a high-scoring team facing a strong
-    // defence from being treated as if its raw attacking average were the
-    // match lambda, one of the principal sources of inflated tail probabilities.
     const homeAttack = features.homeMetrics.goals;
     const homeDefence = features.homeMetrics.goalsAgainst;
     const awayAttack = features.awayMetrics.goals;
@@ -115,7 +108,7 @@ export class ArgosMasterOrchestrator {
           continue;
         }
 
-        opportunities.push({ vertical, selection: selection.label, line: selection.line, handicapPoint: selection.kind === "handicap" ? selection.point : undefined, probability: modelProbability, modelProbability, pushProbability: valueAnalysis.pushProbability ?? 0, lossProbability: valueAnalysis.lossProbability, modelFairOdd, fairOdd: modelFairOdd, marketReferenceOdd: marketFairOdd, fairSource: marketReference.source, marketReferenceProbability: this.clipProbability(marketReference.marketConsensus ?? marketReference.fairProb), marketConsensusProbability: marketReference.marketConsensus ?? null, marketDivergence: marketReference.divergence ?? 0, odd: marketOdd, expectedValue: valueAnalysis.expectedValue, edge: valueAnalysis.edge, edgePercent: valueAnalysis.edgePercent, kellyCriterion: valueAnalysis.kellyCriterion, ratingLabel: valueAnalysis.ratingLabel, hasEdge: valueAnalysis.isPositive, sampleSize: isCountStatVertical ? Math.min(homeExtra?.sampleSize || 0, awayExtra?.sampleSize || 0) : Math.min(homeHistory.length, awayHistory.length), h2hMatches: h2hSummary?.matchesPlayed ?? 0 });
+        opportunities.push({ vertical, selection: selection.label, line: selection.line, handicapPoint: selection.kind === "handicap" ? selection.point : undefined, probability: modelProbability, modelProbability, pushProbability: valueAnalysis.pushProbability ?? 0, lossProbability: valueAnalysis.lossProbability, modelFairOdd, fairOdd: modelFairOdd, marketReferenceOdd: marketFairOdd, fairSource: marketReference.source, marketReferenceProbability: this.clipProbability(marketReference.marketConsensusProbability), marketConsensusProbability: marketReference.marketConsensusProbability, marketDivergence: marketReference.evidence.divergence, odd: marketOdd, expectedValue: valueAnalysis.expectedValue, edge: valueAnalysis.edge, edgePercent: valueAnalysis.edgePercent, kellyCriterion: valueAnalysis.kellyCriterion, ratingLabel: valueAnalysis.ratingLabel, hasEdge: valueAnalysis.isPositive, sampleSize: isCountStatVertical ? Math.min(homeExtra?.sampleSize || 0, awayExtra?.sampleSize || 0) : Math.min(homeHistory.length, awayHistory.length), h2hMatches: h2hSummary?.matchesPlayed ?? 0 });
       }
     }
 
