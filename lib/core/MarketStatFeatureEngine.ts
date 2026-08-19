@@ -21,19 +21,20 @@ const STAT_TYPES: Record<string, string[]> = {
   [MarketVertical.SAVES]: ["Goalkeeper Saves", "Saves"],
 };
 
-/**
- * Evidence-backed features for non-scoring count markets.
- * Missing statistics are represented as missing evidence, never synthetic league averages.
- */
+/** Evidence-backed count-market features. Missing statistics are never replaced by priors. */
 export class MarketStatFeatureEngine {
-  static build(vertical: MarketVertical, homeHistory: FixtureResponse[], awayHistory: FixtureResponse[]): MarketStatProfile | null {
+  static build(
+    vertical: MarketVertical,
+    homeHistory: FixtureResponse[],
+    awayHistory: FixtureResponse[],
+    homeTeam: string,
+    awayTeam: string,
+  ): MarketStatProfile | null {
     const types = STAT_TYPES[vertical];
     if (!types) return null;
-
-    const home = this.teamProfile(vertical, types, homeHistory);
-    const away = this.teamProfile(vertical, types, awayHistory);
+    const home = this.teamProfile(vertical, types, homeHistory, homeTeam);
+    const away = this.teamProfile(vertical, types, awayHistory, awayTeam);
     if (home.sample === 0 || away.sample === 0) return null;
-
     return {
       homeFor: home.forMean,
       homeAgainst: home.againstMean,
@@ -45,10 +46,10 @@ export class MarketStatFeatureEngine {
     };
   }
 
-  private static teamProfile(vertical: MarketVertical, types: string[], history: FixtureResponse[]) {
+  private static teamProfile(vertical: MarketVertical, types: string[], history: FixtureResponse[], teamName: string) {
     const observations: Array<{ own: number; opponent: number }> = [];
     for (const match of history ?? []) {
-      const side = this.resolveSide(match, history, match);
+      const side = this.resolveSide(match, teamName);
       if (!side) continue;
       const blocks = this.getTeamBlocks((match as any).statistics);
       if (!blocks) continue;
@@ -71,41 +72,36 @@ export class MarketStatFeatureEngine {
       ownSum += observation.own * weight;
       opponentSum += observation.opponent * weight;
     }
-    return {
-      forMean: ownSum / weightSum,
-      againstMean: opponentSum / weightSum,
-      sample: observations.length,
-    };
+    return { forMean: ownSum / weightSum, againstMean: opponentSum / weightSum, sample: observations.length };
   }
 
-  private static resolveSide(match: FixtureResponse, _history: FixtureResponse[], _current: FixtureResponse): "home" | "away" | null {
-    // Team histories are team-specific in the current ingestion contract. Infer the side
-    // from the first team name because the same history contains one target team per call.
+  private static resolveSide(match: FixtureResponse, teamName: string): "home" | "away" | null {
     const home = match.teams?.home?.name ?? (match as any).home_team;
     const away = match.teams?.away?.name ?? (match as any).away_team;
-    if (home && away) return "home";
+    const target = this.normalize(teamName);
+    if (home && this.normalize(home) === target) return "home";
+    if (away && this.normalize(away) === target) return "away";
     return null;
+  }
+
+  private static normalize(value: string): string {
+    return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   }
 
   private static getTeamBlocks(statistics: any): any[] | null {
     if (!Array.isArray(statistics)) return null;
     const blocks = statistics.filter((entry: any) => Array.isArray(entry?.statistics));
-    if (blocks.length >= 2) return blocks;
-    if (statistics.length >= 2 && statistics.every((entry: any) => entry && typeof entry === "object")) {
-      return [{ statistics: statistics }, { statistics: statistics }];
-    }
-    return null;
+    return blocks.length >= 2 ? blocks : null;
   }
 
   private static readStat(vertical: MarketVertical, types: string[], block: any): number | null {
     const source = Array.isArray(block?.statistics) ? block.statistics : [];
     if (vertical === MarketVertical.CARDS) {
-      const yellow = this.findNumber(source, ["Yellow Cards"]);
-      const red = this.findNumber(source, ["Red Cards"]);
       const combined = this.findNumber(source, ["Cards"]);
       if (combined !== null) return combined;
-      if (yellow !== null || red !== null) return (yellow ?? 0) + (red ?? 0);
-      return null;
+      const yellow = this.findNumber(source, ["Yellow Cards"]);
+      const red = this.findNumber(source, ["Red Cards"]);
+      return yellow !== null || red !== null ? (yellow ?? 0) + (red ?? 0) : null;
     }
     return this.findNumber(source, types);
   }
