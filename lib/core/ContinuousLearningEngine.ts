@@ -1,13 +1,14 @@
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 import {
-  applyCalibrationIntercept,
+  applyCalibration,
   brierScore,
   fitLogisticCalibration,
+  logLoss,
   type CalibrationObservation,
 } from "./CalibrationMath";
 
 // ============================================================
-// CALIBRATION ENGINE v6.4.0 — TIME-SPLIT, CONSERVATIVE
+// CALIBRATION ENGINE v6.5.0 — TIME-SPLIT, CONSERVATIVE
 // Learning is a calibration layer, not a prediction generator.
 // ============================================================
 
@@ -20,12 +21,15 @@ export interface LearningCalibration {
   sampleSize: number;
   validationSampleSize: number;
   validationBrier: number | null;
+  validationLogLoss: number | null;
 }
 
 export class ContinuousLearningEngine {
   private static readonly MIN_TRAINING_SAMPLE = 80;
   private static readonly MIN_VALIDATION_SAMPLE = 20;
   private static readonly MAX_INTERCEPT = 0.05;
+  private static readonly MIN_SLOPE = 0.8;
+  private static readonly MAX_SLOPE = 1.25;
   private static readonly MAX_ROWS = 500;
   private supabase = getSupabaseClient();
 
@@ -80,36 +84,48 @@ export class ContinuousLearningEngine {
       }
 
       const fitted = fitLogisticCalibration(training);
+      const promotedSlope = Math.max(
+        ContinuousLearningEngine.MIN_SLOPE,
+        Math.min(ContinuousLearningEngine.MAX_SLOPE, fitted.slope),
+      );
       const promotedIntercept = Math.max(
         -ContinuousLearningEngine.MAX_INTERCEPT,
         Math.min(ContinuousLearningEngine.MAX_INTERCEPT, fitted.intercept),
       );
+
       const calibratedPredictions = validation.map((observation) =>
-        applyCalibrationIntercept(observation.probability, promotedIntercept),
+        applyCalibration(observation.probability, promotedSlope, promotedIntercept),
       );
       const baselinePredictions = validation.map((observation) => observation.probability);
       const validationBrier = brierScore(calibratedPredictions, validation);
       const baselineBrier = brierScore(baselinePredictions, validation);
+      const validationLogLoss = logLoss(calibratedPredictions, validation);
+      const baselineLogLoss = logLoss(baselinePredictions, validation);
 
-      // Promotion is out-of-sample only and must not materially degrade Brier score.
-      if (validationBrier > baselineBrier + 0.005) {
+      // Promotion is strictly out-of-sample. Calibration must not materially
+      // degrade either proper scoring rule before it can influence production.
+      const brierDegrades = validationBrier > baselineBrier + 0.005;
+      const logLossDegrades = validationLogLoss > baselineLogLoss + 0.02;
+      if (brierDegrades || logLossDegrades) {
         return {
           ...base,
           sampleSize: training.length,
           validationSampleSize: validation.length,
           validationBrier,
+          validationLogLoss,
         };
       }
 
       return {
         probabilityAdjustment: promotedIntercept,
-        logitSlope: fitted.slope,
-        logitIntercept: fitted.intercept,
+        logitSlope: promotedSlope,
+        logitIntercept: promotedIntercept,
         expectedValueAdjustment: 0,
         dynamicThresholds: { free: 0.70, vip: 0.50 },
         sampleSize: training.length,
         validationSampleSize: validation.length,
         validationBrier,
+        validationLogLoss,
       };
     } catch (error) {
       console.error("[CalibrationEngine] Erro ao obter calibração:", error);
@@ -127,6 +143,7 @@ export class ContinuousLearningEngine {
       sampleSize: 0,
       validationSampleSize: 0,
       validationBrier: null,
+      validationLogLoss: null,
     };
   }
 }
