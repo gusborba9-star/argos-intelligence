@@ -7,7 +7,7 @@
 ## Phase 0 — Governance & Baseline
 - [x] Create Master Blueprint
 - [x] Create Master Roadmap
-- [ ] Create/maintain Decision Log
+- [x] Create/maintain Decision Log
 - [ ] Record current production baseline
 - [ ] Inventory orchestration, model, ingestion, ledger and distribution paths
 - [ ] Freeze architectural changes until forensic baseline is understood
