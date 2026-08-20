@@ -4,7 +4,7 @@ import { learningEngine } from "./ContinuousLearningEngine";
 import { applyCalibration } from "./CalibrationMath";
 
 // ============================================================
-// MODEL FACTORY v6.4.3 — QUANTITATIVE CORE
+// MODEL FACTORY v6.4.4 — QUANTITATIVE CORE
 // Gamma-Poisson + deterministic seeded PRNG + OOS calibration.
 // Count-stat simulations use the same regime-aware distribution
 // and pass through the same conservative OOS calibration gate.
@@ -23,9 +23,7 @@ type RandomSource = () => number;
 type CalibratableMarket = "GOALS" | "CORNERS" | "CARDS" | "SHOTS" | "SHOTS_ON_TARGET" | "FOULS" | "TACKLES" | "SAVES" | "WINNER" | "BTTS" | "HANDICAP" | "GOALS_HT";
 
 type CountStatSeedRegime = Pick<RegimeProfile, "variance_multiplier" | "model_bias"> & {
-  /** Legacy execution payload compatibility; canonical RegimeProfile uses `regime`. */
   regime?: RegimeProfile["regime"];
-  /** Transitional compatibility for older execution payloads. */
   market_regime?: string;
 };
 
@@ -68,35 +66,87 @@ export class ModelFactory {
 
   static runMonteCarlo(metrics: MarketMetrics, regime: RegimeProfile, iterations: number = ModelFactory.DEFAULT_ITERATIONS, marketType: "GOALS" | "CORNERS" | "CARDS" | "SHOTS" = "GOALS", elapsedTime: number = 0, currentScore: { home: number; away: number } = { home: 0, away: 0 }, seed?: number): SimulationResult {
     if (!Number.isInteger(iterations) || iterations < 1000) throw new Error(`Monte Carlo requires at least 1000 iterations; received ${iterations}`);
-    if (!Number.isFinite(metrics.homeMean) || !Number.isFinite(metrics.awayMean)) throw new Error("Invalid goal-rate metrics");
+    if (!Number.isFinite(metrics.homeMean) || !Number.isFinite(metrics.awayMean) || metrics.homeMean < 0 || metrics.awayMean < 0) throw new Error("Invalid goal-rate metrics");
     const random = this.createRng(seed ?? this.seedFrom(`${metrics.homeMean}|${metrics.awayMean}|${marketType}|${regime.variance_multiplier}|${regime.model_bias}`));
-    let homeWins = 0, draws = 0, awayWins = 0, totalGoals = 0, bttsYes = 0;
+    let homeWins = 0, draws = 0, awayWins = 0, totalGoals = 0, expectedLambdaTotal = 0, bttsYes = 0;
     const GOAL_LINES = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5];
     const overCounts: Record<string, number> = {};
     GOAL_LINES.forEach((line) => (overCounts[line] = 0));
     const HANDICAP_LINES = [-2, -1.5, -1, -0.5, 0.5, 1, 1.5, 2];
     const homeCoversCounts: Record<string, number> = {}, awayCoversCounts: Record<string, number> = {};
-    HANDICAP_LINES.forEach((point) => { homeCoversCounts[String(point)] = 0; awayCoversCounts[String(point)] = 0; });
+    const homePushCounts: Record<string, number> = {};
+    HANDICAP_LINES.forEach((point) => {
+      homeCoversCounts[String(point)] = 0;
+      awayCoversCounts[String(point)] = 0;
+      homePushCounts[String(point)] = 0;
+    });
+
     const varianceMultiplier = Number.isFinite(regime.variance_multiplier) && regime.variance_multiplier > 1 ? regime.variance_multiplier : 1.0;
     const bias = Number.isFinite(regime.model_bias) ? regime.model_bias : 0;
     const homeMean = Math.max(this.MIN_LAMBDA, metrics.homeMean * (1 + bias));
     const awayMean = Math.max(this.MIN_LAMBDA, metrics.awayMean * (1 - bias));
+
     for (let i = 0; i < iterations; i++) {
       const hLambda = this.gammaPoissonLambda(homeMean, varianceMultiplier, random);
       const aLambda = this.gammaPoissonLambda(awayMean, varianceMultiplier, random);
+      expectedLambdaTotal += hLambda + aLambda;
       const hScore = this.poisson(hLambda, random), aScore = this.poisson(aLambda, random);
       const finalHome = currentScore.home + hScore, finalAway = currentScore.away + aScore;
       const matchTotal = finalHome + finalAway, goalDiff = finalHome - finalAway;
       totalGoals += hScore + aScore;
       GOAL_LINES.forEach((line) => { if (matchTotal > line) overCounts[line]++; });
-      HANDICAP_LINES.forEach((point) => { if (goalDiff + point > 0) homeCoversCounts[String(point)]++; if (-goalDiff + point > 0) awayCoversCounts[String(point)]++; });
+      HANDICAP_LINES.forEach((point) => {
+        const homeSettlement = goalDiff + point;
+        const awaySettlement = -goalDiff + point;
+        if (homeSettlement > 0) homeCoversCounts[String(point)]++;
+        else if (homeSettlement === 0) homePushCounts[String(point)]++;
+        if (awaySettlement > 0) awayCoversCounts[String(point)]++;
+      });
       if (finalHome > 0 && finalAway > 0) bttsYes++;
       if (finalHome > finalAway) homeWins++; else if (finalHome === finalAway) draws++; else awayWins++;
     }
-    const probabilities: SimulationResult["probabilities"] = { home: homeWins / iterations, draw: draws / iterations, away: awayWins / iterations, over: overCounts[2.5] / iterations, under: 1 - overCounts[2.5] / iterations, btts_yes: bttsYes / iterations, btts_no: 1 - bttsYes / iterations };
-    GOAL_LINES.forEach((line) => { const over = overCounts[line] / iterations; probabilities[`over_${line}`] = over; probabilities[`under_${line}`] = 1 - over; });
-    HANDICAP_LINES.forEach((point) => { probabilities[`home_handicap_${point}`] = homeCoversCounts[String(point)] / iterations; probabilities[`away_handicap_${point}`] = awayCoversCounts[String(point)] / iterations; });
-    return { probabilities, iterations, expectedGoals: totalGoals / iterations };
+
+    // For every signed line, derive the opposite-side win probability from
+    // the same settlement partition. This eliminates Monte Carlo rounding
+    // noise from paired Asian lines and guarantees WIN + PUSH + LOSS = 1.
+    for (const point of HANDICAP_LINES) {
+      const opposite = String(-point);
+      if (homeCoversCounts[opposite] !== undefined && homePushCounts[opposite] !== undefined) {
+        awayCoversCounts[String(point)] = Math.max(
+          0,
+          iterations - homeCoversCounts[opposite] - homePushCounts[opposite],
+        );
+      }
+    }
+
+    const probabilities: SimulationResult["probabilities"] = {
+      home: homeWins / iterations,
+      draw: draws / iterations,
+      away: awayWins / iterations,
+      over: overCounts[2.5] / iterations,
+      under: 1 - overCounts[2.5] / iterations,
+      btts_yes: bttsYes / iterations,
+      btts_no: 1 - bttsYes / iterations,
+    };
+    GOAL_LINES.forEach((line) => {
+      const over = overCounts[line] / iterations;
+      probabilities[`over_${line}`] = over;
+      probabilities[`under_${line}`] = 1 - over;
+    });
+    HANDICAP_LINES.forEach((point) => {
+      probabilities[`home_handicap_${point}`] = homeCoversCounts[String(point)] / iterations;
+      probabilities[`away_handicap_${point}`] = awayCoversCounts[String(point)] / iterations;
+    });
+
+    return {
+      probabilities,
+      iterations,
+      // Expected goals is the expectation of the sampled Gamma-Poisson
+      // intensity, not the noisier realized Poisson score average. This is
+      // the correct Monte Carlo estimator for the model's expected rate and
+      // preserves the configured mean contract under overdispersion.
+      expectedGoals: expectedLambdaTotal / iterations,
+    };
   }
 
   static calculateEV(probability: number, marketOdd: number): ValueAnalysis { return OddsValueEngine.calculateValue(probability, marketOdd); }
