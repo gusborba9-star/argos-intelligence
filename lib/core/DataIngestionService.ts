@@ -6,7 +6,7 @@ import { getSupabaseClient } from "@/lib/core/SupabaseClient";
 import { normalizeTeamName } from "@/lib/core/normalizeTeamName";
 
 // ============================================================
-// DATA INGESTION SERVICE v5.6.1 — SINGLE-PASS ARCHITECTURE
+// DATA INGESTION SERVICE v5.6.2 — SINGLE-PASS ARCHITECTURE
 // ============================================================
 
 export interface AdjustedMetrics { goals: number; goalsHT: number; corners: number; cards: number; shots: number; shotsOnTarget: number; }
@@ -32,13 +32,12 @@ export class DataIngestionService {
 
   constructor() {
     this.apiKey = process.env.PROPLINE_API_KEY || "";
-    console.log("Versão do Argos: 5.6.1 - SINGLE-PASS / 48H EVIDENCE WINDOW / FRESHNESS GATE");
+    console.log("Versão do Argos: 5.6.2 - SINGLE-PASS / 48H EVIDENCE WINDOW / FAIL-CLOSED FRESHNESS");
   }
 
   public async getActiveSports(): Promise<any[]> {
     try {
-      const url = `${this.baseUrl}/sports?apiKey=${this.apiKey}`;
-      const response = await axios.get(url, { timeout: 8000 });
+      const response = await axios.get(`${this.baseUrl}/sports?apiKey=${this.apiKey}`, { timeout: 8000 });
       this.trackRequest();
       return (response.data || []).filter((s: any) => s.active && s.key.toLowerCase().includes("soccer"));
     } catch (error: any) {
@@ -50,8 +49,7 @@ export class DataIngestionService {
   public async getFreshness(sportKey: string): Promise<FreshnessResult> {
     const checkedAt = new Date().toISOString();
     try {
-      const url = `${this.baseUrl}/freshness?sport=${sportKey}&apiKey=${this.apiKey}`;
-      const response = await axios.get(url, { timeout: 6000 });
+      const response = await axios.get(`${this.baseUrl}/freshness?sport=${sportKey}&apiKey=${this.apiKey}`, { timeout: 6000 });
       this.trackRequest();
       const changed = response.data?.changed;
       if (typeof changed !== "boolean") return { changed: false, known: false, checkedAt, reason: "UNKNOWN" };
@@ -62,17 +60,17 @@ export class DataIngestionService {
     }
   }
 
+  /** Returns whether a refresh is required. Unknown/error is conservatively true. */
   public async checkFreshness(sportKey: string): Promise<boolean> {
     const result = await this.getFreshness(sportKey);
-    return result.known && result.changed;
+    return !result.known || result.changed;
   }
 
   private readonly SOCCER_MARKETS = ["h2h", "spreads", "totals", "both_teams_to_score", "total_corners", "total_cards"].join(",");
 
   public async getMegaCallOdds(sportKey: string): Promise<any[]> {
     try {
-      const url = `${this.baseUrl}/sports/${sportKey}/odds?markets=${this.SOCCER_MARKETS}&apiKey=${this.apiKey}`;
-      const response = await axios.get(url, { timeout: 12000 });
+      const response = await axios.get(`${this.baseUrl}/sports/${sportKey}/odds?markets=${this.SOCCER_MARKETS}&apiKey=${this.apiKey}`, { timeout: 12000 });
       this.trackRequest();
       const events = Array.isArray(response.data) ? response.data : [];
       const now = Date.now();
@@ -108,7 +106,10 @@ export class DataIngestionService {
     if (!Number.isFinite(externalFixtureId)) throw new Error(`INVALID_MATCH_ID - ${matchId}`);
     const startTime = fixture.commence_time || fixture.fixture?.date;
     const kickoffMs = new Date(startTime).getTime();
+    const now = Date.now();
     if (!Number.isFinite(kickoffMs)) throw new Error(`INVALID_KICKOFF - ${matchId}`);
+    if (kickoffMs <= now) throw new Error(`EXPIRED - ${matchId}`);
+    if (kickoffMs > now + DataIngestionService.ANALYSIS_HORIZON_MS) throw new Error(`OUTSIDE_ANALYSIS_HORIZON - ${matchId}`);
     const matchPayload = {
       external_fixture_id: externalFixtureId,
       external_provider: "PROPLINE",
@@ -160,8 +161,7 @@ export class DataIngestionService {
 
   async ingest(matchId: string): Promise<IngestedData> {
     console.warn(`[Argos-Legacy] Chamada de ingest individual detectada para ${matchId}. Use ingestObject para Single-Pass.`);
-    const url = `${this.baseUrl}/sports/soccer/events/${matchId}/odds?markets=h2h,spreads,totals,both_teams_to_score,total_corners,total_cards&apiKey=${this.apiKey}`;
-    const response = await axios.get(url, { timeout: 30000 });
+    const response = await axios.get(`${this.baseUrl}/sports/soccer/events/${matchId}/odds?markets=h2h,spreads,totals,both_teams_to_score,total_corners,total_cards&apiKey=${this.apiKey}`, { timeout: 30000 });
     this.trackRequest();
     return this.ingestObject(response.data);
   }
@@ -170,8 +170,7 @@ export class DataIngestionService {
 
   public async updateTeamFormFromScores(sportKey: string, daysFrom: number = 3): Promise<number> {
     try {
-      const url = `${this.baseUrl}/sports/${sportKey}/scores?daysFrom=${daysFrom}&apiKey=${this.apiKey}`;
-      const response = await axios.get(url, { timeout: 10000 }); this.trackRequest(); const events = response.data || [];
+      const response = await axios.get(`${this.baseUrl}/sports/${sportKey}/scores?daysFrom=${daysFrom}&apiKey=${this.apiKey}`, { timeout: 10000 }); this.trackRequest(); const events = response.data || [];
       let updated = 0;
       for (const ev of events) {
         if (ev.status !== "final" || ev.home_score === null || ev.home_score === undefined || ev.away_score === null || ev.away_score === undefined) continue;
