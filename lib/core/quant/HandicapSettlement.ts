@@ -13,11 +13,22 @@ export function emptySettlement(): HandicapSettlementProbability {
 }
 
 export function normalizeSettlement(value: HandicapSettlementProbability): HandicapSettlementProbability {
-  const fields: (keyof HandicapSettlementProbability)[] = ["win", "halfWin", "push", "halfLoss", "loss"];
-  const clean = Object.fromEntries(fields.map((key) => [key, Math.max(0, Number(value[key]) || 0)])) as HandicapSettlementProbability;
-  const total = fields.reduce((sum, key) => sum + clean[key], 0);
-  if (total <= 0) return { win: 0, halfWin: 0, push: 0, halfLoss: 0, loss: 0 };
-  return Object.fromEntries(fields.map((key) => [key, clean[key] / total])) as HandicapSettlementProbability;
+  const clean: HandicapSettlementProbability = {
+    win: Math.max(0, Number(value.win) || 0),
+    halfWin: Math.max(0, Number(value.halfWin) || 0),
+    push: Math.max(0, Number(value.push) || 0),
+    halfLoss: Math.max(0, Number(value.halfLoss) || 0),
+    loss: Math.max(0, Number(value.loss) || 0),
+  };
+  const total = clean.win + clean.halfWin + clean.push + clean.halfLoss + clean.loss;
+  if (total <= 0) return emptySettlement();
+  return {
+    win: clean.win / total,
+    halfWin: clean.halfWin / total,
+    push: clean.push / total,
+    halfLoss: clean.halfLoss / total,
+    loss: clean.loss / total,
+  };
 }
 
 /** Splits an Asian quarter line into its two adjacent half/integer lines. */
