@@ -1,78 +1,79 @@
-# Argos Intelligence v6.0.0 — Syndicate Master Edition
+# Argos Intelligence
 
-🏆 **Status**: Production Ready | **Version**: 6.0.0-Master | **Author**: CTO Senior Engineer (Manus AI) | **Email**: gusborba9@gmail.com
+**Status:** Canonical engineering baseline under active quantitative validation  
+**Scope:** Global football quantitative intelligence
 
-O Argos v6.0.0 é a evolução definitiva do sistema, transformando-o em um motor de inteligência de nível **Syndicate Americano**. Esta versão foca em **Single-Pass Ingestion**, **Pinnacle-Heavy Fair Lines** e **Zero Veto Distribution**.
+Argos is a quantitative sports-intelligence platform. It does not operate as a bookmaker. Its core product is the quality, traceability, calibration and long-term evidence of its analysis.
 
-## 🚀 Fluxo Mestre Syndicate (v6.0.0)
+## Engineering principles
 
-O sistema opera em um fluxo linear e otimizado para eliminar redundâncias e garantir EV+ em cada sinal:
+- Probabilities originate from deterministic/statistical models and validated calibration layers; LLMs provide context, not arbitrary probabilities.
+- PropLine is the primary market/data source; complementary sources are used only where they add measurable evidence.
+- Market availability is not evidence availability. Unsupported or weakly evidenced markets remain observable internally but are not fabricated into predictions.
+- Model probability, model fair price, market reference price, executable odd, EV and Kelly remain separate quantitative concepts.
+- Probability and reliability/confidence are separate dimensions.
+- Publication is gated by data freshness, evidence quality, quantitative validity and anomaly controls.
+- The production engine remains the Champion until a challenger demonstrates superior out-of-sample performance.
+- Telegram FREE/VIP output is preserved as a distribution layer and must not alter canonical quantitative values.
 
-1.  **PropLine Mega Call All-In**: Ingestão completa de todos os mercados disponíveis em uma única chamada.
-2.  **MarketNormalizer**: Transformação do payload bruto em estrutura estável, capturando TODAS as casas (Pinnacle, Betfair, etc).
-3.  **Feature Engine**: Geração de vetores estatísticos com decaimento exponencial (jogos recentes valem mais).
-4.  **RAG + Monte Carlo**: Integração de contexto (lesões, clima, motivação via RAG) com simulações estocásticas de 10.000 iterações.
-5.  **Odds Value Engine**: Cálculo de EV%, Edge% e Real Value. NUNCA um sinal é enviado sem EV positivo.
-6.  **Signal Distribution Engine**: Classificação automática entre canais **FREE** (Alta Probabilidade/Elite) e **VIP** (Full EV+).
-
-## 🏛️ Arquitetura de Pastas (v6.0.0)
+## Canonical execution path
 
 ```text
-argos-intelligence/
-├── app/
-│   └── api/
-│       └── argos/
-│           └── v6/
-│               └── route.ts              ← Novo Endpoint Master (Single-Pass)
-├── lib/
-│   ├── argos/
-│   │   ├── orchestrator/
-│   │   │   └── ArgosMasterOrchestrator.ts ← O Cérebro do Sistema
-│   │   ├── regime/
-│   │   │   └── RAGContextEngine.ts       ← Recuperação de Contexto Semântico
-│   │   └── delivery/
-│   │       └── ValueDeliveryService.ts   ← Gestão de Tiers (FREE/VIP)
-│   └── core/
-│       ├── market-intelligence/
-│       │   ├── MarketNormalizer.ts       ← Normalização Universal
-│       │   ├── FairOddsCalculator.ts     ← Pinnacle-Heavy Engine
-│       │   ├── OddsValueEngine.ts        ← EV & Kelly Calculator
-│       │   └── SignalDistributionEngine.ts ← Telegram Dispatcher
-│       ├── ModelFactory.ts               ← Monte Carlo & Poisson
-│       └── FeatureEngine.ts              ← Estatística Avançada
-└── supabase/
-    └── migrations/
-        └── v6_master_perfect_flow.sql    ← Schema Consolidado
+Market/data ingestion
+        ↓
+Canonical normalization + provenance
+        ↓
+Evidence/features + opponent-aware statistics
+        ↓
+Context/regime enrichment
+        ↓
+Deterministic quantitative simulation
+        ↓
+Vertical/line-specific calibration
+        ↓
+Canonical model probability
+        ↓
+Model fair price + market reference + executable odd
+        ↓
+EV / edge / Kelly
+        ↓
+Evidence reliability + anomaly/publication gates
+        ↓
+Prediction ledger / distribution
+        ↓
+Telegram FREE / VIP
 ```
 
-## 🛠️ Configuração e Build
+## Current quantitative boundary
 
-### 1. Variáveis de Ambiente (.env)
+The active roadmap is the source of truth for implementation status. C-009 currently governs count-stat distribution integrity, including deterministic regime-bound simulation, overdispersion, OOS calibration and runtime propagation. It is not considered closed until production build, quantitative CI and applicable real-payload validation all pass.
+
+C-009 execution boundary:
+
+```text
+team evidence → opponent-aware features → count-stat means → regime
+→ regime-bound deterministic seed → Gamma-Poisson simulation
+→ vertical OOS calibration → canonical probability → market evidence
+→ value chain → reliability → publication
+```
+
+## Canonical engineering documents
+
+- `ARGOS_MASTER_BLUEPRINT.md` — architecture and non-negotiable principles.
+- `ARGOS_MASTER_ROADMAP.md` — execution roadmap and cycle gates.
+- `ARGOS_DECISION_LOG.md` — durable engineering decisions.
+
+Historical audit reports are intentionally not maintained as competing sources of truth. Current implementation state must be established from code, tests, deployments and the canonical documents above.
+
+## Development gate
+
+The production build must execute the quantitative test gate before the Next.js build. A cycle is not Ready merely because TypeScript compiles: quantitative tests, applicable runtime/payload validation and deployment status must agree.
+
 ```bash
-PROPLINE_API_KEY=sua_chave
-TELEGRAM_BOT_TOKEN=seu_token
-TELEGRAM_FREE_CHANNEL_ID=id_canal_free
-TELEGRAM_CHAT_ID=id_canal_vip
-NEXT_PUBLIC_SUPABASE_URL=url_supabase
-SUPABASE_SERVICE_ROLE_KEY=key_service_role
-GOOGLE_AI_API_KEY=chave_gemini_rag
+pnpm test:quant
+pnpm run build
 ```
 
-### 2. Build de Produção
-```bash
-npm install
-npm run build
-```
+## Quality target
 
-## 🎯 Regras de Ouro do Syndicate Master
-
-- **Pinnacle como Âncora**: A Pinnacle possui o maior peso no cálculo de Fair Odds por ser a referência mundial de mercado sharp.
-- **Varredura Total**: O Argos nunca analisa apenas o vencedor. Se o mercado 1X2 não tem valor, ele varre Handicap, Gols, Cantos, Cartões e Props.
-- **Single-Pass**: O dado entra uma vez e percorre todo o pipeline sem re-fetch, garantindo velocidade e economia de API.
-- **FREE vs VIP**:
-    - **FREE**: Vitrine de assertividade. Sinais com Probabilidade > 70% ou Rating ELITE.
-    - **VIP**: Inteligência completa. Todos os mercados com EV+ e gestão de banca via Kelly Fractional.
-
-## 🤝 Manutenção
-Sistema mantido sob supervisão de **gusborba9@gmail.com**.
-Para auditorias técnicas, consulte os relatórios na pasta `docs/`.
+Argos is optimized for evidence quality and measurable predictive performance rather than signal volume. The long-term target is a robust, auditable quantitative intelligence platform capable of institutional-grade analysis, with performance demonstrated through out-of-sample calibration, Brier Score, Log Loss, CLV, stability and settlement evidence.
