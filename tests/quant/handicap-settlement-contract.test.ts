@@ -5,7 +5,7 @@ import { AsianHandicapSettlementEngine } from "../../lib/core/market-intelligenc
 const regime: any = { variance_multiplier: 1, model_bias: 0, market_regime: "NEUTRAL" };
 
 test("quarter handicap is not collapsed into a false 100% loss", () => {
-  const result = AsianHandicapSettlementEngine.simulate(1.4, 1.1, regime, [0.25], 10000).home_0.25;
+  const result = AsianHandicapSettlementEngine.simulate(1.4, 1.1, regime, [0.25], 10000)["home_0.25"];
   assert.ok(result);
   assert.ok(result.halfWin > 0 || result.halfLoss > 0);
   assert.equal(result.win + result.halfWin + result.push + result.halfLoss + result.loss, 1);
