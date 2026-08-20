@@ -1,13 +1,12 @@
 import { MarketVertical } from "../contracts/MarketVertical";
 
-/**
- * Canonical inventory of soccer intelligence dimensions.
- *
- * This registry is intentionally independent from delivery, ranking and
- * wagering semantics. Its job is to answer one question:
- * "Which dimensions did Argos inspect, which were modelable, and which were
- * unavailable because the upstream data did not expose them?"
- */
+export interface MarketOutcomeContext {
+  selectionNames?: readonly string[];
+  homeTeam?: string;
+  awayTeam?: string;
+  period?: string;
+}
+
 export interface MarketCoverageDefinition {
   key: string;
   vertical: MarketVertical;
@@ -50,13 +49,20 @@ export const SOCCER_MARKET_COVERAGE: readonly MarketCoverageDefinition[] = [
 ];
 
 const normalize = (value: string): string => value.toLowerCase().trim().replace(/[-\s]+/g, "_");
+const same = (a?: string, b?: string): boolean => !!a && !!b && normalize(a) === normalize(b);
 
 export class MarketCoverageRegistry {
-  static resolve(key: string): MarketCoverageDefinition | undefined {
+  static resolve(key: string, context: MarketOutcomeContext = {}): MarketCoverageDefinition | undefined {
     const normalized = normalize(key);
-    return SOCCER_MARKET_COVERAGE.find(
-      (definition) => definition.key === normalized || definition.aliases.includes(normalized),
-    );
+    const genericCards = normalized === "cards" || normalized === "bookings" || normalized === "total_cards";
+    const hasTeamOutcome = genericCards && (context.selectionNames || []).some((selection) => same(selection, context.homeTeam) || same(selection, context.awayTeam));
+    if (hasTeamOutcome) return SOCCER_MARKET_COVERAGE.find((definition) => definition.key === "team_cards");
+
+    const genericCorners = normalized === "corners" || normalized === "total_corners";
+    const hasCornerTeamOutcome = genericCorners && (context.selectionNames || []).some((selection) => same(selection, context.homeTeam) || same(selection, context.awayTeam));
+    if (hasCornerTeamOutcome) return SOCCER_MARKET_COVERAGE.find((definition) => definition.key === "team_corners");
+
+    return SOCCER_MARKET_COVERAGE.find((definition) => definition.key === normalized || definition.aliases.includes(normalized));
   }
 
   static audit(discoveredKeys: string[]): MarketCoverageResult {
@@ -64,17 +70,12 @@ export class MarketCoverageRegistry {
     const covered: string[] = [];
     const unknown: string[] = [];
     const byVertical: Record<string, number> = {};
-
     for (const key of discovered) {
       const definition = this.resolve(key);
-      if (!definition) {
-        unknown.push(key);
-        continue;
-      }
+      if (!definition) { unknown.push(key); continue; }
       covered.push(key);
       byVertical[definition.vertical] = (byVertical[definition.vertical] ?? 0) + 1;
     }
-
     return { discovered, covered, unknown, byVertical };
   }
 }
