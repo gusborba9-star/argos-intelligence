@@ -1,5 +1,6 @@
 import { MarketVertical } from "./ArgosUnifiedEngine";
 import { getSupabaseClient } from "@/lib/core/SupabaseClient";
+import { ANALYSIS_HORIZON_HOURS, evaluateAnalysisHorizon } from "./contracts/AnalysisHorizon";
 
 export enum QueueStatus {
   DISCOVERED = "DISCOVERED",
@@ -27,10 +28,7 @@ export interface QueueItem {
 }
 
 const CLEANUP_RETENTION_HOURS = 24;
-// A match may be discovered earlier, but quantitative execution requires a
-// fresh pre-match snapshot. Keep this identical to the scheduler gate so a
-// stale queued item cannot bypass the admission policy.
-export const MAX_ANALYSIS_HORIZON_HOURS = 24;
+export const MAX_ANALYSIS_HORIZON_HOURS = ANALYSIS_HORIZON_HOURS;
 
 export class BatchQueueService {
   private supabase;
@@ -54,12 +52,11 @@ export class BatchQueueService {
       throw new Error(`[BatchQueue] Dados brutos inválidos para ${uniqueKey}`);
     }
 
-    const kickoff = rawData.commence_time ? new Date(rawData.commence_time).getTime() : null;
-    if (kickoff && kickoff < Date.now() - 10 * 60 * 1000) {
-      throw new Error(`[BatchQueue] Kickoff expirado para ${uniqueKey}`);
-    }
-    if (kickoff && ((kickoff - Date.now()) / (1000 * 60 * 60)) > MAX_ANALYSIS_HORIZON_HOURS) {
-      throw new Error(`[BatchQueue] Partida fora da janela de maturidade quantitativa para ${uniqueKey}`);
+    if (rawData.commence_time) {
+      const horizon = evaluateAnalysisHorizon(rawData.commence_time);
+      if (!horizon.eligible) {
+        throw new Error(`[BatchQueue] Partida fora da janela de ${MAX_ANALYSIS_HORIZON_HOURS}h: ${uniqueKey} (${horizon.reason})`);
+      }
     }
 
     const COOLDOWN_MS = 60 * 60 * 1000;
@@ -123,23 +120,17 @@ export class BatchQueueService {
     return data.id;
   }
 
-  /**
-   * Fetches the next item atomically. Temporal validation happens AGAIN here,
-   * immediately before quantitative execution, so stale queued data cannot
-   * bypass the scheduler gate.
-   */
   async getNextInQueue(): Promise<QueueItem | null> {
     const { data, error } = await this.supabase.rpc("get_next_queue_item");
     if (error || !data || data.length === 0) return null;
 
     const item = data[0];
     const rawData = item.raw_data;
-    const kickoff = rawData?.commence_time ? new Date(rawData.commence_time).getTime() : NaN;
-    const hoursToKickoff = (kickoff - Date.now()) / (1000 * 60 * 60);
+    const horizon = evaluateAnalysisHorizon(rawData?.commence_time ?? NaN);
 
-    if (!Number.isFinite(kickoff) || hoursToKickoff < 0 || hoursToKickoff > MAX_ANALYSIS_HORIZON_HOURS) {
-      console.warn(`[BatchQueue] ⏭️ Temporal gate: ${item.unique_key} skipped (${Number.isFinite(hoursToKickoff) ? `${hoursToKickoff.toFixed(1)}h` : "invalid kickoff"}).`);
-      await this.updateStatus(item.id, QueueStatus.SKIPPED, "OUTSIDE_ANALYSIS_HORIZON");
+    if (!horizon.eligible) {
+      console.warn(`[BatchQueue] Temporal gate: ${item.unique_key} skipped (${horizon.reason}).`);
+      await this.updateStatus(item.id, QueueStatus.SKIPPED, `OUTSIDE_ANALYSIS_HORIZON:${horizon.reason}`);
       return this.getNextInQueue();
     }
 
