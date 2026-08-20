@@ -29,10 +29,10 @@ for (const [key, value] of Object.entries(result.probabilities)) {
 assert.ok(Math.abs((result.probabilities["over_2.5"] ?? 0) + (result.probabilities["under_2.5"] ?? 0) - 1) < 1e-12);
 assert.ok(Math.abs((result.probabilities.btts_yes ?? 0) + (result.probabilities.btts_no ?? 0) - 1) < 1e-12);
 
-// Asian handicap invariant: for Home -1 / Away +1, a one-goal home
-// win is PUSH for both sides. Therefore the two win probabilities do not
-// sum to 1, and Away +1 includes draws so it should exceed Home -1.
-const homeMinus1 = result.probabilities.home_handicap_1 ?? 0;
+// Asian handicap invariant: Home -1 / Away +1 share the same one-goal
+// boundary. A one-goal home win is PUSH for both sides, so Away +1 includes
+// that push state and must have a strictly larger WIN probability than Home -1.
+const homeMinus1 = result.probabilities.home_handicap_-1 ?? 0;
 const awayPlus1 = result.probabilities.away_handicap_1 ?? 0;
 assert.ok(awayPlus1 > homeMinus1, `Away +1 should exceed Home -1: ${awayPlus1} <= ${homeMinus1}`);
 assert.ok(awayPlus1 + homeMinus1 < 1, "integer Asian handicap win probabilities must leave room for PUSH");
