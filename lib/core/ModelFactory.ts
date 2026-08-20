@@ -4,7 +4,7 @@ import { learningEngine } from "./ContinuousLearningEngine";
 import { applyCalibration } from "./CalibrationMath";
 
 // ============================================================
-// MODEL FACTORY v6.4.4 — QUANTITATIVE CORE
+// MODEL FACTORY v6.4.5 — QUANTITATIVE CORE
 // Gamma-Poisson + deterministic seeded PRNG + OOS calibration.
 // Count-stat simulations use the same regime-aware distribution
 // and pass through the same conservative OOS calibration gate.
@@ -21,11 +21,7 @@ export interface SimulationResult {
 
 type RandomSource = () => number;
 type CalibratableMarket = "GOALS" | "CORNERS" | "CARDS" | "SHOTS" | "SHOTS_ON_TARGET" | "FOULS" | "TACKLES" | "SAVES" | "WINNER" | "BTTS" | "HANDICAP" | "GOALS_HT";
-
-type CountStatSeedRegime = Pick<RegimeProfile, "variance_multiplier" | "model_bias"> & {
-  regime?: RegimeProfile["regime"];
-  market_regime?: string;
-};
+type CountStatSeedRegime = Pick<RegimeProfile, "variance_multiplier" | "model_bias"> & { regime?: RegimeProfile["regime"]; market_regime?: string; };
 
 export class ModelFactory {
   private static readonly DEFAULT_ITERATIONS = 10000;
@@ -75,11 +71,7 @@ export class ModelFactory {
     const HANDICAP_LINES = [-2, -1.5, -1, -0.5, 0.5, 1, 1.5, 2];
     const homeCoversCounts: Record<string, number> = {}, awayCoversCounts: Record<string, number> = {};
     const homePushCounts: Record<string, number> = {};
-    HANDICAP_LINES.forEach((point) => {
-      homeCoversCounts[String(point)] = 0;
-      awayCoversCounts[String(point)] = 0;
-      homePushCounts[String(point)] = 0;
-    });
+    HANDICAP_LINES.forEach((point) => { homeCoversCounts[String(point)] = 0; awayCoversCounts[String(point)] = 0; homePushCounts[String(point)] = 0; });
 
     const varianceMultiplier = Number.isFinite(regime.variance_multiplier) && regime.variance_multiplier > 1 ? regime.variance_multiplier : 1.0;
     const bias = Number.isFinite(regime.model_bias) ? regime.model_bias : 0;
@@ -106,16 +98,13 @@ export class ModelFactory {
       if (finalHome > finalAway) homeWins++; else if (finalHome === finalAway) draws++; else awayWins++;
     }
 
-    // For every signed line, derive the opposite-side win probability from
-    // the same settlement partition. This eliminates Monte Carlo rounding
-    // noise from paired Asian lines and guarantees WIN + PUSH + LOSS = 1.
+    // For a paired Asian line, the opposite side at -point is the complement
+    // of the home side at point, after removing the push mass. This is an
+    // accounting identity; it is not an independent simulation.
     for (const point of HANDICAP_LINES) {
       const opposite = String(-point);
       if (homeCoversCounts[opposite] !== undefined && homePushCounts[opposite] !== undefined) {
-        awayCoversCounts[String(point)] = Math.max(
-          0,
-          iterations - homeCoversCounts[opposite] - homePushCounts[opposite],
-        );
+        awayCoversCounts[String(point)] = Math.max(0, iterations - homeCoversCounts[opposite] - homePushCounts[opposite]);
       }
     }
 
@@ -128,33 +117,16 @@ export class ModelFactory {
       btts_yes: bttsYes / iterations,
       btts_no: 1 - bttsYes / iterations,
     };
-    GOAL_LINES.forEach((line) => {
-      const over = overCounts[line] / iterations;
-      probabilities[`over_${line}`] = over;
-      probabilities[`under_${line}`] = 1 - over;
-    });
-    HANDICAP_LINES.forEach((point) => {
-      probabilities[`home_handicap_${point}`] = homeCoversCounts[String(point)] / iterations;
-      probabilities[`away_handicap_${point}`] = awayCoversCounts[String(point)] / iterations;
-    });
+    GOAL_LINES.forEach((line) => { const over = overCounts[line] / iterations; probabilities[`over_${line}`] = over; probabilities[`under_${line}`] = 1 - over; });
+    HANDICAP_LINES.forEach((point) => { probabilities[`home_handicap_${point}`] = homeCoversCounts[String(point)] / iterations; probabilities[`away_handicap_${point}`] = awayCoversCounts[String(point)] / iterations; });
 
-    return {
-      probabilities,
-      iterations,
-      // Expected goals is the expectation of the sampled Gamma-Poisson
-      // intensity, not the noisier realized Poisson score average. This is
-      // the correct Monte Carlo estimator for the model's expected rate and
-      // preserves the configured mean contract under overdispersion.
-      expectedGoals: expectedLambdaTotal / iterations,
-    };
+    return { probabilities, iterations, expectedGoals: expectedLambdaTotal / iterations };
   }
 
   static calculateEV(probability: number, marketOdd: number): ValueAnalysis { return OddsValueEngine.calculateValue(probability, marketOdd); }
 
   public static seedForCountStat(matchId: string, marketType: string, homeMean: number, awayMean: number, lines: number[], regime?: CountStatSeedRegime): number {
-    const regimeKey = regime
-      ? `${regime.variance_multiplier}|${regime.model_bias}|${regime.regime ?? regime.market_regime ?? "default"}`
-      : "default";
+    const regimeKey = regime ? `${regime.variance_multiplier}|${regime.model_bias}|${regime.regime ?? regime.market_regime ?? "default"}` : "default";
     return this.seedFrom(`${matchId}|${marketType}|${homeMean}|${awayMean}|${lines.join(",")}|${regimeKey}`);
   }
 
@@ -201,7 +173,12 @@ export class ModelFactory {
     if (!(shape > 0) || !(scale > 0)) throw new Error("Invalid Gamma parameters");
     if (shape < 1) { const u = Math.max(this.MIN_PROBABILITY, random()); return this.gamma(shape + 1, scale, random) * Math.pow(u, 1 / shape); }
     const d = shape - 1 / 3, c = 1 / Math.sqrt(9 * d);
-    while (true) { const x = this.normal(random), v0 = 1 + c * x; if (v0 <= 0) continue; const v = v0 * v0 * v0, u = random(); if (u < 1 - 0.0331 * x * x * x * x || Math.log(Math.max(this.MIN_PROBABILITY, u)) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v * scale; }
+    while (true) {
+      const x = this.normal(random), v0 = 1 + c * x;
+      if (v0 <= 0) continue;
+      const v = v0 * v0 * v0, u = random();
+      if (u < 1 - 0.0331 * x * x * x * x || Math.log(Math.max(this.MIN_PROBABILITY, u)) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v * scale;
+    }
   }
 
   private static normal(random: RandomSource): number { const u1 = Math.max(this.MIN_PROBABILITY, random()), u2 = random(); return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2); }
@@ -221,7 +198,20 @@ export class ModelFactory {
     return 0.5 * Math.log(2 * Math.PI) + (t0 + 0.5) * Math.log(t) - t + Math.log(x);
   }
 
-  private static createRng(seed: number): RandomSource { let state = seed >>> 0 || 0x9e3779b9; return () => { state ^= state << 13; state ^= state >>> 17; state >>>= 0; return (state + 1) / 4294967297; }; }
+  // Full xorshift32. The previous implementation omitted the third shift,
+  // creating a poor deterministic stream that materially biased the sampled
+  // Gamma intensities. The sequence remains fully reproducible for a seed,
+  // but its distribution is now suitable for Monte Carlo sampling.
+  private static createRng(seed: number): RandomSource {
+    let state = seed >>> 0 || 0x9e3779b9;
+    return () => {
+      state ^= state << 13;
+      state ^= state >>> 17;
+      state ^= state << 5;
+      state >>>= 0;
+      return (state + 1) / 4294967297;
+    };
+  }
 
   private static seedFrom(value: string): number { let hash = 2166136261; for (let i = 0; i < value.length; i++) { hash ^= value.charCodeAt(i); hash = Math.imul(hash, 16777619); } return hash >>> 0; }
 }
